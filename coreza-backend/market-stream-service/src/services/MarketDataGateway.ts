@@ -81,6 +81,8 @@ export class MarketDataGateway {
   private connectionOpenedAt: number | null = null;
   private lastSubscribeSentAt: number | null = null;
 
+  private get startupObservationMs(): number { return this.config.startupObservationMs ?? 2000; }
+
   private startupObservationTimer: NodeJS.Timeout | null = null;
 
   async waitForStartup(deadlineAt: number): Promise<void> {
@@ -89,7 +91,7 @@ export class MarketDataGateway {
         new Error(this.lifecycle?.message ?? "Stream gateway stopped during startup."),
         { code: this.lifecycle?.code ?? "STREAM_STARTUP_STOPPED", gatewayLifecycle: this.lifecycle });
       if (this.lifecycle?.status === "listening" && this.ws?.readyState === WebSocket.OPEN && this.isAuthenticated &&
-        (!this.config.startupObservationMs || Date.now() - Math.max(this.lastSubscribeSentAt ?? 0, this.connectionOpenedAt ?? 0) >= this.config.startupObservationMs)) return;
+        (!this.startupObservationMs || Date.now() - Math.max(this.lastSubscribeSentAt ?? 0, this.connectionOpenedAt ?? 0) >= this.startupObservationMs)) return;
       await new Promise(resolve => setTimeout(resolve, Math.min(50, Math.max(1, deadlineAt - Date.now()))));
     }
     throw Object.assign(new Error("Stream startup timed out before the required feed became ready."), { code: "STREAM_STARTUP_TIMEOUT" });
@@ -97,7 +99,7 @@ export class MarketDataGateway {
 
   private observeStartup(): void {
     if (this.startupObservationTimer) clearTimeout(this.startupObservationTimer);
-    const windowMs = this.config.startupObservationMs;
+    const windowMs = this.startupObservationMs;
     if (!windowMs || !this.ws || !this.isAuthenticated || !this.subscribedStreams.size) return;
     const socket = this.ws;
     const sentAt = Math.max(this.connectionOpenedAt ?? 0, this.lastSubscribeSentAt ?? 0);
@@ -105,15 +107,15 @@ export class MarketDataGateway {
       this.startupObservationTimer = null;
       if (this.ws !== socket || socket.readyState !== WebSocket.OPEN || !this.isAuthenticated || this.terminalReported) return;
       this.logger.info({ source: this.source, observationMs: windowMs },
-        "Stream startup observation passed; no provider authentication/subscription acknowledgment was available");
+        "Stream startup observation passed; subscription acceptance was inferred from transport stability");
       this.reportLifecycle("listening");
     }, Math.max(0, windowMs - (Date.now() - sentAt)));
   }
 
   private sanitizeFailure(text: string): string {
     let value = text.replace(/wss?:\/\/\S+/gi, "[WebSocket URL redacted]");
-    for (const token of [this.credentials?.api_key, this.credentials?.access_token]) {
-      if (typeof token === "string" && token) value = value.split(token).join("[redacted]");
+    for (const token of Object.values(this.credentials ?? {})) {
+      if (typeof token === "string" && token.length >= 8) value = value.split(token).join("[redacted]");
     }
     return value.replace(/[\r\n]/g, " ").slice(0, 240);
   }
@@ -148,9 +150,10 @@ export class MarketDataGateway {
   getLifecycle(): GatewayLifecycle | undefined { return this.lifecycle; }
 
   private providerFailure(msg: any): void {
-    const code = String(msg?.reasonCode ?? msg?.code ?? "PROVIDER_REJECTED");
+    const failure = this.config.decodeFailure?.(msg);
+    const code = failure?.code ?? "PROVIDER_REJECTED";
     // Only decoded provider fields are exposed; never send raw auth/control payloads.
-    const reason = this.source.startsWith("dhan") ? msg?.reasonText : undefined;
+    const reason = failure?.message;
     const safeReason = typeof reason === "string" ? this.sanitizeFailure(reason) : "Provider rejected the stream request";
     this.reportLifecycle("failed", code, `${this.source.split("_")[0]} stream rejected (${code}). ${safeReason}`);
     this.lastFatalControlMessage = { code };
@@ -741,8 +744,8 @@ export class MarketDataGateway {
     if (this.ws?.readyState === WebSocket.OPEN && this.isAuthenticated) {
       const msg = this.makeSubscribeMessageSafely(newStreams, this.source);
       if (!msg) {
-        if (this.config.startupObservationMs && !this.source.endsWith("_trading")) throw Object.assign(new Error("Dhan did not generate a subscription payload for the requested stream."), { code: "DHAN_SUBSCRIPTION_NOT_SENT" });
-        this.observeStartup(); // Account-wide Dhan order updates use the login message.
+        if (this.config.subscriptionRequired?.(this.source)) throw Object.assign(new Error("The gateway did not generate a subscription payload for the requested stream."), { code: "STREAM_SUBSCRIPTION_NOT_SENT" });
+        this.observeStartup(); // Some account-wide feeds use their authentication message as the subscription.
         return;
       }
       const payloadCount = this.sendGatewayMessages(msg);
@@ -912,7 +915,7 @@ export class MarketDataGateway {
     if (this.reconnectAttempts >= maxAttempts) {
       console.error(`[${this.source}] Max reconnection attempts reached`);
       alertMaxReconnectAttempts(this.source, maxAttempts);
-      const broker = this.source.startsWith("dhan") ? "Dhan" : this.source.split("_")[0];
+      const broker = this.config.displayName ?? this.source.split("_")[0];
       this.reportLifecycle("failed", String(this.lastCloseCode ?? "CONNECT_FAILED"),
         `${broker} stream disconnected${this.lastCloseCode ? ` (${this.lastCloseCode})` : ""}. Reconnection failed after ${maxAttempts} attempts.`);
       return;
@@ -1005,7 +1008,7 @@ export class MarketDataGateway {
 
   private markConnectionReady(resolveConnect?: () => void): void {
     this.logger.info({ source: this.source },
-      this.config.startupObservationMs || this.authCompletesOnSend() || !this.config.makeAuthMessage
+      this.authCompletesOnSend() || !this.config.isAuthSuccess
         ? "WebSocket ready; provider authentication acknowledgment unavailable"
         : "Provider authentication confirmed");
     this.clearReconnectTimer();
@@ -1016,7 +1019,7 @@ export class MarketDataGateway {
     this.awaitingPostAuth = false;
     this.resubscribeAll();
     this.startTradingKeepalive();
-    this.reportLifecycle(this.config.startupObservationMs ? (this.reconnectAttempts ? "reconnecting" : "connecting") : "listening");
+    this.reportLifecycle(this.startupObservationMs ? (this.reconnectAttempts ? "reconnecting" : "connecting") : "listening");
     // Transport setup can complete before a feed passes its startup check.
     for (const waiter of this.readyWaiters) waiter.resolve();
     this.readyWaiters.clear();

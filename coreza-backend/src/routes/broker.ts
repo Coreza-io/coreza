@@ -12,7 +12,8 @@ import { toPublicNodeResult } from "../contracts/nodeResult";
 
 import express from "express";
 import { randomUUID } from "crypto";
-import { DhanCredentialError, validateDhanCredentials } from "../brokers/dhan/credentialValidation";
+import { CredentialValidationError } from "../brokers/credentialValidation";
+import { getBrokerConfig } from "../brokers";
 import { isSupportedBroker } from "../brokers";
 import CredentialManager from "../utils/credentialManager";
 import { requireAuth } from "../middleware/jwtAuth";
@@ -95,7 +96,8 @@ router.post("/:broker/auth", async (req, res, next) => {
       return res.status(400).json({ error: "credential_name is required" });
     }
 
-    const verified = brokerKey === "dhan" ? { ...await validateDhanCredentials(credentials), _credentialRevision: randomUUID() } : credentials;
+    const config = getBrokerConfig(brokerKey);
+    const verified = { ...(config?.validateCredentials ? await config.validateCredentials(credentials) : credentials), _credentialRevision: randomUUID() };
     const credentialId = await CredentialManager.saveCredentials(
       userId,
       brokerKey,
@@ -106,11 +108,11 @@ router.post("/:broker/auth", async (req, res, next) => {
 
     res.json({
       success: true,
-      message: brokerKey === "dhan" ? "Dhan credentials verified and saved. Requested stream feeds are checked separately at startup." : `${brokerKey} credentials saved successfully`,
+      message: config?.credentialValidationMessage ?? `${brokerKey} credentials saved successfully`,
       credential_id: credentialId,
     });
   } catch (error) {
-    if (error instanceof DhanCredentialError) {
+    if (error instanceof CredentialValidationError) {
       return res.status(error.statusCode).json({ success: false, error: error.message, code: error.code, fieldErrors: error.fieldErrors });
     }
     next(error);

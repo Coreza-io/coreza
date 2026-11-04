@@ -14,6 +14,10 @@ export interface SubscribeOptions {
 
 export interface GatewayConfig {
   id: MarketSource;
+  displayName?: string;
+  validateCredentials?: (creds: Record<string, any>, environment: string, source: string) => void;
+  decodeFailure?: (message: any) => { code: string; message: string };
+  subscriptionRequired?: (source: string) => boolean;
   wsUrl: string | ((creds: any, source?: string) => string);
 
   // Authentication

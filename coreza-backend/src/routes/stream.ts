@@ -13,8 +13,8 @@ import { resultSuccess, resultFailure, resultState } from "../contracts/nodeResu
 import express from "express";
 import { randomUUID } from "crypto";
 import CredentialManager from "../utils/credentialManager";
-import { validateDhanCredentialFields } from "../brokers/dhan/credentialValidation";
-import { getDhanCredentialRevision } from "../brokers/dhan/environment";
+import { getBrokerConfig } from "../brokers";
+import { getCredentialRevision } from "../utils/credentialIdentity";
 import { requireAuth } from "../middleware/jwtAuth";
 import type { AppError } from "../middleware/errorHandler";
 import { SubscriptionService } from "../services/SubscriptionService";
@@ -366,7 +366,7 @@ router.post("/:source/subscribe", async (req, res) => {
 
     const sourceId = resolveStreamSourceId(source, category, assetType);
 
-    // Dhan nodes historically send `stream_types`; most broker nodes send `stream_type`.
+    // Accept both supported stream-type field names.
     const streamType = normalizeStreamTypeList(stream_type ?? stream_types);
 
     const hasOrderUpdate = streamType.some((streamName) =>
@@ -534,7 +534,7 @@ router.post("/:source/unsubscribe", async (req, res) => {
       return res.status(400).json(resultFailure(`Unknown source: ${sourceId}`, { data: null }));
     }
 
-    // Dhan nodes historically send `stream_types`; most broker nodes send `stream_type`.
+    // Accept both supported stream-type field names.
     const streamTypes = normalizeStreamTypeList(stream_type ?? stream_types);
 
     // If order_update is included, also unsubscribe from trading source
@@ -800,7 +800,7 @@ router.post("/:source/register", async (req, res) => {
     const parsedSymbols: string[] =
       isAlpacaCrypto || cryptoSymbols.length > 0 ? cryptoSymbols : normalizeSymbolList(symbols);
 
-    // Dhan nodes historically send `stream_types`; most broker nodes send `stream_type`.
+    // Accept both supported stream-type field names.
     const streamType = normalizeStreamTypeList(stream_type ?? stream_types);
 
     // Split order_update from market stream types (same pattern as /subscribe endpoint)
@@ -840,16 +840,13 @@ router.post("/:source/register", async (req, res) => {
         },
       );
 
-    if (sourceId.startsWith("dhan") && !streamType.length) throw Object.assign(new Error("Select at least one Dhan stream feed."), { code: "DHAN_FEED_REQUIRED" });
-    let credentialRevision: string | undefined;
-    if (sourceId.startsWith("dhan")) {
-      if (!credential_id) throw Object.assign(new Error("Select a saved Dhan credential."), { code: "DHAN_CREDENTIAL_REQUIRED" });
-      const saved = await CredentialManager.getCredentials(userId, "dhan", credential_id, { useCache: false });
-      if (!saved.credentials?.client_json) throw Object.assign(new Error("The selected Dhan credential is unavailable."), { code: "DHAN_CREDENTIAL_UNAVAILABLE" });
-      const current = validateDhanCredentialFields(saved.credentials.client_json);
-      if (current.environment !== environment) throw Object.assign(new Error("The selected environment does not match the saved Dhan credential."), { code: "DHAN_ENVIRONMENT_MISMATCH" });
-      credentialRevision = getDhanCredentialRevision(saved.credentials.client_json);
-    }
+    if (!streamType.length) throw Object.assign(new Error("Select at least one stream feed."), { code: "STREAM_FEED_REQUIRED" });
+    if (!credential_id) throw Object.assign(new Error("Select a saved broker credential."), { code: "STREAM_CREDENTIAL_REQUIRED" });
+    const serviceType = sourceId.split("_")[0];
+    const saved = await CredentialManager.getCredentials(userId, serviceType, credential_id, { useCache: false });
+    if (!saved.credentials?.client_json) throw Object.assign(new Error("The selected broker credential is unavailable."), { code: "STREAM_CREDENTIAL_UNAVAILABLE" });
+    getBrokerConfig(serviceType)?.validateStreamCredentials?.(saved.credentials.client_json, environment);
+    const credentialRevision = getCredentialRevision(saved.credentials.client_json);
     const startupDeadlineAt = Date.now() + 120000;
     const attemptId = typeof req.body.attemptId === "string" && /^[0-9a-f-]{36}$/i.test(req.body.attemptId) ? req.body.attemptId : randomUUID();
     startedAttemptId = attemptId;

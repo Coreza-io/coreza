@@ -5,7 +5,8 @@
  */
 
 import Redis from "ioredis";
-import { getDhanCredentialRevision, resolveDhanEnvironment, getDhanMarketWsUrl, getDhanOrderUpdateWsUrl } from "../marketGateways/dhan/environment";
+import { GATEWAY_CONFIGS } from "../marketGateways";
+import { getCredentialRevision } from "../utils/credentialIdentity";
 import { Mutex } from "async-mutex";
 import { createRedisPubSub } from "../config/redis";
 import { REDIS_CHANNELS } from "../config/redisChannels";
@@ -104,8 +105,7 @@ function getUnifiedSocketStateSource(source: string): string {
 
 /**
  * Build native market stream names for a control message using the generic
- * builder. Brokers may optionally preprocess the requested symbols (e.g. Dhan
- * splits `SYMBOL:securityId` tokens and seeds its in-memory resolution map).
+ * builder. Brokers may optionally preprocess requested symbol tokens and seed their instrument resolution maps.
  * Routing keys are identical to these native names for every broker.
  */
 function buildNativeStreamNames(
@@ -175,21 +175,21 @@ export class MarketControlHandler {
 
   private getStateKey(userId: string, source: MarketSource | string, credentialId?: string, environment?: string, revision?: string): string {
     const base = `${userId}:${getUnifiedSocketStateSource(source)}`;
-    return source.startsWith("dhan") && revision ? `${base}:${environment}:${credentialId}:${revision}` : base;
+    return revision ? `${base}:${environment}:${credentialId}:${revision}` : base;
   }
 
-  private async resolveDhanConnection(userId: string, source: string, credentialId?: string, environment?: string, expectedRevision?: string) {
-    if (!credentialId) throw Object.assign(new Error("Select a saved Dhan credential."), { code: "DHAN_CREDENTIAL_REQUIRED" });
-    // Bypass both caches at startup so a replacement cannot reuse another process's stale L1 entry.
-    const saved = await CredentialManager.getCredentials(userId, "dhan", credentialId, { useCache: false });
+  private async resolveConnection(userId: string, source: string, credentialId?: string, environment?: string, expectedRevision?: string) {
+    if (!credentialId) throw Object.assign(new Error("Select a saved broker credential."), { code: "STREAM_CREDENTIAL_REQUIRED" });
+    const serviceType = source.split("_")[0];
+    const saved = await CredentialManager.getCredentials(userId, serviceType, credentialId, { useCache: false });
     const creds = saved.credentials?.client_json;
-    if (!creds) throw Object.assign(new Error("The selected Dhan credential is unavailable."), { code: "DHAN_CREDENTIAL_UNAVAILABLE" });
-    if (resolveDhanEnvironment(creds) !== environment) throw Object.assign(new Error("The selected environment does not match the saved Dhan credential."), { code: "DHAN_ENVIRONMENT_MISMATCH" });
-    if (!/^\d+$/.test(String(creds.client_id ?? "")) || !(creds.api_key ?? creds.access_token)) throw Object.assign(new Error("Reconnect Dhan with a numeric Client ID and Access Token."), { code: "DHAN_CREDENTIAL_INVALID" });
-    const revision = getDhanCredentialRevision(creds);
-    if (expectedRevision && expectedRevision !== revision) throw Object.assign(new Error("The Dhan credential changed during startup. Start the listener again."), { code: "DHAN_CREDENTIAL_CHANGED" });
-    if (source.endsWith("_trading")) getDhanOrderUpdateWsUrl(environment as "sandbox" | "live");
-    else getDhanMarketWsUrl(environment as "sandbox" | "live");
+    if (!creds) throw Object.assign(new Error("The selected broker credential is unavailable."), { code: "STREAM_CREDENTIAL_UNAVAILABLE" });
+    const config = GATEWAY_CONFIGS[serviceType];
+    if (!config) throw Object.assign(new Error("The requested feed has no gateway adapter."), { code: "STREAM_GATEWAY_UNAVAILABLE" });
+    config.validateCredentials?.(creds, environment ?? "", source);
+    if (creds.environment && creds.environment !== environment) throw Object.assign(new Error("The selected environment does not match the saved credential."), { code: "STREAM_ENVIRONMENT_MISMATCH" });
+    const revision = getCredentialRevision(creds);
+    if (expectedRevision && expectedRevision !== revision) throw Object.assign(new Error("The credential changed during startup. Start the listener again."), { code: "STREAM_CREDENTIAL_CHANGED" });
     return { creds, revision, key: this.getStateKey(userId, source, credentialId, environment, revision) };
   }
 
@@ -389,11 +389,11 @@ export class MarketControlHandler {
             );
 
       if (!streamToRegister) return;
-      if (manualListener?.source.startsWith("dhan")) {
+      if (manualListener?.credentialRevision) {
         for (const dep of manualListener.dependencies ?? []) {
-          const resolved = await this.withinStartupBudget(this.resolveDhanConnection(userId, dep.source, manualListener.credentialId, environment, manualListener.credentialRevision), manualListener.startupDeadlineAt);
+          const resolved = await this.withinStartupBudget(this.resolveConnection(userId, dep.source, manualListener.credentialId, environment, manualListener.credentialRevision), manualListener.startupDeadlineAt);
           const state = this.sourceStates.get(resolved.key);
-          if (!state) throw Object.assign(new Error("The required Dhan feed has no active gateway. Subscribe before using Listen."), { code: "DHAN_FEED_UNAVAILABLE" });
+          if (!state) throw Object.assign(new Error("The required feed has no active gateway. Subscribe before using Listen."), { code: "STREAM_FEED_UNAVAILABLE" });
           await state.gateway.waitForStartup(manualListener.startupDeadlineAt ?? Date.now() + 120000);
         }
       }
@@ -570,17 +570,17 @@ export class MarketControlHandler {
         : REDIS_CHANNELS.workflowSubscriptionStreams(listener.userId, lookup, source, listener.environment ?? "");
       const feedStreams = await this.redisPub.smembers(key);
       if (!feedStreams.length) {
-        if (listener.source.startsWith("dhan") && listener.mode === "listen" && listener.requiredSources?.includes(source)) {
-          throw Object.assign(new Error(`The requested ${source.endsWith("_trading") ? "Dhan order-update" : "Dhan market"} feed has no existing subscription. Subscribe before using Listen.`), { code: "DHAN_FEED_NOT_SUBSCRIBED" });
+        if (listener.mode === "listen" && listener.requiredSources?.includes(source)) {
+          throw Object.assign(new Error(`The requested ${source} feed has no existing subscription. Subscribe before using Listen.`), { code: "STREAM_FEED_NOT_SUBSCRIBED" });
         }
         continue;
       }
       const connection = listener.credentialRevision ? this.sourceStates.get(this.getStateKey(listener.userId, source,
         listener.credentialId, listener.environment, listener.credentialRevision)) : undefined;
       const routedStreams = listener.credentialRevision ? feedStreams.filter(stream => connection?.streams.has(stream)) : feedStreams;
-      if (!routedStreams.length && listener.source.startsWith("dhan")) {
+      if (!routedStreams.length && listener.credentialRevision) {
         if (Array.isArray(listener.requiredSources) && listener.requiredSources.includes(source)) {
-          throw Object.assign(new Error("The requested Dhan subscription has no matching gateway for this credential revision and environment."), { code: "DHAN_FEED_UNAVAILABLE" });
+          throw Object.assign(new Error("The requested subscription has no matching gateway for this credential revision and environment."), { code: "STREAM_FEED_UNAVAILABLE" });
         }
         continue;
       }
@@ -990,8 +990,8 @@ export class MarketControlHandler {
           `[MarketControl] Missing required environment for subscribe (${source})`,
         );
       }
-      const deadlineAt = msg.startupDeadlineAt ?? (source.startsWith("dhan") ? Date.now() + 120000 : undefined);
-      const resolved = source.startsWith("dhan") ? await this.withinStartupBudget(this.resolveDhanConnection(userId, source, msg.credentialId, environment, msg.credentialRevision), deadlineAt) : undefined;
+      const deadlineAt = msg.startupDeadlineAt ?? (Date.now() + 120000);
+      const resolved = await this.withinStartupBudget(this.resolveConnection(userId, source, msg.credentialId, environment, msg.credentialRevision), deadlineAt);
       if (deadlineAt && Date.now() >= deadlineAt) throw Object.assign(new Error("Stream startup timed out before connection setup."), { code: "STREAM_STARTUP_TIMEOUT" });
       const connectionKey = resolved?.key ?? this.getStateKey(userId, source);
       let routingStreams: string[] = [];
@@ -1078,7 +1078,7 @@ export class MarketControlHandler {
             state.gateway.subscribeStreams(newStreamNames);
           }
 
-          if (source.startsWith("dhan")) await state.gateway.waitForStartup(deadlineAt ?? Date.now() + 120000);
+          await state.gateway.waitForStartup(deadlineAt ?? Date.now() + 120000);
           // Persist every requested stream for this scope, including streams
           // already subscribed by another workflow or an earlier listener.
           const routingStreamNames = requestedStreamNames;
@@ -1106,7 +1106,7 @@ export class MarketControlHandler {
             `💾 [MarketControl] Stored ${routingStreamNames.length} routing stream names in ${streamsKey}`,
           );
 
-          // Persist broker resolution state (e.g. Dhan symbol->securityId map)
+          // Persist broker resolution state (e.g. symbol-to-instrument identity map)
           // for one-time rehydration on process restart (never per tick).
           const subCfg = getBrokerStreamConfig(source);
           if (subCfg.persistSubscriptionState) {
@@ -1379,7 +1379,7 @@ export class MarketControlHandler {
     marketType?: string,
     environment?: string,
     deadlineAt?: number,
-    resolvedDhan?: { creds: any; revision: string; key: string },
+    resolvedConnection?: { creds: any; revision: string; key: string },
   ): Promise<void> {
     let attemptedGateway: MarketDataGateway | undefined;
     try {
@@ -1392,7 +1392,7 @@ export class MarketControlHandler {
       let creds: any;
 
       // Use getCredentials (like brokers) when credentialId is provided
-      if (resolvedDhan) { creds = resolvedDhan.creds; }
+      if (resolvedConnection) { creds = resolvedConnection.creds; }
       else if (credentialId) {
         const { credentials } = await CredentialManager.getCredentials(
           userId,
@@ -1433,7 +1433,7 @@ export class MarketControlHandler {
         );
       }
 
-      // Dhan environment is verified before credential resolution; other brokers retain their routing behavior.
+      // The gateway adapter verifies credential and environment requirements.
       // Add environment for broker WS routing (Binance + Alpaca)
       if (environment) {
         creds = {
@@ -1457,12 +1457,12 @@ export class MarketControlHandler {
       const gateway = MarketDataGateway.getInstance(
         gatewaySource,
         gatewayInstanceSource,
-        resolvedDhan?.key ?? this.getStateKey(userId, source),
+        resolvedConnection?.key ?? this.getStateKey(userId, source),
       );
 
       attemptedGateway = gateway;
-      gateway.routingIdentity = resolvedDhan?.key ?? this.getStateKey(userId, source);
-      const identity = { userId, source: gatewayInstanceSource, credentialId: credentialId || "default", credentialRevision: resolvedDhan?.revision, environment: environment || "" };
+      gateway.routingIdentity = resolvedConnection?.key ?? this.getStateKey(userId, source);
+      const identity = { userId, source: gatewayInstanceSource, credentialId: credentialId || "default", credentialRevision: resolvedConnection?.revision, environment: environment || "" };
       let publication = Promise.resolve();
       gateway.onLifecycle = (event) => {
         publication = publication.then(async () => {
@@ -1477,11 +1477,11 @@ export class MarketControlHandler {
 
       await getRedisQueue().set(`market:gateway-binding:${userId}:${source}:${identity.environment}${identity.credentialRevision ? `:${identity.credentialId}:${identity.credentialRevision}` : ""}`, JSON.stringify(identity));
       // Retain shared ownership when reopening a failed cycle of the same identity.
-      const previous = this.sourceStates.get(resolvedDhan?.key ?? this.getStateKey(userId, source));
+      const previous = this.sourceStates.get(resolvedConnection?.key ?? this.getStateKey(userId, source));
       // Track state with streams (single source of truth)
-      this.sourceStates.set(resolvedDhan?.key ?? this.getStateKey(userId, source), {
-        key: resolvedDhan?.key ?? this.getStateKey(userId, source),
-        credentialRevision: resolvedDhan?.revision,
+      this.sourceStates.set(resolvedConnection?.key ?? this.getStateKey(userId, source), {
+        key: resolvedConnection?.key ?? this.getStateKey(userId, source),
+        credentialRevision: resolvedConnection?.revision,
         source: gatewayInstanceSource as MarketSource,
         gateway,
         connectedUserId: userId,
@@ -1599,7 +1599,7 @@ export class MarketControlHandler {
           try {
             const stateData = JSON.parse(stateJson);
             const source = String(stateData.source ?? persistedSourceName);
-            const resolved = source.startsWith("dhan") ? await this.resolveDhanConnection(userId, source, stateData.credentialId, stateData.environment, stateData.credentialRevision) : undefined;
+            const resolved = await this.resolveConnection(userId, source, stateData.credentialId, stateData.environment, stateData.credentialRevision);
             const persistedWorkflowStreams = stateData.workflowStreams || [];
 
             console.log(`📦 [MarketControl] Found saved state for ${source}:`, {
@@ -1614,7 +1614,7 @@ export class MarketControlHandler {
             );
             let state = this.sourceStates.get(restoredStateKey);
 
-            // Rehydrate broker resolution state (e.g. Dhan symbol->securityId
+            // Rehydrate broker resolution state (e.g. symbol-to-instrument identity
             // map) before connecting. Gateway open can immediately resubscribe,
             // so native names without securityId must be resolvable first.
             const restoreCfg = getBrokerStreamConfig(source as MarketSource);

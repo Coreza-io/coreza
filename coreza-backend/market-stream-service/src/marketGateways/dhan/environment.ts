@@ -1,5 +1,3 @@
-import { createHash } from "crypto";
-
 export type DhanEnvironment = "sandbox" | "live";
 
 interface DhanEnvironmentConfig {
@@ -57,9 +55,4 @@ function validateDhanEndpoint(value: string, protocol: string): string {
     if (url.protocol !== protocol || url.username || url.password || url.search || url.hash) throw new Error();
     return value.replace(/\/$/, "");
   } catch { throw Object.assign(new Error("The configured Dhan endpoint is invalid."), { code: "DHAN_ENDPOINT_INVALID" }); }
-}
-
-export function getDhanCredentialRevision(creds: Record<string, any>): string {
-  return typeof creds._credentialRevision === "string" ? creds._credentialRevision : createHash("sha256")
-    .update(JSON.stringify([creds.client_id, creds.api_key ?? creds.access_token, creds.environment])).digest("hex");
 }

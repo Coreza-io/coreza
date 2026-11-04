@@ -1,4 +1,6 @@
-# Dhan credential and editor stream startup
+# Generic listener lifecycle and Dhan adapter configuration
+
+Shared routes and services use provider-neutral contracts. HTTP adapters may supply `validateCredentials` and `validateStreamCredentials`; gateway adapters may supply credential/endpoint validation, failure decoding, display labels, subscription requirements, and observation policy. Provider field names, endpoints and validation errors belong to adapter files. Credential revisions, connection isolation, startup budgets, quiet-feed observation, lifecycle delivery and ownership cleanup apply to every broker. The default observation window is two seconds; adapters can override it.
 
 Connect validates a numeric Client ID, an Access Token (`api_key` in the stored schema), and an explicit `live` or `sandbox` environment. An optional numeric Client ID claim in a JWT only detects mismatches; it does not authenticate the token.
 

@@ -32,6 +32,9 @@ export interface BrokerOperation {
 }
 
 export interface BrokerConfig {
+  validateCredentials?: (input: Record<string, unknown>) => Promise<Record<string, any>>;
+  validateStreamCredentials?: (creds: Record<string, any>, environment: string) => void;
+  credentialValidationMessage?: string;
   authType: 'api_key' | 'oauth';
   baseUrl: string | ((creds: any, input?: any) => string);
   makeAuthHeaders: (creds: any) => Record<string, string> | Promise<Record<string, string>>;

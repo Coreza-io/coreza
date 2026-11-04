@@ -19,7 +19,8 @@
  * All Redis operations use keys from REDIS_CHANNELS for consistency.
  */
 
-import { getRedisCache } from "../config/redis";
+import { randomUUID } from "crypto";
+import { getRedisQueue, getRedisCache } from "../config/redis";
 import { REDIS_CHANNELS } from "../config/redisChannels";
 import {
   MAX_LISTENERS_PER_USER,
@@ -303,6 +304,9 @@ export class RegistrationService {
     isLive?: boolean;
     symbols?: string[];
     streamTypes?: string[];
+    readinessChecks?: { source: string; symbols: string[]; streamType: string[];
+      feed?: string; credentialId?: string; marketType?: string;
+      exchange?: string; interval?: string; contractType?: string }[];
     // symbolMatchMode?: "exact" | "wildcard";
     // tradingNativeStreams?: string[];
   }): Promise<void> {
@@ -319,12 +323,46 @@ export class RegistrationService {
       onlyClosedBars: params.onlyClosedBars ?? true, // Default to true
       interval: params.interval,
       isLive: params.isLive ?? false,
+      readinessChecks: params.readinessChecks,
       // symbols: params.symbols ?? [],
       // streamTypes: params.streamTypes ?? [],
       // symbolMatchMode: params.symbolMatchMode ?? "exact",
       // tradingNativeStreams: params.tradingNativeStreams ?? [],
     };
 
+    if (params.readinessChecks) {
+      const requestId = randomUUID();
+      const expiresAt = Date.now() + 15000;
+      const connection = getRedisQueue().duplicate({ lazyConnect: true,
+        enableOfflineQueue: false, maxRetriesPerRequest: 0, commandTimeout: 15000,
+        retryStrategy: () => null });
+      connection.on("error", () => {});
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const deadline = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("Listener startup timed out. Please retry.")), 15000);
+      });
+      const bounded = <T>(promise: Promise<T>) => Promise.race([promise, deadline]);
+      try {
+        await bounded(connection.connect());
+        await bounded(connection.publish(REDIS_CHANNELS.controlRegister,
+          JSON.stringify({ ...controlMessage, requestId, expiresAt: expiresAt - 500 })));
+        const resultKey = `md:registration:result:${params.userId}:${requestId}`;
+        while (Date.now() < expiresAt) {
+          const raw = await bounded(connection.get(resultKey));
+          if (raw) {
+            await bounded(connection.del(resultKey));
+            const result = JSON.parse(raw);
+            if (!result.success) throw new Error(result.error || "Listener registration failed");
+            return;
+          }
+          await bounded(new Promise(resolve => setTimeout(resolve, 100)));
+        }
+        throw new Error("Listener startup timed out. Please retry.");
+      } finally {
+        if (timer) clearTimeout(timer);
+        connection.disconnect();
+      }
+    }
     await redis.publish(
       REDIS_CHANNELS.controlRegister,
       JSON.stringify(controlMessage),

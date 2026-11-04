@@ -199,11 +199,12 @@ export class SubscriptionService {
       // NOTE: workflowId is included for tracking which workflow subscribed which symbols
       // This allows proper cleanup when the workflow is deactivated
       // nodeId is NOT included - Subscribe nodes don't receive data routing (that's handled by StreamData nodes)
-      const requestId = operation === "subscribe" && params.waitForResult
+      const requestId = operation === "subscribe" && params.waitForResult !== false
         ? randomUUID()
         : undefined;
       const controlMessage: Record<string, unknown> = {
         requestId,
+        expiresAt: requestId ? Date.now() + SUBSCRIPTION_READY_TIMEOUT_MS - 1000 : undefined,
         action: operation,
         userId,
         workflowId, // Included for workflow-scoped symbol tracking and cleanup
@@ -300,7 +301,9 @@ export class SubscriptionService {
           source,
           symbols: symbolArray,
           streamType: streamType || [],
-          message: `Successfully ${operation}d to ${symbolArray.length} symbol(s)`,
+          message: operation === "subscribe" && source.startsWith("dhan")
+            ? "Connectivity checked; subscription sent (provider acknowledgment unavailable)."
+            : `Successfully ${operation}d to ${symbolArray.length} symbol(s)`,
         },
       };
     } catch (error) {

@@ -70,8 +70,8 @@ export function isAlpacaAuthSuccess(msg: any, source?: string): boolean {
     );
   }
   return Array.isArray(msg)
-    ? msg.some((m) => m.T === "success")
-    : msg.T === "success";
+    ? msg.some((m) => m.T === "success" && m.msg === "authenticated")
+    : msg.T === "success" && msg.msg === "authenticated";
 }
 
 export function isAlpacaAuthError(msg: any, source?: string): boolean {

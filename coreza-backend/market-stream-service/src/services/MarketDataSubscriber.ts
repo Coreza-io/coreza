@@ -143,8 +143,15 @@ export class MarketDataSubscriber {
     symbolMatchMode: "exact" | "wildcard" = "exact",
     tradingNativeStreams: string[] = [],
     interval?: string,
+    startupDeadline?: number,
   ): Promise<void> {
+    const previous = this.registrations.get(workflowId);
+    let acquired = false;
+    const assertCurrent = () => {
+      if (Date.now() >= (startupDeadline ?? Infinity)) throw new Error("Listener startup timed out. Please retry.");
+    };
     try {
+      assertCurrent();
       console.log(
         `📊 [MarketDataSubscriber] Registering workflow ${workflowId} for streams (isLive: ${isLive ?? false}):`,
         streams,
@@ -178,6 +185,7 @@ export class MarketDataSubscriber {
 
       // Store in memory
       this.registrations.set(workflowId, registration);
+      acquired = true;
 
       // Update stream→workflow mapping
       for (const stream of this.getRedisSubscriptionStreams(registration)) {
@@ -188,6 +196,7 @@ export class MarketDataSubscriber {
           const channel = REDIS_CHANNELS.streamData(stream);
           const { sub } = this.ensureRedisConnections();
           await sub.subscribe(channel);
+          assertCurrent();
           console.log(
             `📊 [MarketDataSubscriber] Subscribed to Redis channel: ${channel}`,
           );
@@ -201,6 +210,7 @@ export class MarketDataSubscriber {
 
       // Persist to Redis
       await this.persistRegistration(registration);
+      assertCurrent();
 
       // Initialize message handler if not already done
       if (!this.isInitialized) {
@@ -213,6 +223,15 @@ export class MarketDataSubscriber {
         `✅ [MarketDataSubscriber] Workflow ${workflowId} registered successfully`,
       );
     } catch (error) {
+      if (startupDeadline !== undefined && acquired) {
+        await this.unregisterWorkflow(userId, workflowId);
+        if (previous) {
+          await this.registerWorkflow(previous.workflowId, previous.nodeId, previous.userId,
+            [...previous.streams], previous.source, previous.environment,
+            previous.onlyClosedBars, previous.isLive, [...previous.allowedSymbols],
+            previous.symbolMatchMode, [...previous.tradingNativeStreams], previous.interval);
+        }
+      }
       console.error(`❌ [MarketDataSubscriber] Register error:`, error);
       throw error;
     }

@@ -26,9 +26,21 @@ interface GenericAuthModalProps {
 const GenericAuthModal: React.FC<GenericAuthModalProps> = ({ definition, onClose }) => {
   const { toast } = useToast();
   const { user, session } = useAuth();
+  const broker = definition.authAction?.url.match(/^\/broker\/(dhan|alpaca|binance)\/auth$/)?.[1];
+  const selections: Record<string, string[]> = broker === "dhan"
+    ? { environment: ["live", "sandbox"] }
+    : broker === "alpaca" ? { environment: ["paper", "live"] }
+    : broker === "binance" ? { environment: ["testnet", "live"], marketType: ["spot", "futures"] } : {};
+  const authFields = [...(definition.authFields || [])];
+  for (const [key, options] of Object.entries(selections)) {
+    if (!authFields.some(field => field.key === key)) {
+      authFields.push({ key, label: key === "marketType" ? "Market" : "Environment",
+        type: "select", default: options[0], required: true });
+    }
+  }
   const [fields, setFields] = useState<Record<string, string>>(() =>
     Object.fromEntries(
-      (definition.authFields || []).map(f =>
+      authFields.map(f =>
         [f.key, f.type === "static" ? (f.value ?? "") : (f.default ?? "")]
       )
     )
@@ -51,7 +63,7 @@ const GenericAuthModal: React.FC<GenericAuthModalProps> = ({ definition, onClose
     }
 
     // Validate required fields except static
-    for (const f of definition.authFields || []) {
+    for (const f of authFields) {
       if (f.required && f.type !== "static" && !fields[f.key]) {
         const errorMessage = `Please enter ${f.label}.`;
         setStatus({ type: "error", message: errorMessage });
@@ -69,7 +81,7 @@ const GenericAuthModal: React.FC<GenericAuthModalProps> = ({ definition, onClose
       // Prepare credentials object (non-static fields only)
       const credentials: Record<string, string> = {};
       
-      for (const f of definition.authFields || []) {
+      for (const f of authFields) {
         if (f.type !== "static" && f.key !== "credential_name") {
           credentials[f.key] = fields[f.key];
         }
@@ -111,7 +123,7 @@ const GenericAuthModal: React.FC<GenericAuthModalProps> = ({ definition, onClose
 
       // Clear sensitive data from memory
       Object.keys(fields).forEach(key => {
-        const field = definition.authFields?.find(f => f.key === key);
+        const field = authFields.find(f => f.key === key);
         if (field?.type === "password") {
           setFields(current => ({ ...current, [key]: "" }));
         }
@@ -142,7 +154,7 @@ const GenericAuthModal: React.FC<GenericAuthModalProps> = ({ definition, onClose
           <DialogTitle className="text-foreground">Connect {definition.name} Account</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
-          {(definition.authFields || []).map(f => (
+          {authFields.map(f => (
             <div key={f.key} className="space-y-2">
               <Label htmlFor={f.key} className="text-sm font-medium text-foreground">
                 {f.label}
@@ -151,6 +163,12 @@ const GenericAuthModal: React.FC<GenericAuthModalProps> = ({ definition, onClose
                 <div className="text-sm text-muted-foreground bg-muted p-2 rounded-md">
                   {f.value}
                 </div>
+              ) : selections[f.key] ? (
+                <select id={f.key} value={fields[f.key]} disabled={loading}
+                  onChange={e => setFields(fs => ({ ...fs, [f.key]: e.target.value }))}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+                  {selections[f.key].map(option => <option key={option} value={option}>{option}</option>)}
+                </select>
               ) : (
                 <Input
                   id={f.key}

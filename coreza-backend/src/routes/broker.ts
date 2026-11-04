@@ -17,6 +17,7 @@ import { requireAuth } from "../middleware/jwtAuth";
 import { BrokerExecutor } from "../nodes/executors/BrokerExecutor";
 import { WorkflowNode } from "../nodes/types";
 import { deriveOAuthCredentialStatus } from "../utils/oauthTokenLifecycle";
+import { validateBrokerConnection } from "../utils/validateBrokerConnection";
 import { OAUTH_CONFIGS } from "../config/oauth";
 
 const router = express.Router();
@@ -82,16 +83,19 @@ router.post("/:broker/auth", async (req, res, next) => {
   try {
     const { broker } = req.params;
     const brokerKey = normalizeBroker(broker);
-    const { credential_name, ...credentials } = req.body;
+    const { credential_name, ...credentials } = req.body ?? {};
     const userId = req.user?.id;
 
     if (!brokerKey) {
       return res.status(400).json({ error: "broker is required" });
     }
 
-    if (!userId || !credential_name) {
+    if (!userId || typeof credential_name !== "string" || !credential_name.trim()) {
       return res.status(400).json({ error: "credential_name is required" });
     }
+
+    const validationError = await validateBrokerConnection(brokerKey, credentials);
+    if (validationError) return res.status(400).json({ error: validationError });
 
     const credentialId = await CredentialManager.saveCredentials(
       userId,

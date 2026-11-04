@@ -162,10 +162,19 @@ export class MarketDataSubscriber {
     tradingNativeStreams: string[] = [],
     interval?: string,
     requireActive = false,
+    startupDeadline?: number,
+    startupReady?: () => boolean,
   ): Promise<void> {
     const release = await this.lockRegistration(workflowId);
+    const previous = this.registrations.get(workflowId);
+    let acquired = false;
     let installed: WorkflowRegistration | undefined;
+    const assertCurrent = () => {
+      if (Date.now() >= (startupDeadline ?? Infinity)) throw new Error("Listener startup timed out. Please retry.");
+      if (startupReady && !startupReady()) throw new Error("Gateway disconnected during listener startup. Subscribe again.");
+    };
     try {
+      assertCurrent();
       console.log(
         `📊 [MarketDataSubscriber] Registering workflow ${workflowId} for streams (isLive: ${isLive ?? false}):`,
         streams,
@@ -210,12 +219,13 @@ export class MarketDataSubscriber {
       };
 
       // Replace routing and aggregation state along with the registration.
-      if (this.registrations.has(workflowId)) {
+      if (startupDeadline === undefined && this.registrations.has(workflowId)) {
         await this.unregisterWorkflowLocked(userId, workflowId);
       }
 
       // Store in memory
       this.registrations.set(workflowId, registration);
+      acquired = true;
       installed = registration;
 
       // Update stream→workflow mapping
@@ -227,6 +237,7 @@ export class MarketDataSubscriber {
           const channel = REDIS_CHANNELS.streamData(stream);
           const { sub } = this.ensureRedisConnections();
           await sub.subscribe(channel);
+          assertCurrent();
           console.log(
             `📊 [MarketDataSubscriber] Subscribed to Redis channel: ${channel}`,
           );
@@ -240,6 +251,24 @@ export class MarketDataSubscriber {
 
       // Persist to Redis
       await this.persistRegistration(registration);
+      assertCurrent();
+
+      // A confirmed startup must stop routing streams outside the new selection.
+      if (previous && startupDeadline !== undefined) {
+        const selected = new Set(this.getRedisSubscriptionStreams(registration));
+        for (const stream of this.getRedisSubscriptionStreams(previous)) {
+          if (selected.has(stream)) continue;
+          const workflows = this.streamWorkflows.get(stream);
+          workflows?.delete(workflowId);
+          if (workflows?.size === 0) {
+            await this.ensureRedisConnections().sub.unsubscribe(REDIS_CHANNELS.streamData(stream));
+            this.streamWorkflows.delete(stream);
+          }
+          assertCurrent();
+        }
+      }
+
+      if (previous && startupDeadline !== undefined) this.tickAggregator.dispose(workflowId);
 
       // Initialize message handler if not already done
       if (!this.isInitialized) {
@@ -252,7 +281,36 @@ export class MarketDataSubscriber {
         `✅ [MarketDataSubscriber] Workflow ${workflowId} registered successfully`,
       );
     } catch (error) {
-      if (installed && this.registrations.get(workflowId) === installed) {
+      if (startupDeadline !== undefined && acquired && this.registrations.get(workflowId) === installed) {
+        // Restore only this attempt's routing changes, retaining prior aggregation state.
+        const current = this.registrations.get(workflowId)!;
+        const priorStreams = new Set(previous ? this.getRedisSubscriptionStreams(previous) : []);
+        if (previous) this.registrations.set(workflowId, previous);
+        else this.registrations.delete(workflowId);
+        for (const stream of this.getRedisSubscriptionStreams(current)) {
+          if (priorStreams.has(stream)) continue;
+          const workflows = this.streamWorkflows.get(stream);
+          workflows?.delete(workflowId);
+          if (workflows?.size === 0) {
+            await this.ensureRedisConnections().sub.unsubscribe(REDIS_CHANNELS.streamData(stream));
+            this.streamWorkflows.delete(stream);
+          }
+        }
+        if (previous) {
+          // A failure while removing obsolete channels must also restore those channels.
+          for (const stream of priorStreams) {
+            if (!this.streamWorkflows.has(stream)) {
+              this.streamWorkflows.set(stream, new Set());
+              await this.ensureRedisConnections().sub.subscribe(REDIS_CHANNELS.streamData(stream));
+            }
+            this.streamWorkflows.get(stream)!.add(workflowId);
+          }
+          await this.persistRegistration(previous);
+        } else {
+          await this.ensureRedisConnections().pub.del(REDIS_CHANNELS.workflowRegistration(userId, workflowId));
+        }
+      }
+      if (startupDeadline === undefined && installed && this.registrations.get(workflowId) === installed) {
         try {
           await this.unregisterWorkflowLocked(userId, workflowId);
         } catch (cleanupError) {

@@ -85,7 +85,9 @@ function preprocessDhanSubscriptionSymbols(
 
     const { symbol, securityId } = splitDhanCompositeSymbolToken(raw);
     if (!symbol || !securityId) continue;
-    registerDhanInstrument(exchangeSegment, symbol, securityId);
+    // Listener matching also uses this normalizer with plain symbols. Those
+    // must preserve the numeric ID learned from a prior subscription.
+    if (raw.includes(":")) registerDhanInstrument(exchangeSegment, symbol, securityId);
     resolved.push(symbol);
   }
 

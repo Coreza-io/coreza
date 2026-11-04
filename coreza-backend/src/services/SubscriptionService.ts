@@ -42,6 +42,14 @@ export interface SubscriptionParams {
   targetWorkflowId?: string;
 }
 
+type SubscriptionReadiness = "acknowledgment" | "sent" | "connection";
+
+const READINESS_MESSAGES: Record<SubscriptionReadiness, string> = {
+  acknowledgment: "Provider confirmed the requested subscription.",
+  sent: "Connectivity checked; subscription sent (provider acknowledgment not verified).",
+  connection: "Connection ready; no separate subscription message required.",
+};
+
 export interface SubscriptionResult {
   success: boolean;
   data?: {
@@ -49,6 +57,7 @@ export interface SubscriptionResult {
     source: string;
     symbols: string[];
     streamType?: string[];
+    readiness?: SubscriptionReadiness;
     message: string;
   };
   error?: string;
@@ -199,11 +208,12 @@ export class SubscriptionService {
       // NOTE: workflowId is included for tracking which workflow subscribed which symbols
       // This allows proper cleanup when the workflow is deactivated
       // nodeId is NOT included - Subscribe nodes don't receive data routing (that's handled by StreamData nodes)
-      const requestId = operation === "subscribe" && params.waitForResult
+      const requestId = operation === "subscribe" && params.waitForResult !== false
         ? randomUUID()
         : undefined;
       const controlMessage: Record<string, unknown> = {
         requestId,
+        expiresAt: requestId ? Date.now() + SUBSCRIPTION_READY_TIMEOUT_MS - 1000 : undefined,
         action: operation,
         userId,
         workflowId, // Included for workflow-scoped symbol tracking and cleanup
@@ -265,7 +275,8 @@ export class SubscriptionService {
 
       await withinDeadline(redis.publish(channel, JSON.stringify(controlMessage)));
 
-      // A published command is not confirmation that the gateway connected.
+      // Only the gateway's result can establish how readiness was verified.
+      let readiness: SubscriptionReadiness | undefined;
       if (requestId) {
         const resultKey = `md:subscription:result:${userId}:${requestId}`;
         const startedAt = Date.now();
@@ -274,10 +285,11 @@ export class SubscriptionService {
           const rawResult = await withinDeadline(redis.get(resultKey));
           if (rawResult) {
             await withinDeadline(redis.del(resultKey));
-            const result = JSON.parse(rawResult) as { success: boolean; error?: string };
+            const result = JSON.parse(rawResult) as { success: boolean; error?: string; readiness?: SubscriptionReadiness };
             if (!result.success) {
               return { success: false, error: result.error || "Subscription failed" };
             }
+            readiness = result.readiness;
             confirmed = true;
             break;
           }
@@ -296,11 +308,16 @@ export class SubscriptionService {
       return {
         success: true,
         data: {
-          status: operation === "subscribe" ? "subscribed" : "unsubscribed",
+          status: operation === "subscribe" ? (requestId ? "subscribed" : "pending") : "unsubscribed",
           source,
           symbols: symbolArray,
           streamType: streamType || [],
-          message: `Successfully ${operation}d to ${symbolArray.length} symbol(s)`,
+          readiness,
+          message: operation === "subscribe"
+            ? !requestId ? "Subscription request submitted."
+              : readiness ? READINESS_MESSAGES[readiness] ?? "Subscription startup completed."
+              : "Subscription startup completed."
+            : `Successfully unsubscribed from ${symbolArray.length} symbol(s)`,
         },
       };
     } catch (error) {

@@ -1,5 +1,6 @@
 import { GatewayConfig } from '../types';
 import {
+  describeDhanStartupError,
   buildDhanAuthMessage,
   buildDhanSubscribeMessage,
   buildDhanUnsubscribeMessage,
@@ -15,6 +16,14 @@ import {
 
 export const dhanGatewayConfig: GatewayConfig = {
   id: 'dhan',
+  connectionCredentialFields: ["api_key", "client_id"],
+  // These feeds have no positive acknowledgment; observe the current connection.
+  subscriptionReadiness: source => ({
+    requiresSubscriptionMessage: source !== 'dhan_trading',
+    confirmation: source === 'dhan_trading' ? 'connection' : 'sent',
+    observationMs: 1500,
+  }),
+  describeStartupError: describeDhanStartupError,
   wsUrl: (creds, source) => getDhanWsUrl(creds, source),
   makeAuthMessage: (creds, source) => buildDhanAuthMessage(creds, source),
   authCompletesOnSend: (source) => source === 'dhan_trading',

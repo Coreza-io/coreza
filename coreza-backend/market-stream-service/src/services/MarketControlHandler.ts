@@ -815,7 +815,7 @@ export class MarketControlHandler {
         );
       }
       // Acquire mutex to prevent concurrent gateway connections
-      await this.gatewayMutex.runExclusive(async () => {
+      const readiness = await this.gatewayMutex.runExclusive(async () => {
         const stateKey = this.getStateKey(userId, source);
         let state = this.sourceStates.get(stateKey);
 
@@ -883,7 +883,7 @@ export class MarketControlHandler {
           try {
             assertCurrent();
             state.gateway.subscribeStreams(newStreamNames);
-            await state.gateway.waitForSubscriptionReady(requestedStreamNames, deadline);
+            const readiness = await state.gateway.waitForSubscriptionReady(requestedStreamNames, deadline);
             assertCurrent();
             console.log(
               `➕ [MarketControl] Ensuring subscriptions on ${source}:`,
@@ -944,6 +944,7 @@ export class MarketControlHandler {
               `✅ [MarketControl] Recorded ${requestedStreamNames.length} subscription stream(s) on ${source}`,
             );
             assertCurrent();
+            return readiness;
           } catch (error) {
             // Only release resources acquired by this attempt; prior claims survive.
             newStreamNames.forEach(name => state!.streams.delete(name));
@@ -966,7 +967,7 @@ export class MarketControlHandler {
       if (msg.requestId) {
         await this.redisPub.set(
           `md:subscription:result:${userId}:${msg.requestId}`,
-          JSON.stringify({ success: true }),
+          JSON.stringify({ success: true, readiness }),
           "EX", 120,
         );
       }

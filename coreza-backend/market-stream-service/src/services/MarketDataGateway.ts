@@ -1,4 +1,5 @@
 import WebSocket from "ws";
+import type { SubscriptionReadinessPolicy } from "../marketGateways/types";
 import { getRedisQueue } from "../config/redis";
 import { REDIS_CHANNELS } from "../config/redisChannels";
 import {
@@ -716,14 +717,14 @@ export class MarketDataGateway {
     });
   }
 
-  async waitForSubscriptionReady(streams: string[], deadline: number): Promise<void> {
+  async waitForSubscriptionReady(streams: string[], deadline: number): Promise<SubscriptionReadinessPolicy["confirmation"]> {
     const socket = this.ws;
     while (Date.now() < deadline) {
       if (this.startupError) throw new Error(this.startupError);
       if (this.ws !== socket || socket?.readyState !== WebSocket.OPEN) {
         throw new Error("Gateway disconnected during stream startup. Please retry.");
       }
-      if (this.isSubscriptionReady(streams)) return;
+      if (this.isSubscriptionReady(streams)) return this.subscriptionReadiness().confirmation;
       await new Promise(resolve => setTimeout(resolve, 50));
     }
     throw new Error("Subscription readiness timed out. Please retry.");

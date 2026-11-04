@@ -568,3 +568,10 @@ export function normalizeDhanMessage(msg: unknown, source?: string): CorezaMarke
     ...depth,
   };
 }
+
+export function describeDhanStartupError(msg: unknown): string | undefined {
+  const type = identifyDhanMessageType(msg);
+  if (type === DHAN_FEED_DISCONNECT_TYPE || type === DHAN_TRADING_CONTROL_TYPE || type === "error") {
+    return "Dhan rejected stream startup. Check the feed, credentials and subscription.";
+  }
+}

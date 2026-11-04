@@ -1,5 +1,7 @@
 import { GatewayConfig } from "../types";
 import {
+  describeBinanceStartupError,
+  isBinanceSubscriptionConfirmed,
   buildBinanceAuthMessage,
   buildBinanceKeepaliveMessage,
   buildBinancePostAuthMessage,
@@ -20,6 +22,12 @@ import { initBinanceTimeSync } from "../../utils/binanceTimeSync";
 
 export const binanceGatewayConfig: GatewayConfig = {
   id: "binance",
+  subscriptionReadiness: source => source === "binance_trading"
+    ? { requiresSubscriptionMessage: false, confirmation: "connection" }
+    : { requiresSubscriptionMessage: true, confirmation: "acknowledgment" },
+  describeStartupError: describeBinanceStartupError,
+  makeSubscriptionExpectation: (_stream, payload) => payload,
+  isSubscriptionConfirmed: isBinanceSubscriptionConfirmed,
   wsUrl: (creds, source) => getBinanceWsUrl(creds, source),
   makeAuthMessage: (creds, source) => buildBinanceAuthMessage(creds, source),
   isAuthSuccess: (msg, source) => isBinanceAuthSuccess(msg, source),

@@ -54,7 +54,7 @@ export class MarketDataGateway {
   private subscribedStreams = new Set<string>();
   private confirmedStreams = new Set<string>();
   private sentStreams = new Map<string, number>();
-  private pendingSubscriptions = new Map<string, any>();
+  private pendingSubscriptions = new Map<string, unknown>();
   private startupError: string | null = null;
   private subscribedStreamSources = new Map<string, string>();
   private isAuthenticated = false;
@@ -379,7 +379,6 @@ export class MarketDataGateway {
       );
 
       for (const msg of messages) {
-        const msgType = this.config.identifyMessageType(msg);
 
         // Check for auth success/error messages
         if (
@@ -441,13 +440,11 @@ export class MarketDataGateway {
           this.startupError = "Provider rejected stream startup. Check the feed and subscription.";
         }
 
-        if (msgType === "feed_disconnect" || msgType === "error" || msgType === "dhan_trading_control") {
-          this.startupError = "Provider rejected stream startup. Check the feed and subscription.";
-        }
-
-        // Only publish market data messages - pass source for filtering
+        // Provider startup checks apply to control messages, not market ticks.
         if (!this.config.shouldPublish(msg, this.source)) {
-          this.confirmSubscription(msg);
+          const startupError = this.config.describeStartupError?.(msg, this.source);
+          if (startupError) this.startupError = startupError;
+          else this.confirmSubscription(msg);
           continue;
         }
 
@@ -660,7 +657,7 @@ export class MarketDataGateway {
     if (this.ws?.readyState === WebSocket.OPEN && this.isAuthenticated) {
       const msg = this.makeSubscribeMessageSafely(newStreams, this.source);
       if (!msg) {
-        if (this.source !== "binance_trading" && this.source !== "dhan_trading") {
+        if (this.subscriptionReadiness().requiresSubscriptionMessage) {
           throw new Error("No subscription could be sent. Check the requested streams.");
         }
         return;
@@ -676,48 +673,31 @@ export class MarketDataGateway {
     }
   }
 
-  private describeStartupError(msg: any): string {
-    if (this.source.startsWith("alpaca")) {
-      if (msg?.code === 402) return "Alpaca authentication rejected. Check the saved credentials.";
-      if (msg?.code === 406) return "Alpaca connection limit reached. Close another connection and retry.";
-      if (msg?.code === 409) return "Alpaca account does not have access to the selected feed.";
-    }
-    return "Provider rejected stream startup. Check the credentials, feed and subscription.";
+  private subscriptionReadiness() {
+    return this.config.subscriptionReadiness?.(this.source) ?? {
+      requiresSubscriptionMessage: true,
+      confirmation: "sent" as const,
+      observationMs: 0,
+    };
   }
 
-  private trackSubscriptionSend(streams: string[], payload: any): void {
+  private describeStartupError(msg: unknown): string {
+    return this.config.describeStartupError?.(msg, this.source) ??
+      "Provider rejected stream startup. Check the credentials, feed and subscription.";
+  }
+
+  private trackSubscriptionSend(streams: string[], payload: unknown): void {
     for (const stream of streams) {
       this.sentStreams.set(stream, Date.now());
-      // Alpaca replies with the full subscribed channel/symbol inventory.
-      if (!this.source.startsWith("alpaca") && !this.source.startsWith("binance")) continue;
-      const expected = this.source.startsWith("alpaca")
-        ? this.config.makeSubscribeMessage([stream], this.source, this.credentials)
-        : payload;
-      this.pendingSubscriptions.set(stream, expected);
+      if (this.subscriptionReadiness().confirmation !== "acknowledgment") continue;
+      const expected = this.config.makeSubscriptionExpectation?.(stream, payload, this.source, this.credentials);
+      if (expected !== undefined) this.pendingSubscriptions.set(stream, expected);
     }
   }
 
-  private confirmSubscription(msg: any): void {
-    if (msg?.T === "error" || msg?.error || typeof msg?.code === "number" && msg.code >= 400) {
-      this.startupError = this.describeStartupError(msg);
-      return;
-    }
-    for (const [stream, pending] of this.pendingSubscriptions) {
-      let confirmed = false;
-      if (this.source.startsWith("alpaca")) {
-        const inventory = msg?.T === "subscription" ? msg
-          : msg?.stream === "listening" ? msg.data : null;
-        if (inventory) {
-          const expected = pending.data ?? pending;
-          confirmed = Object.entries(expected).filter(([key]) => key !== "action")
-            .every(([channel, symbols]) => Array.isArray(symbols) &&
-              Array.isArray(inventory[channel]) && symbols.every((symbol: string) =>
-                inventory[channel].includes(symbol) || inventory[channel].includes("*")));
-        }
-      } else if (this.source.startsWith("binance")) {
-        confirmed = msg?.id === pending.id && msg?.result === null;
-      }
-      if (confirmed) {
+  private confirmSubscription(msg: unknown): void {
+    for (const [stream, expected] of this.pendingSubscriptions) {
+      if (this.config.isSubscriptionConfirmed?.(msg, expected, this.source)) {
         this.confirmedStreams.add(stream);
         this.pendingSubscriptions.delete(stream);
       }
@@ -726,18 +706,13 @@ export class MarketDataGateway {
 
   isSubscriptionReady(streams: string[]): boolean {
     if (this.ws?.readyState !== WebSocket.OPEN || !this.isAuthenticated || this.startupError) return false;
+    const policy = this.subscriptionReadiness();
     return streams.length > 0 && streams.every(stream => {
       if (!this.subscribedStreams.has(stream)) return false;
-      if (this.confirmedStreams.has(stream)) return true;
-      // Dhan provides no positive subscription acknowledgment. Observe the
-      // current socket for early rejection after sending, without awaiting data.
-      if (this.source.startsWith("dhan")) {
-        const sentAt = this.sentStreams.get(stream) ??
-          (this.source === "dhan_trading" ? this.connectionOpenedAt : null);
-        return sentAt != null && Date.now() - sentAt >= 1500;
-      }
-      if (this.source === "binance_trading") return true;
-      return !this.source.startsWith("alpaca") && !this.source.startsWith("binance") && this.sentStreams.has(stream);
+      if (policy.confirmation === "acknowledgment") return this.confirmedStreams.has(stream);
+      const readyAt = policy.confirmation === "connection"
+        ? this.connectionOpenedAt : this.sentStreams.get(stream);
+      return readyAt != null && Date.now() - readyAt >= (policy.observationMs ?? 0);
     });
   }
 
@@ -817,46 +792,11 @@ export class MarketDataGateway {
     }
   }
 
-  private isTradingPayload(msg: any): boolean {
-    if (!msg || typeof msg !== "object") return false;
-    const method = typeof msg.method === "string" ? msg.method : "";
-    return (
-      method.startsWith("session.") ||
-      method.startsWith("userDataStream.") ||
-      method.startsWith("order.")
-    );
-  }
-
-  private assertSocketBoundary(
-    msg: any,
-    direction: "send" | "receive",
-  ): boolean {
+  private assertSocketBoundary(msg: any, direction: "send" | "receive"): boolean {
     if (!msg || typeof msg !== "object") return true;
-
-    if (this.config.validateOutbound)
-      return this.config.validateOutbound(msg, this.source);
-    const method = typeof msg.method === "string" ? msg.method : "";
-    const isSubscribePayload =
-      method === "SUBSCRIBE" || method === "UNSUBSCRIBE";
-    const isTradingPayload = this.isTradingPayload(msg);
-
-    if (isSubscribePayload && this.source === "binance_trading") {
-      this.logger.error(
-        { source: this.source, method, direction },
-        "Dropped market subscribe payload on Binance trading socket",
-      );
-      return false;
-    }
-
-    if (isTradingPayload && this.source !== "binance_trading") {
-      this.logger.error(
-        { source: this.source, method, direction },
-        "Dropped trading payload on Binance market socket",
-      );
-      return false;
-    }
-
-    return true;
+    const allowed = this.config.validateOutbound?.(msg, this.source) ?? true;
+    if (!allowed) this.logger.error({ source: this.source, direction }, "Dropped payload outside socket protocol");
+    return allowed;
   }
 
   private redactAuthMessage(msg: unknown): unknown {

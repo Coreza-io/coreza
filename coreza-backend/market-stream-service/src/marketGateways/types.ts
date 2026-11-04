@@ -12,6 +12,12 @@ export interface SubscribeOptions {
   depthLevels?: string;
 }
 
+export interface SubscriptionReadinessPolicy {
+  requiresSubscriptionMessage: boolean;
+  confirmation: "acknowledgment" | "sent" | "connection";
+  observationMs?: number;
+}
+
 export interface GatewayConfig {
   id: MarketSource;
   wsUrl: string | ((creds: any, source?: string) => string);
@@ -41,6 +47,12 @@ export interface GatewayConfig {
     source?: string,
     creds?: any,
   ) => any;
+
+  // Provider protocol semantics; the gateway owns lifecycle, waiting and cleanup.
+  subscriptionReadiness?: (source: string) => SubscriptionReadinessPolicy;
+  describeStartupError?: (msg: any, source: string) => string | undefined;
+  makeSubscriptionExpectation?: (stream: string, payload: any, source: string, creds: any) => unknown;
+  isSubscriptionConfirmed?: (msg: any, expectation: unknown, source: string) => boolean;
 
   // Message processing - source param for routing behavior
   parseMessage: (buffer: Buffer, source?: string, isBinary?: boolean) => unknown[];

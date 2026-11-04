@@ -1,5 +1,7 @@
 import { GatewayConfig } from "../types";
 import {
+  describeAlpacaStartupError,
+  isAlpacaSubscriptionConfirmed,
   buildAlpacaAuthMessage,
   buildAlpacaSubscribeMessage,
   buildAlpacaUnsubscribeMessage,
@@ -15,6 +17,10 @@ import {
 
 export const alpacaGatewayConfig: GatewayConfig = {
   id: "alpaca",
+  subscriptionReadiness: () => ({ requiresSubscriptionMessage: true, confirmation: "acknowledgment" }),
+  describeStartupError: describeAlpacaStartupError,
+  makeSubscriptionExpectation: (stream, _payload, source) => buildAlpacaSubscribeMessage([stream], source),
+  isSubscriptionConfirmed: isAlpacaSubscriptionConfirmed,
   wsUrl: (creds, source) => getAlpacaWsUrl(creds, source),
   makeAuthMessage: (creds, source) => buildAlpacaAuthMessage(creds, source),
   isAuthSuccess: (msg, source) => isAlpacaAuthSuccess(msg, source),

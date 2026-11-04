@@ -67,6 +67,7 @@ interface ManualListenerRegistration {
   credentialRevision?: string;
   startupDeadlineAt?: number;
   requiredSources?: string[];
+  gatewayIdentities?: string[];
   dependencies?: { source: string; environment: string; credentialId: string; credentialRevision?: string }[];
 }
 
@@ -420,7 +421,7 @@ export class MarketControlHandler {
         [],
         "exact",
         [],
-        interval,
+        interval, false, manualListener?.credentialRevision ? manualListener.gatewayIdentities : undefined,
       );
 
       if (manualListener) {
@@ -542,6 +543,7 @@ export class MarketControlHandler {
         catch (error) {
           if (owned.length) state.workflowStreams.set(listener.routingWorkflowId, new Set(owned));
           unowned.forEach(stream => state.streams.add(stream));
+          if (unowned.length) state.gateway.subscribeStreams(unowned);
           throw error;
         }
         if (state.streams.size === 0) {
@@ -560,6 +562,7 @@ export class MarketControlHandler {
   private async readManualRouting(listener: ManualListenerRegistration): Promise<string[] | undefined> {
     const streams = new Set<string>();
     const dependencies: NonNullable<ManualListenerRegistration["dependencies"]> = [];
+    const gatewayIdentities = new Set<string>();
     const lookup = listener.mode === "listen" ? listener.workflowId : listener.routingWorkflowId;
     for (const source of new Set([listener.source, ...this.getCompanionSources(listener.source)])) {
       const key = listener.scope === "global"
@@ -575,8 +578,14 @@ export class MarketControlHandler {
       const connection = listener.credentialRevision ? this.sourceStates.get(this.getStateKey(listener.userId, source,
         listener.credentialId, listener.environment, listener.credentialRevision)) : undefined;
       const routedStreams = listener.credentialRevision ? feedStreams.filter(stream => connection?.streams.has(stream)) : feedStreams;
-      if (!routedStreams.length && listener.source.startsWith("dhan")) throw Object.assign(new Error("The requested Dhan subscription has no matching gateway for this credential revision and environment."), { code: "DHAN_FEED_UNAVAILABLE" });
+      if (!routedStreams.length && listener.source.startsWith("dhan")) {
+        if (Array.isArray(listener.requiredSources) && listener.requiredSources.includes(source)) {
+          throw Object.assign(new Error("The requested Dhan subscription has no matching gateway for this credential revision and environment."), { code: "DHAN_FEED_UNAVAILABLE" });
+        }
+        continue;
+      }
       routedStreams.forEach(stream => streams.add(stream));
+      if (connection) gatewayIdentities.add(connection.key);
       dependencies.push({ source, environment: listener.environment ?? "", credentialId: listener.credentialId ?? "default", credentialRevision: listener.credentialRevision });
     }
     const key = REDIS_CHANNELS.Listener(listener.userId, listener.workflowId, listener.nodeId);
@@ -589,7 +598,7 @@ export class MarketControlHandler {
       redis.call('SET', KEYS[1], cjson.encode(listener))
       return 1
     `, 1, key, listener.attemptId, JSON.stringify(dependencies));
-    if (active) listener.dependencies = dependencies;
+    if (active) { listener.dependencies = dependencies; listener.gatewayIdentities = Array.from(gatewayIdentities); }
     return active ? Array.from(streams) : undefined;
   }
 
@@ -611,7 +620,7 @@ export class MarketControlHandler {
         if (scope === "workflow" ? listener.scope !== "workflow" || lookup !== targetWorkflowId : listener.scope !== "global") return;
         const streams = await this.readManualRouting(listener);
         if (streams && subscriber.getRegisteredWorkflowIdsForUser(userId).includes(listener.routingWorkflowId)) {
-          await subscriber.addStreamsToRegistration(listener.routingWorkflowId, streams);
+          await subscriber.addStreamsToRegistration(listener.routingWorkflowId, streams, [], listener.credentialRevision ? listener.gatewayIdentities : undefined);
         }
       }); } finally {
         if (!mutex.isLocked() && this.manualRoutingMutexes.get(candidate.routingWorkflowId) === mutex) this.manualRoutingMutexes.delete(candidate.routingWorkflowId);
@@ -1452,6 +1461,7 @@ export class MarketControlHandler {
       );
 
       attemptedGateway = gateway;
+      gateway.routingIdentity = resolvedDhan?.key ?? this.getStateKey(userId, source);
       const identity = { userId, source: gatewayInstanceSource, credentialId: credentialId || "default", credentialRevision: resolvedDhan?.revision, environment: environment || "" };
       let publication = Promise.resolve();
       gateway.onLifecycle = (event) => {

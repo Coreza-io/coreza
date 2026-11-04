@@ -57,6 +57,7 @@ interface WorkflowRegistration {
   nodeId: string;
   userId: string;
   streams: Set<string>;
+  gatewayIdentities?: Set<string>;
   tradingNativeStreams: Set<string>;
   source: MarketSource;
   environment: string;
@@ -72,6 +73,7 @@ interface PersistedRegistration {
   nodeId: string;
   userId: string;
   streams: string[];
+  gatewayIdentities?: string[];
   source: MarketSource;
   environment: string;
   onlyClosedBars?: boolean;
@@ -162,6 +164,7 @@ export class MarketDataSubscriber {
     tradingNativeStreams: string[] = [],
     interval?: string,
     requireActive = false,
+    gatewayIdentities?: string[],
   ): Promise<void> {
     const release = await this.lockRegistration(workflowId);
     let installed: WorkflowRegistration | undefined;
@@ -199,6 +202,7 @@ export class MarketDataSubscriber {
         nodeId,
         userId,
         streams: new Set(allStreams),
+        gatewayIdentities: gatewayIdentities ? new Set(gatewayIdentities) : undefined,
         tradingNativeStreams: new Set(nativeTradingStreams),
         source,
         environment,
@@ -406,7 +410,7 @@ export class MarketDataSubscriber {
             registration.symbolMatchMode || "exact",
             cleanedTradingNativeStreams,
             registration.interval,
-            true,
+            true, registration.gatewayIdentities,
           );
 
           restored++;
@@ -585,7 +589,7 @@ export class MarketDataSubscriber {
         // Trigger each registered workflow
         for (const workflowId of allWorkflows) {
           const registration = this.registrations.get(workflowId);
-          if (!registration) continue;
+          if (!registration || !this.acceptsGateway(registration, event)) continue;
 
           // Filter by source if specified
           const regBroker = String(registration.source ?? "")
@@ -675,8 +679,10 @@ export class MarketDataSubscriber {
     );
   }
 
-  private broadcastAccountEvent(event: CorezaMarketEvent): void {
+  private broadcastAccountEvent(event: CorezaMarketEvent, audience: "all" | "manual" | "live" = "all"): void {
     for (const [workflowId, registration] of this.registrations.entries()) {
+      if (audience === "manual" && (registration.isLive || !this.getRedisSubscriptionStreams(registration).includes(this.resolveTradingRoutingKey(event)))) continue;
+      if (audience === "live" && !registration.isLive) continue;
       const regBroker = String(registration.source || "").split("_")[0];
       if (regBroker === event.source) {
         this.enqueueWorkflowDelivery(workflowId, registration, event);
@@ -692,6 +698,8 @@ export class MarketDataSubscriber {
       return;
     }
 
+    // Manual subscription delivery is independent of the order's execution owner.
+    this.broadcastAccountEvent(event, "manual");
     let owner: any | null = null;
     const MAX_RETRIES = 3;
     const RETRY_DELAY_MS = 200;
@@ -715,11 +723,11 @@ export class MarketDataSubscriber {
         },
         "No owner mapping found after retries; falling back to account-level broadcast",
       );
-      this.broadcastAccountEvent(event);
+      this.broadcastAccountEvent(event, "live");
       return;
     }
     const registration = this.registrations.get(owner.workflowId);
-    if (!registration) return;
+    if (!registration || !registration.isLive) return;
     this.enqueueWorkflowDelivery(owner.workflowId, registration, event);
   }
 
@@ -730,7 +738,7 @@ export class MarketDataSubscriber {
   private formatMarketEventPayload(event: CorezaMarketEvent): {
     data: Record<string, any>;
   } {
-    const { symbol, type, source, _timing, ...cleanEventData } = event;
+    const { symbol, type, source, _timing, _gatewayIdentity, ...cleanEventData } = event;
 
     const typeKeyMap: Record<string, string> = {
       bar: "bar",
@@ -822,11 +830,16 @@ export class MarketDataSubscriber {
     return tradingRoutingKey(tradingSource, nativeEventType);
   }
 
+  private acceptsGateway(registration: WorkflowRegistration, event: CorezaMarketEvent): boolean {
+    return !registration.gatewayIdentities || registration.gatewayIdentities.has(event._gatewayIdentity ?? "");
+  }
+
   private enqueueWorkflowDelivery(
     workflowId: string,
     registration: WorkflowRegistration,
     event: CorezaMarketEvent,
   ): void {
+    if (!this.acceptsGateway(registration, event)) return;
     const domain = event._orderingDomain || `${event.source}:${event.type}`;
     const queueKey = `${workflowId}:${domain}`;
     const enqueueAt = Date.now();
@@ -988,6 +1001,7 @@ export class MarketDataSubscriber {
         return;
       }
 
+      if (!this.acceptsGateway(registration, event)) return;
       // Format market event to match frontend structure
       const formattedPayload = this.formatMarketEventPayload(event);
       const payloadStr = JSON.stringify(event._timing ? { ...formattedPayload, _timing: event._timing } : formattedPayload);
@@ -1081,6 +1095,7 @@ export class MarketDataSubscriber {
     workflowId: string,
     newStreams: string[],
     newTradingNativeStreams: string[] = [],
+    gatewayIdentities?: string[],
   ): Promise<void> {
     const registration = this.registrations.get(workflowId);
 
@@ -1096,6 +1111,7 @@ export class MarketDataSubscriber {
       newStreams,
     );
 
+    if (gatewayIdentities) registration.gatewayIdentities = new Set(gatewayIdentities);
     const streamsToMap = new Set<string>();
     for (const stream of newStreams) {
       if (!registration.streams.has(stream)) {
@@ -1258,6 +1274,7 @@ export class MarketDataSubscriber {
       nodeId: registration.nodeId,
       userId: registration.userId,
       streams: Array.from(registration.streams),
+      gatewayIdentities: registration.gatewayIdentities ? Array.from(registration.gatewayIdentities) : undefined,
       source: registration.source,
       filterSymbols: Array.from(registration.allowedSymbols),
       symbolMatchMode: registration.symbolMatchMode,

@@ -42,8 +42,11 @@ export async function validateDhanCredentials(input: Record<string, unknown>) {
     const timeout = controller.signal.aborted || (axios.isAxiosError(error) && ["ECONNABORTED", "ETIMEDOUT"].includes(error.code ?? ""));
     throw new DhanCredentialError(timeout ? "Dhan credential validation timed out. Nothing was saved; retry Connect." : "Dhan credential validation is unavailable. Nothing was saved; retry Connect.", timeout ? 504 : 502, timeout ? "DHAN_CHECK_TIMEOUT" : "DHAN_CHECK_UNAVAILABLE");
   } finally { clearTimeout(timer); }
-  if ([401, 403].includes(response.status) || response.data?.errorType === "Invalid_Authentication" || response.data?.errorCode === "DH-901") {
+  if (response.status === 401 || response.data?.errorType === "Invalid_Authentication" || response.data?.errorCode === "DH-901") {
     throw new DhanCredentialError("Dhan rejected this Client ID and Access Token for the selected environment. Nothing was saved.", 401, "DHAN_CREDENTIAL_REJECTED");
+  }
+  if (response.status === 403) {
+    throw new DhanCredentialError("Dhan refused the account check. Check permissions and environment before retrying Connect. Nothing was saved.", 403, "DHAN_CHECK_FORBIDDEN");
   }
   if (response.status < 200 || response.status >= 300 || response.data?.errorCode) {
     throw new DhanCredentialError("Dhan could not validate these credentials at the selected environment's account endpoint. Nothing was saved; retry Connect.", 502, "DHAN_CHECK_UNAVAILABLE");

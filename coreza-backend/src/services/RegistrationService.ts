@@ -135,8 +135,10 @@ export class RegistrationService {
       const cache = getRedisCache();
       for (const key of await cache.zrangebyscore(this.startupDeadlinesKey, "-inf", Date.now(), "LIMIT", 0, 25)) {
         const raw = await cache.get(key);
-        if (raw) await this.reconcileListener(JSON.parse(raw));
-        else await cache.zrem(this.startupDeadlinesKey, key);
+        try {
+          if (raw) await this.reconcileListener(JSON.parse(raw));
+          else await cache.zrem(this.startupDeadlinesKey, key);
+        } catch (error) { logger.warn({ error, key }, "Startup deadline reconciliation will be retried"); }
       }
       const [cursor, entries] = await getRedisCache().hscan(this.pendingCleanupKey, this.cleanupCursor, "COUNT", 25);
       this.cleanupCursor = cursor;
@@ -167,7 +169,26 @@ export class RegistrationService {
     void this.retryPendingCleanup();
   }
 
+  private static reconciliations = new Map<string, Promise<any>>();
+
   static async reconcileListener(listener: ListenerData): Promise<any> {
+    const key = REDIS_CHANNELS.Listener(listener.userId, listener.workflowId, listener.nodeId);
+    const taskKey = `${key}:${listener.attemptId}`;
+    const previous = this.reconciliations.get(taskKey) ?? Promise.resolve();
+    const next = previous.catch(() => {}).then(async () => {
+      const raw = await getRedisCache().get(key);
+      const current: ListenerData | undefined = raw ? JSON.parse(raw) : undefined;
+      if (!current || current.attemptId !== listener.attemptId) {
+        return JSON.parse(await getRedisCache().get(`${key}:status:${listener.attemptId}`) ?? "null");
+      }
+      return this.reconcileCurrentListener(current);
+    });
+    this.reconciliations.set(taskKey, next);
+    try { return await next; }
+    finally { if (this.reconciliations.get(taskKey) === next) this.reconciliations.delete(taskKey); }
+  }
+
+  private static async reconcileCurrentListener(listener: ListenerData): Promise<any> {
     if (!listener.attemptId) return null;
     const redis = getRedisCache();
     if (listener.status === "failed" || listener.status === "stopped") {

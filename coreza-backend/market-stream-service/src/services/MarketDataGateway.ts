@@ -129,6 +129,7 @@ export class MarketDataGateway {
   private lastCloseCode: number | undefined;
   private lifecycle: GatewayLifecycle | undefined;
   onLifecycle?: (event: GatewayLifecycle) => void;
+  routingIdentity?: string;
 
   private reportLifecycle(status: GatewayLifecycle["status"], code?: string, message?: string): void {
     if (this.terminalReported) return;
@@ -528,6 +529,7 @@ export class MarketDataGateway {
           typeof event.type === "string" &&
           TRADING_LIFECYCLE_EVENTS.has(event.type);
         if (!event.symbol && !isTradingLifecycleEvent) continue;
+        event._gatewayIdentity = this.routingIdentity;
         event._seq = ++this.messageSequence;
         // Keep ordering domain bound to gateway source identifier (this.source),
         // not normalized event.source. Example: alpaca_trading -> *_trading domain.

@@ -376,9 +376,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
 
     // Cancel pending replay immediately, before waiting for the stop request.
     replaySessionRef.current += 1;
-    executionStore.setNodeData(nodeId, { streamReplayRequestId: undefined, isStreamStepping: false,
-      ...(definition?.executionMode === "streaming" ? { streamLifecycleStatus: "stopped" } : {}),
-    });
+    executionStore.setNodeData(nodeId, { streamReplayRequestId: undefined, isStreamStepping: false });
     notifyStoreUpdate();
     try {
       const stopAction = resolveStopAction(definition);
@@ -401,15 +399,20 @@ const BaseNode: React.FC<BaseNodeProps> = ({
 
       if (!controlsAreCurrent() || (stopPayload.attemptId && executionStore.getNodeData(nodeId).streamAttemptId !== stopPayload.attemptId)) return;
       if (response.ok) {
+        // A provider failure received while Stop was in flight retains its diagnostics.
+        if (executionStore.getNodeData(nodeId).streamLifecycleStatus === "failed") return;
         // Update node state to remove listening status
         const stoppedOutput = resultState("cancelled", { message: "Test listener stopped manually" }, { meta: { timestamp: new Date().toISOString() } });
 
         outputHook.setLastOutput(stoppedOutput);
         executionStore.setNodeData(nodeId, {
           output: stoppedOutput,
+          ...(definition?.executionMode === "streaming" ? { streamLifecycleStatus: "stopped" } : {}),
           ...LISTENER_CLEAR_STATE,
         });
-        updateNodeData(nodeId, { output: stoppedOutput, ...LISTENER_CLEAR_STATE });
+        updateNodeData(nodeId, { output: stoppedOutput, ...LISTENER_CLEAR_STATE,
+          ...(definition?.executionMode === "streaming" ? { streamLifecycleStatus: "stopped" } : {}),
+        });
         notifyStoreUpdate();
         console.log(`✅ [BaseNode] Test listener stopped successfully`);
       }

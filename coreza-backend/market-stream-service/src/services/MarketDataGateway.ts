@@ -67,6 +67,7 @@ export class MarketDataGateway {
   private awaitingPostAuth = false;
   private lastFatalControlMessage: unknown = null;
   private lastPongAt: number | null = null;
+  private connectionGeneration = 0;
   private connectPromise: Promise<void> | null = null;
   private connectReject: ((error: Error) => void) | null = null;
   private reconnectTimer: NodeJS.Timeout | null = null;
@@ -119,12 +120,12 @@ export class MarketDataGateway {
       this.preConnectContext = preConnectContext;
     }
 
-    this.connectPromise = this.connectSocket(
-      credentials,
-      preConnectContext,
-    ).finally(() => {
-      this.connectPromise = null;
-      this.connectReject = null;
+    const generation = ++this.connectionGeneration;
+    this.connectPromise = this.connectSocket(credentials, preConnectContext, generation).finally(() => {
+      if (generation === this.connectionGeneration) {
+        this.connectPromise = null;
+        this.connectReject = null;
+      }
     });
 
     return this.connectPromise;
@@ -132,7 +133,8 @@ export class MarketDataGateway {
 
   private async connectSocket(
     credentials: any,
-    preConnectContext?: GatewayPreConnectContext,
+    preConnectContext: GatewayPreConnectContext | undefined,
+    generation: number,
   ): Promise<void> {
     // Run pre-connect setup if required (e.g., Schwab OAuth streaming URL fetch, Binance listenKey)
     const needsPreConnect =
@@ -150,9 +152,11 @@ export class MarketDataGateway {
       const preparation = this.config.preConnect(credentials, preConnectContext ?? this.preConnectContext);
       let timer: ReturnType<typeof setTimeout> | undefined;
       try {
-        this.credentials = await Promise.race([preparation, new Promise<never>((_, reject) => {
+        const prepared = await Promise.race([preparation, new Promise<never>((_, reject) => {
           timer = setTimeout(() => reject(new Error("Gateway setup timed out. Please retry.")), 8000);
         })]);
+        if (generation !== this.connectionGeneration) throw new Error("Gateway startup was cancelled.");
+        this.credentials = prepared;
       } catch {
         // A late REST setup must never open a socket or retain keepalive timers.
         void preparation.then(prepared => {
@@ -165,6 +169,9 @@ export class MarketDataGateway {
       }
     }
 
+    if (generation !== this.connectionGeneration) {
+      throw new Error("Gateway startup was cancelled.");
+    }
     // Pass source to wsUrl function for behavior routing (e.g., alpaca_news uses different URL)
     const url =
       typeof this.config.wsUrl === "function"
@@ -179,9 +186,13 @@ export class MarketDataGateway {
       const complete = () => { clearTimeout(timer); resolve(); };
       const fail = (error: Error) => { clearTimeout(timer); reject(error); };
       this.connectReject = fail;
-      const socket = new WebSocket(url, {
-        headers: this.config.makeAuthHeaders?.(this.credentials),
-      });
+      let socket: WebSocket;
+      try {
+        socket = new WebSocket(url, { headers: this.config.makeAuthHeaders?.(this.credentials) });
+      } catch {
+        fail(new Error("Gateway connection could not be created. Check the environment and feed."));
+        return;
+      }
       this.ws = socket;
       this.isAuthenticated = false;
       this.startupError = null;
@@ -345,20 +356,9 @@ export class MarketDataGateway {
           );
           return;
         }
-        const chunks: Buffer[] = [];
-        response.on("data", (chunk: Buffer) => chunks.push(chunk));
-        response.on("end", () => {
-          const body = Buffer.concat(chunks).toString("utf8");
-          this.logger.error(
-            { source: this.source, statusCode: response.statusCode, body },
-            "Gateway unexpected response",
-          );
-          reject(
-            new Error(
-              `Gateway unexpected response: ${response.statusCode ?? "unknown"}`,
-            ),
-          );
-        });
+        response.resume();
+        this.logger.error({ source: this.source, statusCode: response.statusCode }, "Gateway handshake rejected");
+        fail(new Error(`Gateway handshake rejected (HTTP ${response.statusCode ?? "unknown"}). Check the environment and feed.`));
       });
     });
   }
@@ -441,7 +441,7 @@ export class MarketDataGateway {
           this.startupError = "Provider rejected stream startup. Check the feed and subscription.";
         }
 
-        if (msgType === "feed_disconnect" || msgType === "error") {
+        if (msgType === "feed_disconnect" || msgType === "error" || msgType === "dhan_trading_control") {
           this.startupError = "Provider rejected stream startup. Check the feed and subscription.";
         }
 
@@ -659,10 +659,15 @@ export class MarketDataGateway {
 
     if (this.ws?.readyState === WebSocket.OPEN && this.isAuthenticated) {
       const msg = this.makeSubscribeMessageSafely(newStreams, this.source);
-      if (!msg) return;
-
-      this.trackSubscriptionSend(newStreams, msg);
+      if (!msg) {
+        if (this.source !== "binance_trading" && this.source !== "dhan_trading") {
+          throw new Error("No subscription could be sent. Check the requested streams.");
+        }
+        return;
+      }
       const payloadCount = this.sendGatewayMessages(msg);
+      if (!payloadCount) throw new Error("Subscription could not be sent on this connection.");
+      this.trackSubscriptionSend(newStreams, msg);
       this.lastSubscribeSentAt = Date.now();
       this.logger.info(
         { source: this.source, streams: newStreams, payloadCount },
@@ -720,7 +725,7 @@ export class MarketDataGateway {
   }
 
   isSubscriptionReady(streams: string[]): boolean {
-    if (!this.getStats().connected || !this.isAuthenticated || this.startupError) return false;
+    if (this.ws?.readyState !== WebSocket.OPEN || !this.isAuthenticated || this.startupError) return false;
     return streams.length > 0 && streams.every(stream => {
       if (!this.subscribedStreams.has(stream)) return false;
       if (this.confirmedStreams.has(stream)) return true;
@@ -798,8 +803,12 @@ export class MarketDataGateway {
       const msg = this.makeSubscribeMessageSafely(streams, streamSource);
       if (!msg) continue;
 
-      this.trackSubscriptionSend(streams, msg);
       const payloadCount = this.sendGatewayMessages(msg);
+      if (!payloadCount) {
+        this.startupError = "Subscription could not be sent on this connection.";
+        continue;
+      }
+      this.trackSubscriptionSend(streams, msg);
       this.lastSubscribeSentAt = Date.now();
       this.logger.info(
         { source: this.source, streamSource, streams, payloadCount },
@@ -1050,6 +1059,7 @@ export class MarketDataGateway {
   }
 
   disconnect(): void {
+    ++this.connectionGeneration;
     this.clearReconnectTimer();
     this.connectReject?.(
       new Error(`Gateway ${this.source} disconnected intentionally`),

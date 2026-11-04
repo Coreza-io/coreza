@@ -279,6 +279,7 @@ export class MarketControlHandler {
               environment,
             );
 
+      const liveChecks: (() => boolean)[] = [];
       if (msg.readinessChecks) {
         if (!msg.readinessChecks.length) throw new Error("Select a stream and subscribe first.");
         const matched = new Set<string>();
@@ -312,6 +313,7 @@ export class MarketControlHandler {
               !state.gateway.isSubscriptionReady(requested)) {
             throw new Error("No active, ready subscription matches the requested streams. Subscribe first.");
           }
+          liveChecks.push(() => state.gateway.isSubscriptionReady(requested));
           requested.forEach(stream => matched.add(stream));
         }
         if (Date.now() >= (msg.expiresAt ?? Infinity)) throw new Error("Listener startup timed out. Please retry.");
@@ -339,6 +341,7 @@ export class MarketControlHandler {
         [],
         interval,
         msg.expiresAt,
+        msg.readinessChecks ? () => liveChecks.every(check => check()) : undefined,
       );
 
       if (msg.requestId && Date.now() < (msg.expiresAt ?? Infinity)) {

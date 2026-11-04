@@ -144,11 +144,13 @@ export class MarketDataSubscriber {
     tradingNativeStreams: string[] = [],
     interval?: string,
     startupDeadline?: number,
+    startupReady?: () => boolean,
   ): Promise<void> {
     const previous = this.registrations.get(workflowId);
     let acquired = false;
     const assertCurrent = () => {
       if (Date.now() >= (startupDeadline ?? Infinity)) throw new Error("Listener startup timed out. Please retry.");
+      if (startupReady && !startupReady()) throw new Error("Gateway disconnected during listener startup. Subscribe again.");
     };
     try {
       assertCurrent();
@@ -224,13 +226,22 @@ export class MarketDataSubscriber {
       );
     } catch (error) {
       if (startupDeadline !== undefined && acquired) {
-        await this.unregisterWorkflow(userId, workflowId);
-        if (previous) {
-          await this.registerWorkflow(previous.workflowId, previous.nodeId, previous.userId,
-            [...previous.streams], previous.source, previous.environment,
-            previous.onlyClosedBars, previous.isLive, [...previous.allowedSymbols],
-            previous.symbolMatchMode, [...previous.tradingNativeStreams], previous.interval);
+        // Restore only this attempt's routing changes, retaining prior aggregation state.
+        const current = this.registrations.get(workflowId)!;
+        const priorStreams = new Set(previous ? this.getRedisSubscriptionStreams(previous) : []);
+        if (previous) this.registrations.set(workflowId, previous);
+        else this.registrations.delete(workflowId);
+        for (const stream of this.getRedisSubscriptionStreams(current)) {
+          if (priorStreams.has(stream)) continue;
+          const workflows = this.streamWorkflows.get(stream);
+          workflows?.delete(workflowId);
+          if (workflows?.size === 0) {
+            await this.ensureRedisConnections().sub.unsubscribe(REDIS_CHANNELS.streamData(stream));
+            this.streamWorkflows.delete(stream);
+          }
         }
+        if (previous) await this.persistRegistration(previous);
+        else await this.ensureRedisConnections().pub.del(REDIS_CHANNELS.workflowRegistration(userId, workflowId));
       }
       console.error(`❌ [MarketDataSubscriber] Register error:`, error);
       throw error;

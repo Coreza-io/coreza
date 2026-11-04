@@ -388,7 +388,7 @@ router.post("/:source/subscribe", async (req, res) => {
       );
 
     const normalizedSymbols = buildCryptoSymbols(
-      stream_type,
+      assetType,
       crypto_base,
       crypto_quote,
     );
@@ -404,9 +404,10 @@ router.post("/:source/subscribe", async (req, res) => {
     //   return res.status(400).json({ error: "account_id is required for account_activity" });
     // }
 
+    let result;
     if (hasOrderUpdate) {
       const tradingSourceId = getTradingCompanionSource(source);
-      await SubscriptionService.subscribe({
+      result = await SubscriptionService.subscribe({
         source: tradingSourceId as any,
         userId,
         workflowId: workflowId,
@@ -421,10 +422,11 @@ router.post("/:source/subscribe", async (req, res) => {
         scope,
         targetWorkflowId,
       });
+      if (!result.success) return res.status(400).json(resultFailure(result.error ?? "Subscription failed", { data: null }));
     }
     if (hasNews) {
       const newsSourceId = `${source}_news`;
-      await SubscriptionService.subscribe({
+      result = await SubscriptionService.subscribe({
         source: newsSourceId as any,
         userId,
         workflowId: workflowId,
@@ -439,12 +441,12 @@ router.post("/:source/subscribe", async (req, res) => {
         scope,
         targetWorkflowId,
       });
+      if (!result.success) return res.status(400).json(resultFailure(result.error ?? "Subscription failed", { data: null }));
     }
 
     // Subscribe to market/crypto streams (excluding trading/news streams)
 
-    let result;
-    if (marketstreamType.length > 0 || !hasOrderUpdate) {
+    if (marketstreamType.length > 0 || (!hasOrderUpdate && !hasNews)) {
       result = await SubscriptionService.subscribe({
         source: sourceId,
         userId,
@@ -464,19 +466,11 @@ router.post("/:source/subscribe", async (req, res) => {
         scope,
         targetWorkflowId,
       });
-    } else {
-      result = {
-        success: true,
-        data: {
-          message: "Subscribed to order updates",
-          symbols: resolvedSymbols,
-          streamType: tradingstreamType,
-        },
-      };
+      if (!result.success) return res.status(400).json(resultFailure(result.error ?? "Subscription failed", { data: null }));
     }
 
-    if (!result.success) {
-      return res.status(400).json(resultFailure(result.error ?? "Node operation failed", { data: null }));
+    if (!result || !result.success) {
+      return res.status(400).json(resultFailure(result?.error ?? "Node operation failed", { data: null }));
     }
 
     res.json(resultSuccess({ message: result.data?.message, symbols: result.data?.symbols, stream_type: result.data?.streamType, sourceId, node_id, workflowId: workflowId || null }));

@@ -174,11 +174,6 @@ export class StreamingLifecycleAdapter {
       crypto_quote?: string;
     };
 
-    await redis.sadd(
-      REDIS_CHANNELS.activeStreamingWorkflows(userId),
-      workflowId,
-    );
-
     const sourceId = resolveStreamSourceId(triggerNode);
     if (!sourceId) {
       throw createError("Unknown streaming source", 400);
@@ -228,166 +223,99 @@ export class StreamingLifecycleAdapter {
     const subscriptionScope: "workflow" | "global" =
       nodeValues.scope === "global" ? "global" : "workflow";
 
-    // --- Subscribe FIRST, then wait for readiness, then register ---
+    const subscribeReady = async (params: Parameters<typeof SubscriptionService.subscribe>[0]) => {
+      const result = await SubscriptionService.subscribe(params);
+      if (!result.success) throw new Error(result.error || "Stream subscription failed");
+      return result;
+    };
 
-    // 1. Subscribe to trading source for order updates
-    if (hasOrderUpdate) {
-      const baseName = triggerNode.subCategory;
-      const tradingSourceId = `${baseName}_trading`;
-      await SubscriptionService.subscribe({
-        source: tradingSourceId,
-        userId,
-        workflowId,
-        nodeId: triggerNode.id,
-        credentialId: nodeValues.credential_id || "",
-        symbols: ["*"],
-        streamType: tradingstreamType,
-        environment,
-        assetType: nodeValues.assetType,
-        marketType: nodeValues.marketType,
-        contractType: nodeValues.contractType as
-          | "perpetual"
-          | "current_quarter"
-          | "next_quarter"
-          | undefined,
-        scope: subscriptionScope,
-        targetWorkflowId: workflowId,
-      });
+    if (nodeValues.mode !== "listen") {
+      // --- Subscribe FIRST, then wait for readiness, then register ---
 
-      // Wait for trading subscription readiness
-      const tradingReady = await SubscriptionService.waitForSubscriptionReady({
-        userId,
-        source: tradingSourceId,
-        environment,
-        scope: subscriptionScope,
-        workflowId,
-      });
-      if (!tradingReady) {
-        logger.warn(
-          {
-            userId,
-            workflowId,
-            source: tradingSourceId,
-          },
-          "Trading subscription readiness timed out; continuing in market-only mode",
-        );
+      // 1. Subscribe to trading source for order updates
+      if (hasOrderUpdate) {
+        const baseName = triggerNode.subCategory;
+        const tradingSourceId = `${baseName}_trading`;
+        await subscribeReady({
+          source: tradingSourceId,
+          userId,
+          workflowId,
+          nodeId: triggerNode.id,
+          credentialId: nodeValues.credential_id || "",
+          symbols: ["*"],
+          streamType: tradingstreamType,
+          environment,
+          assetType: nodeValues.assetType,
+          marketType: nodeValues.marketType,
+          contractType: nodeValues.contractType as
+            | "perpetual"
+            | "current_quarter"
+            | "next_quarter"
+            | undefined,
+          scope: subscriptionScope,
+          targetWorkflowId: workflowId,
+        });
       }
-    }
 
-    // 1b. Subscribe to dedicated news source when selected
-    if (hasNews) {
-      const baseName = triggerNode.subCategory;
-      const newsSourceId = `${baseName}_news`;
-      await SubscriptionService.subscribe({
-        source: newsSourceId,
-        userId,
-        workflowId,
-        nodeId: triggerNode.id,
-        credentialId: nodeValues.credential_id || "",
-        symbols,
-        streamType: newsStreamType.length > 0 ? newsStreamType : ["news"],
-        feed: nodeValues.feed,
-        environment,
-        assetType: nodeValues.assetType,
-        marketType: nodeValues.marketType,
-        contractType: nodeValues.contractType as
-          | "perpetual"
-          | "current_quarter"
-          | "next_quarter"
-          | undefined,
-        scope: subscriptionScope,
-        targetWorkflowId: workflowId,
-      });
-
-      const newsReady = await SubscriptionService.waitForSubscriptionReady({
-        userId,
-        source: newsSourceId,
-        environment,
-        scope: subscriptionScope,
-        workflowId,
-      });
-
-      if (!newsReady) {
-        logger.warn(
-          {
-            userId,
-            workflowId,
-            source: newsSourceId,
-          },
-          "News subscription readiness timed out; continuing without news stream",
-        );
+      // 1b. Subscribe to dedicated news source when selected
+      if (hasNews) {
+        const baseName = triggerNode.subCategory;
+        const newsSourceId = `${baseName}_news`;
+        await subscribeReady({
+          source: newsSourceId,
+          userId,
+          workflowId,
+          nodeId: triggerNode.id,
+          credentialId: nodeValues.credential_id || "",
+          symbols,
+          streamType: newsStreamType.length > 0 ? newsStreamType : ["news"],
+          feed: nodeValues.feed,
+          environment,
+          assetType: nodeValues.assetType,
+          marketType: nodeValues.marketType,
+          contractType: nodeValues.contractType as
+            | "perpetual"
+            | "current_quarter"
+            | "next_quarter"
+            | undefined,
+          scope: subscriptionScope,
+          targetWorkflowId: workflowId,
+        });
       }
-    }
 
-    // 2. Subscribe to market/crypto streams
-    if (
-      symbols.length > 0 &&
-      (marketstreamType.length > 0 || (!hasOrderUpdate && !hasNews))
-    ) {
-      const marketSubscribeParams = {
-        source: sourceId,
-        userId,
-        workflowId,
-        nodeId: triggerNode.id,
-        credentialId: nodeValues.credential_id || "",
-        symbols,
-        streamType: marketstreamType.length > 0 ? marketstreamType : undefined,
-        exchange: nodeValues.exchange,
-        feed: nodeValues.feed,
-        environment,
-        assetType: nodeValues.assetType,
-        marketType: nodeValues.marketType,
-        contractType: nodeValues.contractType as
-          | "perpetual"
-          | "current_quarter"
-          | "next_quarter"
-          | undefined,
-        interval: nodeValues.interval,
-        depth_levels:
-          nodeValues.depth_levels !== undefined
-            ? String(nodeValues.depth_levels)
-            : undefined,
-        scope: subscriptionScope,
-        targetWorkflowId: workflowId,
-      };
+      // 2. Subscribe to market/crypto streams
+      if (
+        symbols.length > 0 &&
+        (marketstreamType.length > 0 || (!hasOrderUpdate && !hasNews))
+      ) {
+        const marketSubscribeParams = {
+          source: sourceId,
+          userId,
+          workflowId,
+          nodeId: triggerNode.id,
+          credentialId: nodeValues.credential_id || "",
+          symbols,
+          streamType: marketstreamType.length > 0 ? marketstreamType : undefined,
+          exchange: nodeValues.exchange,
+          feed: nodeValues.feed,
+          environment,
+          assetType: nodeValues.assetType,
+          marketType: nodeValues.marketType,
+          contractType: nodeValues.contractType as
+            | "perpetual"
+            | "current_quarter"
+            | "next_quarter"
+            | undefined,
+          interval: nodeValues.interval,
+          depth_levels:
+            nodeValues.depth_levels !== undefined
+              ? String(nodeValues.depth_levels)
+              : undefined,
+          scope: subscriptionScope,
+          targetWorkflowId: workflowId,
+        };
 
-      await SubscriptionService.subscribe(marketSubscribeParams);
-
-      // Wait for market subscription readiness
-      const marketReady = await SubscriptionService.waitForSubscriptionReady({
-        userId,
-        source: sourceId,
-        environment,
-        scope: subscriptionScope,
-        workflowId,
-        timeoutMs: 15000,
-      });
-      if (!marketReady) {
-        logger.warn(
-          {
-            userId,
-            workflowId,
-            source: sourceId,
-          },
-          "Market subscription readiness timed out on first attempt; retrying subscribe once",
-        );
-
-        await SubscriptionService.subscribe(marketSubscribeParams);
-        const marketRetryReady =
-          await SubscriptionService.waitForSubscriptionReady({
-            userId,
-            source: sourceId,
-            environment,
-            scope: subscriptionScope,
-            workflowId,
-            timeoutMs: 10000,
-          });
-
-        if (!marketRetryReady) {
-          throw new Error(
-            `Activation failed: Market subscription readiness timed out for source ${sourceId}. The broker gateway may be slow to connect. Please try again.`,
-          );
-        }
+        await subscribeReady(marketSubscribeParams);
       }
     }
 
@@ -427,19 +355,38 @@ export class StreamingLifecycleAdapter {
     });
 
     // 3. NOW register the workflow (subscriptions are materialized)
-    await RegistrationService.publishRegisterWorkflow({
-      userId,
+    try {
+      await RegistrationService.publishRegisterWorkflow({
+        readinessChecks: [
+          ...(marketstreamType.length ? [{ source: sourceId, symbols, streamType: marketstreamType,
+            credentialId: nodeValues.credential_id, feed: nodeValues.feed, marketType: nodeValues.marketType,
+            exchange: nodeValues.exchange, interval: nodeValues.interval, contractType: nodeValues.contractType }] : []),
+          ...(hasOrderUpdate ? [{ source: `${triggerNode.subCategory}_trading`, symbols: ["*"],
+            streamType: tradingstreamType, credentialId: nodeValues.credential_id, marketType: nodeValues.marketType }] : []),
+          ...(hasNews ? [{ source: `${triggerNode.subCategory}_news`, symbols, streamType: newsStreamType,
+            credentialId: nodeValues.credential_id, feed: nodeValues.feed, marketType: nodeValues.marketType }] : []),
+        ],
+        userId,
+        workflowId,
+        nodeId: triggerNode.id,
+        source: sourceId,
+        scope: subscriptionScope,
+        environment,
+        onlyClosedBars: nodeValues.onlyClosedBars ?? true,
+        interval: nodeValues.interval,
+        isLive: true,
+        symbols: symbols,
+        streamTypes: streamType,
+      });
+    } catch (error) {
+      await RegistrationService.deleteListener(userId, workflowId, triggerNode.id);
+      throw error;
+    }
+
+    await redis.sadd(
+      REDIS_CHANNELS.activeStreamingWorkflows(userId),
       workflowId,
-      nodeId: triggerNode.id,
-      source: sourceId,
-      scope: subscriptionScope,
-      environment,
-      onlyClosedBars: nodeValues.onlyClosedBars ?? true,
-      interval: nodeValues.interval,
-      isLive: true,
-      symbols: symbols,
-      streamTypes: streamType,
-    });
+    );
 
     await this.clearSessionData(userId, workflowId);
     await jobQueue.startWorkflowRunner(

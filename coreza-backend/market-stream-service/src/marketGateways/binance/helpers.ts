@@ -799,3 +799,15 @@ export function normalizeBinanceMessage(msg: any, source?: string) {
       return null;
   }
 }
+
+export function describeBinanceStartupError(msg: any, source?: string): string | undefined {
+  if (isBinanceAuthError(msg, source) || msg?.error ||
+      (typeof msg?.code === "number" && msg.code !== 0)) {
+    return "Binance rejected stream startup. Check the credentials, environment and subscription.";
+  }
+}
+
+export function isBinanceSubscriptionConfirmed(msg: any, expectation: unknown): boolean {
+  const request = expectation as { id?: unknown } | null;
+  return request?.id != null && msg?.id === request.id && msg?.result === null;
+}

@@ -70,8 +70,8 @@ export function isAlpacaAuthSuccess(msg: any, source?: string): boolean {
     );
   }
   return Array.isArray(msg)
-    ? msg.some((m) => m.T === "success")
-    : msg.T === "success";
+    ? msg.some((m) => m.T === "success" && m.msg === "authenticated")
+    : msg.T === "success" && msg.msg === "authenticated";
 }
 
 export function isAlpacaAuthError(msg: any, source?: string): boolean {
@@ -370,4 +370,24 @@ export function normalizeAlpacaMessage(
     default:
       return null;
   }
+}
+
+/** Provider errors are interpreted here, never by the shared gateway. */
+export function describeAlpacaStartupError(msg: any, source?: string): string | undefined {
+  if (!isAlpacaAuthError(msg, source)) return undefined;
+  if (msg?.code === 402) return "Alpaca authentication rejected. Check the saved credentials.";
+  if (msg?.code === 406) return "Alpaca connection limit reached. Close another connection and retry.";
+  if (msg?.code === 409) return "Alpaca account does not have access to the selected feed.";
+  return "Alpaca rejected stream startup. Check the credentials, feed and subscription.";
+}
+
+export function isAlpacaSubscriptionConfirmed(msg: any, expectation: unknown): boolean {
+  const inventory = msg?.T === "subscription" ? msg
+    : msg?.stream === "listening" ? msg.data : null;
+  if (!inventory || !expectation || typeof expectation !== "object") return false;
+  const payload = expectation as Record<string, any>;
+  const channels = Object.entries(payload.data ?? payload).filter(([key]) => key !== "action");
+  return channels.length > 0 && channels.every(([channel, symbols]) =>
+    Array.isArray(symbols) && Array.isArray(inventory[channel]) &&
+    symbols.every((symbol: string) => inventory[channel].includes(symbol) || inventory[channel].includes("*")));
 }

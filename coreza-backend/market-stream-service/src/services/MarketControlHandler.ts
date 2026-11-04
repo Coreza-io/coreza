@@ -5,9 +5,11 @@
  */
 
 import Redis from "ioredis";
+import { createHash } from "crypto";
 import { Mutex } from "async-mutex";
 import { createRedisPubSub } from "../config/redis";
 import { REDIS_CHANNELS } from "../config/redisChannels";
+import { GATEWAY_CONFIGS } from "../marketGateways";
 import { MarketDataGateway } from "./MarketDataGateway";
 import { MarketDataSubscriber } from "./MarketDataSubscriber";
 import CredentialManager from "../utils/credentialManager";
@@ -28,6 +30,7 @@ import type { MarketSource } from "../types/marketEvent";
 interface ControlMessage {
   action: "subscribe" | "unsubscribe";
   requestId?: string;
+  expiresAt?: number;
   userId: string;
   workflowId: string;
   nodeId?: string;
@@ -54,6 +57,10 @@ interface SourceState {
   gateway: MarketDataGateway;
   connectedUserId: string;
   credentialId: string;
+  credentialIdentity?: string;
+  environment?: string;
+  feed?: string;
+  marketType?: string;
   // Single source of truth: native stream names (btcusdt@kline_1m, bars.AAPL)
   streams: Set<string>;
   workflowStreams: Map<string, Set<string>>; // workflowId → streams (for reference counting)
@@ -129,6 +136,33 @@ export class MarketControlHandler {
     return MarketControlHandler.instance;
   }
 
+  private connectionOptions(source: string, feed?: string, marketType?: string) {
+    return GATEWAY_CONFIGS[source.split("_")[0]]?.normalizeConnectionOptions?.(
+      source, { feed, marketType },
+    ) ?? { feed, marketType };
+  }
+
+  private credentialIdentity(source: string, credentials: any): string | undefined {
+    const fields = GATEWAY_CONFIGS[source.split("_")[0]]?.connectionCredentialFields;
+    if (!fields) return undefined;
+    return createHash("sha256").update(JSON.stringify(fields.map(field => credentials[field]))).digest("hex");
+  }
+
+  private async assertCurrentCredential(state: SourceState): Promise<void> {
+    if (!state.credentialIdentity) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const lookup = CredentialManager.getCredentials(
+      state.connectedUserId, state.source.split("_")[0], state.credentialId, { useCache: false },
+    );
+    const result = await Promise.race([lookup, new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error("Saved credential verification timed out. Please retry.")), 5000);
+    })]).finally(() => { if (timer) clearTimeout(timer); });
+    const { credentials } = result;
+    if (!credentials || this.credentialIdentity(state.source, credentials.client_json) !== state.credentialIdentity) {
+      throw new Error("The saved credential has changed. Unsubscribe the existing connection and subscribe again.");
+    }
+  }
+
   private getStateKey(userId: string, source: MarketSource | string): string {
     return `${userId}:${getUnifiedSocketStateSource(source)}`;
   }
@@ -192,11 +226,11 @@ export class MarketControlHandler {
           if (channel === REDIS_CHANNELS.controlSubscribe) {
             await this.handleSubscribe(msg as ControlMessage);
           } else if (channel === REDIS_CHANNELS.controlUnsubscribe) {
-            await this.handleUnsubscribe(msg as ControlMessage);
+            await this.gatewayMutex.runExclusive(() => this.handleUnsubscribe(msg as ControlMessage));
           } else if (channel === REDIS_CHANNELS.controlRegister) {
-            await this.handleRegister(msg);
+            await this.gatewayMutex.runExclusive(() => this.handleRegister(msg));
           } else if (channel === REDIS_CHANNELS.controlUnregister) {
-            await this.handleUnregister(msg);
+            await this.gatewayMutex.runExclusive(() => this.handleUnregister(msg));
           }
         };
         // Preserve arrival order across registration's DB lookup and the earlier
@@ -239,6 +273,11 @@ export class MarketControlHandler {
    */
   private async handleRegister(msg: {
     action: string;
+    requestId?: string;
+    expiresAt?: number;
+    readinessChecks?: { source: string; symbols: string[]; streamType: string[];
+      feed?: string; credentialId?: string; marketType?: string;
+      exchange?: string; interval?: string; contractType?: string }[];
     userId: string;
     workflowId: string;
     nodeId: string;
@@ -281,7 +320,7 @@ export class MarketControlHandler {
 
       const subscriber = MarketDataSubscriber.getInstance();
       // NORMAL WORKFLOW MODE: Get symbols from Redis subscriptions
-      const streamToRegister =
+      let streamToRegister =
         scope === "global"
           ? await this.getUserSubscribedStreams(userId, source, environment)
           : await this.getWorkflowScopedStreams(
@@ -290,6 +329,50 @@ export class MarketControlHandler {
               source,
               environment,
             );
+
+      const liveChecks: (() => boolean)[] = [];
+      if (msg.readinessChecks) {
+        if (!msg.readinessChecks.length) throw new Error("Select a stream and subscribe first.");
+        const matched = new Set<string>();
+        for (const check of msg.readinessChecks) {
+          const state = this.sourceStates.get(this.getStateKey(userId, check.source));
+          const selected = this.connectionOptions(check.source, check.feed, check.marketType);
+          if (!state || state.environment !== environment || state.feed !== selected.feed ||
+              (check.credentialId && state.credentialId !== check.credentialId) ||
+              state.marketType !== selected.marketType) {
+            throw new Error("No ready subscription matches this account, environment and feed. Subscribe first.");
+          }
+          await this.assertCurrentCredential(state);
+          const key = scope === "global"
+            ? REDIS_CHANNELS.globalSubscriptionStreams(userId, check.source, environment)
+            : REDIS_CHANNELS.workflowSubscriptionStreams(userId, workflowId, check.source, environment);
+          const scoped = await this.redisPub.smembers(key);
+          let requested = isTradingSource(check.source)
+            ? check.streamType.map(type => tradingRoutingKey(check.source, type))
+            : buildNativeStreamNames(check.source as MarketSource, check.symbols, check.streamType,
+                check.interval, check.contractType, check.exchange);
+          // Listen without symbols means all matching streams in the selected scope.
+          if (!check.symbols.length && !isTradingSource(check.source)) {
+            const cfg = getBrokerStreamConfig(check.source);
+            requested = scoped.filter(stream => {
+              const parsed = parseStreamName(check.source, stream);
+              return check.streamType.some(type =>
+                (cfg.normalizeStreamType?.(type) ?? type) === parsed.streamType) &&
+                (!check.interval || parsed.interval === check.interval) &&
+                (!parsed.contractType || !check.contractType || parsed.contractType === check.contractType) &&
+                (!check.exchange || parsed.exchange?.toLowerCase() === check.exchange.toLowerCase());
+            });
+          }
+          if (!requested.length || requested.some(stream => !scoped.includes(stream)) ||
+              !state.gateway.isSubscriptionReady(requested)) {
+            throw new Error("No active, ready subscription matches the requested streams. Subscribe first.");
+          }
+          liveChecks.push(() => state.gateway.isSubscriptionReady(requested));
+          requested.forEach(stream => matched.add(stream));
+        }
+        if (Date.now() >= (msg.expiresAt ?? Infinity)) throw new Error("Listener startup timed out. Please retry.");
+        streamToRegister = [...matched];
+      }
 
       if (streamToRegister.length === 0) {
         console.log(
@@ -311,7 +394,15 @@ export class MarketControlHandler {
         "exact",
         [],
         interval,
+        false, // Keep dev's requireActive parameter position; activation is not committed yet.
+        msg.expiresAt,
+        msg.readinessChecks ? () => liveChecks.every(check => check()) : undefined,
       );
+
+      if (msg.requestId && Date.now() < (msg.expiresAt ?? Infinity)) {
+        await this.redisPub.set(`md:registration:result:${userId}:${msg.requestId}`,
+          JSON.stringify({ success: true }), "EX", 30);
+      }
 
       console.log(
         `✅ [MarketControl] Registered streaming workflow ${workflowId} to receive data for ${
@@ -319,6 +410,10 @@ export class MarketControlHandler {
         } stream: ${streamToRegister.join(", ")}`,
       );
     } catch (error) {
+      if (msg.requestId) {
+        await this.redisPub.set(`md:registration:result:${userId}:${msg.requestId}`,
+          JSON.stringify({ success: false, error: error instanceof Error ? error.message : "Listener registration failed" }), "EX", 30);
+      }
       console.error(
         `❌ [MarketControl] Failed to register streaming workflow ${workflowId}:`,
         error,
@@ -743,6 +838,7 @@ export class MarketControlHandler {
       // tradingNativeStreams = [],
     } = msg;
 
+    let notifyReady: (() => Promise<void>) | undefined;
     try {
       if (!environment) {
         throw new Error(
@@ -750,10 +846,21 @@ export class MarketControlHandler {
         );
       }
       // Acquire mutex to prevent concurrent gateway connections
-      await this.gatewayMutex.runExclusive(async () => {
+      const readiness = await this.gatewayMutex.runExclusive(async () => {
         const stateKey = this.getStateKey(userId, source);
         let state = this.sourceStates.get(stateKey);
 
+        const deadline = msg.expiresAt ?? Date.now() + 15000;
+        const assertCurrent = () => {
+          if (Date.now() >= deadline) throw new Error("Subscription startup timed out. Please retry.");
+        };
+        assertCurrent();
+        const selected = this.connectionOptions(source, feed, marketType);
+        if (state && (state.credentialId !== (msg.credentialId || "default") ||
+            state.environment !== environment || state.feed !== selected.feed || state.marketType !== selected.marketType)) {
+          throw new Error("An existing gateway uses a different account, environment, market or feed. Unsubscribe it before changing the connection.");
+        }
+        if (state) await this.assertCurrentCredential(state);
         // Connect gateway if needed
         if (!state || !state.gateway.getStats().connected) {
           console.log(`🔌 [MarketControl] Connecting to ${source} gateway...`);
@@ -764,6 +871,7 @@ export class MarketControlHandler {
             feed,
             marketType,
             environment,
+            deadline,
           );
           state = this.sourceStates.get(stateKey)!;
           console.log(`✅ [MarketControl] Connected to ${source} gateway`);
@@ -798,93 +906,112 @@ export class MarketControlHandler {
           (name) => !state.streams.has(name),
         );
 
+        if (requestedStreamNames.length === 0) throw new Error("Select at least one stream to subscribe.");
         if (requestedStreamNames.length > 0) {
-          console.log(
-            `➕ [MarketControl] Ensuring subscriptions on ${source}:`,
-            requestedStreamNames.slice(0, 5).join(", ") +
-              (requestedStreamNames.length > 5 ? "..." : ""),
-          );
-
-          // Add to tracking
-          newStreamNames.forEach((name) => state.streams.add(name));
-
-          // Track workflow streams (for reference counting only, NOT for data routing)
-          const currentStream =
-            state.workflowStreams.get(workflowId) || new Set();
-          requestedStreamNames.forEach((s) => currentStream.add(s));
-          state.workflowStreams.set(workflowId, currentStream);
-          // Subscribe gateway with stream names directly
-          if (newStreamNames.length > 0) {
+          const previousWorkflowStreams = new Set(state.workflowStreams.get(workflowId) ?? []);
+          const streamsKey = scope === "workflow" && targetWorkflowId
+            ? REDIS_CHANNELS.workflowSubscriptionStreams(userId, targetWorkflowId, source, environment)
+            : REDIS_CHANNELS.globalSubscriptionStreams(userId, source, environment);
+          const previousRouting = new Set(await this.redisPub.smembers(streamsKey));
+          try {
+            assertCurrent();
             state.gateway.subscribeStreams(newStreamNames);
-          }
+            const readiness = await state.gateway.waitForSubscriptionReady(requestedStreamNames, deadline);
+            assertCurrent();
+            console.log(
+              `➕ [MarketControl] Ensuring subscriptions on ${source}:`,
+              requestedStreamNames.slice(0, 5).join(", ") +
+                (requestedStreamNames.length > 5 ? "..." : ""),
+            );
 
-          // Persist every requested stream for this scope, including streams
-          // already subscribed by another workflow or an earlier listener.
-          const routingStreamNames = requestedStreamNames;
+            // Add to tracking
+            newStreamNames.forEach((name) => state.streams.add(name));
 
-          // Persist to Redis
-          await this.persistState(userId, source);
+            // Track workflow streams (for reference counting only, NOT for data routing)
+            const currentStream =
+              state.workflowStreams.get(workflowId) || new Set();
+            requestedStreamNames.forEach((s) => currentStream.add(s));
+            state.workflowStreams.set(workflowId, currentStream);
 
-          // Store routing stream names in Redis (:streams key)
-          const streamsKey =
-            scope === "workflow" && targetWorkflowId
-              ? REDIS_CHANNELS.workflowSubscriptionStreams(
-                  userId,
-                  targetWorkflowId,
-                  source,
-                  environment,
-                )
-              : REDIS_CHANNELS.globalSubscriptionStreams(
-                  userId,
-                  source,
-                  environment,
-                );
+            // Persist every requested stream for this scope, including streams
+            // already subscribed by another workflow or an earlier listener.
+            const routingStreamNames = requestedStreamNames;
 
-          await this.redisPub.sadd(streamsKey, ...routingStreamNames);
-          console.log(
-            `💾 [MarketControl] Stored ${routingStreamNames.length} routing stream names in ${streamsKey}`,
-          );
+            // Persist to Redis
+            await this.persistState(userId, source);
 
-          // Persist broker resolution state (e.g. Dhan symbol->securityId map)
-          // for one-time rehydration on process restart (never per tick).
-          const subCfg = getBrokerStreamConfig(source);
-          if (subCfg.persistSubscriptionState) {
-            const snapshot = subCfg.persistSubscriptionState();
-            if (snapshot && Object.keys(snapshot).length > 0) {
-              await this.redisPub.hset(`md:resolution:${source}`, snapshot);
+            // Store routing stream names in Redis (:streams key)
+            await this.redisPub.sadd(streamsKey, ...routingStreamNames);
+            console.log(
+              `💾 [MarketControl] Stored ${routingStreamNames.length} routing stream names in ${streamsKey}`,
+            );
+
+            // Persist broker resolution state (e.g. Dhan symbol->securityId map)
+            // for one-time rehydration on process restart (never per tick).
+            const subCfg = getBrokerStreamConfig(source);
+            if (subCfg.persistSubscriptionState) {
+              const snapshot = subCfg.persistSubscriptionState();
+              if (snapshot && Object.keys(snapshot).length > 0) {
+                await this.redisPub.hset(`md:resolution:${source}`, snapshot);
+              }
             }
+
+            // Extract symbols from new stream names for workflow notification
+            // const newSymbols = [
+            //   ...new Set(
+            //     newStreamNames.map((name) => extractSymbol(source, name)),
+            //   ),
+            // ];
+
+            // Notify active streaming workflows about new symbols (respecting scope)
+            notifyReady = () => this.updateActiveStreamingWorkflows(
+              userId,
+              routingStreamNames,
+              // symbols,
+              scope,
+              targetWorkflowId,
+              // tradingSource ? streamType : tradingNativeStreams,
+            );
+
+            console.log(
+              `✅ [MarketControl] Recorded ${requestedStreamNames.length} subscription stream(s) on ${source}`,
+            );
+            assertCurrent();
+            return readiness;
+          } catch (error) {
+            // Only release resources acquired by this attempt; prior claims survive.
+            newStreamNames.forEach(name => state!.streams.delete(name));
+            state.gateway.unsubscribeStreams(newStreamNames);
+            if (previousWorkflowStreams.size) state.workflowStreams.set(workflowId, previousWorkflowStreams);
+            else state.workflowStreams.delete(workflowId);
+            const addedRouting = requestedStreamNames.filter(name => !previousRouting.has(name));
+            if (addedRouting.length) await this.redisPub.srem(streamsKey, ...addedRouting);
+            if (state.streams.size === 0) {
+              state.gateway.disconnect();
+              this.sourceStates.delete(stateKey);
+              await this.redisPub.del(REDIS_CHANNELS.gatewayState(userId, getUnifiedSocketStateSource(source)));
+            } else {
+              await this.persistState(userId, source);
+            }
+            throw error;
           }
-
-          // Extract symbols from new stream names for workflow notification
-          // const newSymbols = [
-          //   ...new Set(
-          //     newStreamNames.map((name) => extractSymbol(source, name)),
-          //   ),
-          // ];
-
-          // Notify active streaming workflows about new symbols (respecting scope)
-          await this.updateActiveStreamingWorkflows(
-            userId,
-            routingStreamNames,
-            // symbols,
-            scope,
-            targetWorkflowId,
-            // tradingSource ? streamType : tradingNativeStreams,
-          );
-
-          console.log(
-            `✅ [MarketControl] Recorded ${requestedStreamNames.length} subscription stream(s) on ${source}`,
-          );
         }
       });
       if (msg.requestId) {
         await this.redisPub.set(
           `md:subscription:result:${userId}:${msg.requestId}`,
-          JSON.stringify({ success: true }),
+          JSON.stringify({ success: true, readiness }),
           "EX", 120,
         );
       }
+      await notifyReady?.();
     } catch (error) {
+      const failedStateKey = this.getStateKey(userId, source);
+      const failedState = this.sourceStates.get(failedStateKey);
+      if (failedState && failedState.streams.size === 0) {
+        failedState.gateway.disconnect();
+        this.sourceStates.delete(failedStateKey);
+      }
       if (msg.requestId) {
         await this.redisPub.set(
           `md:subscription:result:${userId}:${msg.requestId}`,
@@ -1115,7 +1242,20 @@ export class MarketControlHandler {
     feed?: string,
     marketType?: string,
     environment?: string,
+    deadline = Date.now() + 15000,
   ): Promise<void> {
+    const bounded = async <T>(operation: Promise<T>): Promise<T> => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        return await Promise.race([operation, new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error("Gateway startup timed out. Please retry.")),
+            Math.max(0, deadline - Date.now()));
+        })]);
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    };
+    let connectingGateway: MarketDataGateway | undefined;
     try {
       // Map source to credential service type and gateway source
       const baseSource = source.split("_")[0];
@@ -1123,15 +1263,17 @@ export class MarketControlHandler {
       const serviceType = baseSource;
       const gatewaySource = baseSource;
 
+      ({ feed, marketType } = this.connectionOptions(source, feed, marketType));
       let creds: any;
 
       // Use getCredentials (like brokers) when credentialId is provided
       if (credentialId) {
-        const { credentials } = await CredentialManager.getCredentials(
+        const { credentials } = await bounded(CredentialManager.getCredentials(
           userId,
           serviceType,
           credentialId,
-        );
+          { useCache: !GATEWAY_CONFIGS[baseSource]?.connectionCredentialFields },
+        ));
 
         if (!credentials?.client_json) {
           throw new Error(
@@ -1146,7 +1288,7 @@ export class MarketControlHandler {
       } else {
         // Fallback: get most recent credential (backward compatibility)
         const { credentials, error } =
-          await CredentialManager.getDecryptedCredentials(userId, serviceType);
+          await bounded(CredentialManager.getDecryptedCredentials(userId, serviceType));
 
         if (error || !credentials) {
           throw new Error(`No credentials found for ${serviceType}: ${error}`);
@@ -1192,12 +1334,14 @@ export class MarketControlHandler {
         this.getStateKey(userId, source),
       );
 
+      connectingGateway = gateway;
       // Connect gateway with credentials
-      await gateway.connect(creds, {
+      if (Date.now() >= deadline) throw new Error("Gateway startup timed out. Please retry.");
+      await bounded(gateway.connect(creds, {
         userId,
         credentialId: credentialId || "default",
         source: gatewayInstanceSource,
-      });
+      }));
 
       // Track state with streams (single source of truth)
       this.sourceStates.set(this.getStateKey(userId, source), {
@@ -1205,14 +1349,19 @@ export class MarketControlHandler {
         gateway,
         connectedUserId: userId,
         credentialId: credentialId || "default",
-        streams: new Set(), // Native stream names as single source of truth
-        workflowStreams: new Map(),
+        credentialIdentity: credentialId ? this.credentialIdentity(source, creds) : undefined,
+        environment,
+        feed,
+        marketType,
+        streams: this.sourceStates.get(this.getStateKey(userId, source))?.streams ?? new Set(), // Native stream names as single source of truth
+        workflowStreams: this.sourceStates.get(this.getStateKey(userId, source))?.workflowStreams ?? new Map(),
       });
 
       console.log(
         `✅ [MarketControl] Gateway ${source} connected for user ${userId}`,
       );
     } catch (error) {
+      connectingGateway?.disconnect();
       console.error(
         `❌ [MarketControl] Failed to connect gateway ${source}:`,
         error,
@@ -1236,6 +1385,9 @@ export class MarketControlHandler {
     const stateData = {
       userId: state.connectedUserId,
       credentialId: state.credentialId,
+      environment: state.environment,
+      feed: state.feed,
+      marketType: state.marketType,
       // Store native stream names directly
       streams: Array.from(state.streams),
       workflowStreams: Array.from(state.workflowStreams.entries()).map(

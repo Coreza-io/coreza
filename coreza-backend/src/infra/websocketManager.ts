@@ -620,7 +620,7 @@ export class WebSocketManager {
           if (userClients && userClients.size > 0) {
             const messageWithTimestamp = {
               ...payload,
-              timestamp: new Date().toISOString(),
+              timestamp: payload.timestamp ?? new Date().toISOString(),
             };
 
             userClients.forEach((ws) => {

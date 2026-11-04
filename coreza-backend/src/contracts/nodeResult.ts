@@ -9,7 +9,7 @@
  */
 
 /** Browser-safe node results. Workflow-run, HTTP and provider envelopes are separate contracts. */
-export type ResultStatus = "pending" | "running" | "success" | "error" | "waiting" | "listening" | "streaming" | "skipped" | "cancelled" | "not-executed";
+export type ResultStatus = "pending" | "running" | "success" | "error" | "waiting" | "connecting" | "reconnecting" | "listening" | "streaming" | "skipped" | "cancelled" | "not-executed";
 export interface ResultErrorDetails {
   code?: string;
   provider?: string;
@@ -68,7 +68,7 @@ export interface NormalizeContext {
   nodeId?: string; nodeName?: string; category?: string; runId?: string; invocationId?: string;
   startTime?: number; timestamp?: string; executionTime?: number; skipTimestamp?: boolean;
 }
-const statuses: readonly string[] = ["pending", "running", "success", "error", "waiting", "listening", "streaming", "skipped", "cancelled", "not-executed"];
+const statuses: readonly string[] = ["pending", "running", "success", "error", "waiting", "connecting", "reconnecting", "listening", "streaming", "skipped", "cancelled", "not-executed"];
 const resultKeys = new Set(["status", "data", "error", "details", "meta", "control", "warmupSuppressed"]);
 const owns = (value: object, key: string) => Object.prototype.hasOwnProperty.call(value, key);
 const record = (value: unknown): value is Record<string, any> => value !== null && typeof value === "object" && !Array.isArray(value);

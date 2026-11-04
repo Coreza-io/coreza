@@ -242,6 +242,8 @@ async function startServer() {
     FillSyncWorker.start();
     logger.info("FillSyncWorker started");
 
+    await (await import("./services/RegistrationService")).RegistrationService.initializeLifecycle();
+
     // Initialize WebSocket server
     const wsPort = parseInt(process.env.WEBSOCKET_PORT || "8081", 10);
     await WebSocketManager.initialize(wsPort);

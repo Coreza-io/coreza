@@ -1,4 +1,4 @@
-import { readNodeResult, isNodeResult, isFailedResult, toPublicNodeResult, resultFailure, resultSuccess, type ResultErrorDetails, type ResultMeta } from "@/utils/nodeResult";
+import { readNodeResult, isNodeResult, isFailedResult, toPublicNodeResult, resultFailure, resultSuccess, resultState, type ResultErrorDetails, type ResultMeta } from "@/utils/nodeResult";
 import { publishNodeResult } from "@/utils/publishNodeResult";
 import { snapshotTypedExpressionContext, pickTypedJsonSource } from "../../coreza-backend/src/nodes/logic/typedExpressionContext";
 import { TYPED_EXPRESSION_FEATURES } from "../../coreza-backend/src/nodes/logic/safeExpression";
@@ -415,11 +415,13 @@ export function useNodeExecution({
     if (nodeId) publishNodeResult(output, {
       nodeId, isCurrent: executionIsCurrent, updateNodeData, store: executionStore,
       notify: notifyExecutionStoreUpdate, setLastOutput,
-    }, continued && definition?.name === "Loop" ? { done: true, aggregated: output } : {});
+    }, continued && definition?.name === "Loop" ? { done: true, aggregated: output } :
+      definition?.executionMode === "streaming" && definition?.node_type === "trigger"
+        ? { isTestListening: false, streamLifecycleStatus: "failed" } : {});
     return { nodeId: outcomeNodeId, status: continued ? "success" : "failed", error: { message, ...(code !== undefined ? { code } : {}) }, output,
       ...(continuation?.control?.sourceHandle ? { selectedContinuation: continuation.control?.sourceHandle } : {}),
     };
-  }, [nodeId, overrideOutput, definition?.name, fieldState, setLastOutput, executionStore, updateNodeData, notifyExecutionStoreUpdate]);
+  }, [nodeId, overrideOutput, definition?.name, definition?.executionMode, definition?.node_type, fieldState, setLastOutput, executionStore, updateNodeData, notifyExecutionStoreUpdate]);
 
   // Main execution handler
   const executeAction = useCallback(
@@ -524,6 +526,15 @@ export function useNodeExecution({
         payload.nodeName = definition.name;
         payload.node_type = definition.node_type;
         payload.workflowId = workflowId;
+        if (definition?.executionMode === "streaming" && definition?.node_type === "trigger") {
+          payload.attemptId = crypto.randomUUID();
+          publishNodeResult(resultState("connecting", null), {
+            nodeId: nodeId!, isCurrent: executionIsCurrent, updateNodeData,
+            store: executionStore, notify: notifyExecutionStoreUpdate, setLastOutput,
+          }, { streamAttemptId: payload.attemptId, streamLifecycleStatus: "connecting",
+            streamLifecycleTimestamp: undefined, isTestListening: true,
+            testListenWorkflowId: `manual-stream-${userId}-${nodeId}-${payload.attemptId}`, testListenNodeId: nodeId });
+        }
         if (definition?.name === "Edit Fields" && payload.persistent === true) payload.variableInvocationId = crypto.randomUUID();
         payload.workflowSessionId = data?.workflowSessionId;
         payload.category = definition.category;
@@ -862,6 +873,10 @@ export function useNodeExecution({
               output: executionStore.getNodeData(nodeId!).output,
             };
           } else if (isStreamingTrigger) {
+            const current = executionStore.getNodeData(nodeId!);
+            if (current.streamAttemptId !== payload.attemptId || current.streamLifecycleStatus === "failed" || current.streamLifecycleStatus === "stopped") {
+              return { nodeId: outcomeNodeId, status: "failed", output: current.output };
+            }
             // Streaming trigger - handle listening state and recovery polling
             if (import.meta.env.DEV) console.log(`✅ [Streaming Trigger] Response:`, responseData);
             const handler = createListeningHandler(
@@ -870,6 +885,7 @@ export function useNodeExecution({
                 fieldState,
                 nodeId: nodeId!,
                 workflowId: workflowId!,
+                attemptId: payload.attemptId,
               }),
               listeningDeps,
             );

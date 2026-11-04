@@ -8,6 +8,7 @@ import Redis from "ioredis";
 import { Mutex } from "async-mutex";
 import { createRedisPubSub } from "../config/redis";
 import { REDIS_CHANNELS } from "../config/redisChannels";
+import { getRedisCache, getRedisQueue } from "../config/redis";
 import { MarketDataGateway } from "./MarketDataGateway";
 import { MarketDataSubscriber } from "./MarketDataSubscriber";
 import CredentialManager from "../utils/credentialManager";
@@ -54,6 +55,7 @@ interface SourceState {
   gateway: MarketDataGateway;
   connectedUserId: string;
   credentialId: string;
+  environment?: string;
   // Single source of truth: native stream names (btcusdt@kline_1m, bars.AAPL)
   streams: Set<string>;
   workflowStreams: Map<string, Set<string>>; // workflowId → streams (for reference counting)
@@ -238,6 +240,8 @@ export class MarketControlHandler {
    * - 'global': ALL symbols subscribed globally by the user + workflow-specific symbols
    */
   private async handleRegister(msg: {
+    manualListener?: { workflowId: string; nodeId: string; attemptId: string };
+    lookupWorkflowId?: string;
     action: string;
     userId: string;
     workflowId: string;
@@ -279,6 +283,11 @@ export class MarketControlHandler {
         )})`,
       );
 
+      if (msg.manualListener) {
+        const manual = msg.manualListener;
+        const raw = await getRedisCache().get(REDIS_CHANNELS.Listener(userId, manual.workflowId, manual.nodeId));
+        if (!raw || JSON.parse(raw).attemptId !== manual.attemptId || await getRedisQueue().exists(`market:listener-stopped:${userId}:${workflowId}`)) return;
+      }
       const subscriber = MarketDataSubscriber.getInstance();
       // NORMAL WORKFLOW MODE: Get symbols from Redis subscriptions
       const streamToRegister =
@@ -286,7 +295,7 @@ export class MarketControlHandler {
           ? await this.getUserSubscribedStreams(userId, source, environment)
           : await this.getWorkflowScopedStreams(
               userId,
-              workflowId,
+              msg.lookupWorkflowId ?? workflowId,
               source,
               environment,
             );
@@ -313,6 +322,18 @@ export class MarketControlHandler {
         interval,
       );
 
+      if (msg.manualListener) {
+        for (const required of [source, ...this.getCompanionSources(source)]) {
+          const state = this.sourceStates.get(this.getStateKey(userId, required));
+          if (!state || state.environment !== environment) continue;
+          await getRedisQueue().setex(`market:gateway-binding:${userId}:${required}:${environment}`, 3600,
+            JSON.stringify({ source: state.source, credentialId: state.credentialId, environment }));
+          const lifecycle = state.gateway.getLifecycle();
+          if (lifecycle) state.gateway.onLifecycle?.(lifecycle);
+        }
+        await getRedisQueue().setex(`market:listener-ready:${workflowId}`, 3600, "1");
+        await getRedisQueue().publish("market:gateway-lifecycle", JSON.stringify({ userId }));
+      }
       console.log(
         `✅ [MarketControl] Registered streaming workflow ${workflowId} to receive data for ${
           streamToRegister.length
@@ -751,10 +772,17 @@ export class MarketControlHandler {
       }
       // Acquire mutex to prevent concurrent gateway connections
       await this.gatewayMutex.runExclusive(async () => {
+        if (workflowId?.startsWith("manual-stream-") && await getRedisQueue().exists(`market:listener-stopped:${userId}:${workflowId}`)) return;
         const stateKey = this.getStateKey(userId, source);
         let state = this.sourceStates.get(stateKey);
 
+        if (state && (state.credentialId !== (msg.credentialId || "default") || state.environment !== environment)) {
+          throw new Error("This feed already has an active connection with different credentials or environment");
+        }
         // Connect gateway if needed
+        if (state && !state.gateway.getStats().connected && state.gateway.getLifecycle()?.status !== "failed" && state.gateway.getLifecycle()?.status !== "stopped") {
+          await state.gateway.waitUntilReady();
+        }
         if (!state || !state.gateway.getStats().connected) {
           console.log(`🔌 [MarketControl] Connecting to ${source} gateway...`);
           await this.connectGateway(
@@ -769,6 +797,13 @@ export class MarketControlHandler {
           console.log(`✅ [MarketControl] Connected to ${source} gateway`);
         }
 
+        if (workflowId?.startsWith("manual-stream-") && await getRedisQueue().exists(`market:listener-stopped:${userId}:${workflowId}`)) {
+          if (state.streams.size === 0) {
+            state.gateway.disconnect();
+            this.sourceStates.delete(stateKey);
+          }
+          return;
+        }
         // // Build stream names FIRST (before any tracking)
         // const processedStreamType = this.processStreamTypesForStreamNames(
         //   streamType || [],
@@ -877,6 +912,11 @@ export class MarketControlHandler {
           );
         }
       });
+      const activeState = this.sourceStates.get(this.getStateKey(userId, source));
+      if (activeState) await getRedisQueue().setex(`market:gateway-binding:${userId}:${source}:${environment}`, 3600,
+        JSON.stringify({ source: activeState.source, credentialId: activeState.credentialId, environment }));
+      const gateway = activeState?.gateway;
+      if (gateway?.getLifecycle()) gateway.onLifecycle?.(gateway.getLifecycle()!);
       if (msg.requestId) {
         await this.redisPub.set(
           `md:subscription:result:${userId}:${msg.requestId}`,
@@ -885,6 +925,15 @@ export class MarketControlHandler {
         );
       }
     } catch (error) {
+      const payload = { userId, source: getUnifiedSocketStateSource(source), environment: environment || "", credentialId: msg.credentialId || "default",
+        status: "failed", code: "GATEWAY_SETUP_FAILED", message: `Unable to initialize ${source.split("_")[0]} stream gateway.`, retryCount: 0, timestamp: new Date().toISOString() };
+      const key = `market:gateway-lifecycle:${userId}:${payload.source}:${payload.environment}:${payload.credentialId}`;
+      // Preserve the decoded terminal gateway reason when one was already reported.
+      const existing = await getRedisQueue().get(key);
+      if (!["failed", "stopped"].includes((error as any)?.gatewayLifecycle?.status) && (!existing || JSON.parse(existing).status !== "failed")) {
+        await getRedisQueue().setex(key, 3600, JSON.stringify(payload));
+        await getRedisQueue().publish("market:gateway-lifecycle", JSON.stringify(payload));
+      }
       if (msg.requestId) {
         await this.redisPub.set(
           `md:subscription:result:${userId}:${msg.requestId}`,
@@ -988,26 +1037,21 @@ export class MarketControlHandler {
           state.workflowStreams.set(workflowId, workflowStreams);
         }
 
-        const hasTradingClaimRemaining = tradingSource
-          ? Array.from(state.workflowStreams.values()).some((wfStreams) =>
-              streamNamesToRemove.some((stream) => wfStreams.has(stream)),
-            )
-          : false;
-
-        const shouldRemoveGatewayStreams =
-          !tradingSource || !hasTradingClaimRemaining;
+        const unownedStreams = streamNamesToRemove.filter(stream =>
+          !Array.from(state.workflowStreams.values()).some(streams => streams.has(stream)));
+        const shouldRemoveGatewayStreams = unownedStreams.length > 0;
 
         if (shouldRemoveGatewayStreams) {
-          streamNamesToRemove.forEach((name) => state.streams.delete(name));
-          state.gateway.unsubscribeStreams(streamNamesToRemove);
+          unownedStreams.forEach((name) => state.streams.delete(name));
+          state.gateway.unsubscribeStreams(unownedStreams);
         }
 
         if (
           streamNamesToRemove.length > 0 &&
-          (!tradingSource || shouldRemoveGatewayStreams)
+          (scope === "workflow" || shouldRemoveGatewayStreams)
         ) {
           // Routing keys are identical to native stream names.
-          const routingStreamNamesToRemove = streamNamesToRemove;
+          const routingStreamNamesToRemove = scope === "workflow" ? streamNamesToRemove : unownedStreams;
           const streamsKey =
             scope === "workflow" && targetWorkflowId
               ? REDIS_CHANNELS.workflowSubscriptionStreams(
@@ -1078,7 +1122,7 @@ export class MarketControlHandler {
       }
 
       // if (workflowId && !tradingSource) {
-      if (workflowId) {
+      if (workflowId && symbols.length === 0) {
         state.workflowStreams.delete(workflowId);
       }
 
@@ -1116,6 +1160,7 @@ export class MarketControlHandler {
     marketType?: string,
     environment?: string,
   ): Promise<void> {
+    let attemptedGateway: MarketDataGateway | undefined;
     try {
       // Map source to credential service type and gateway source
       const baseSource = source.split("_")[0];
@@ -1192,11 +1237,28 @@ export class MarketControlHandler {
         this.getStateKey(userId, source),
       );
 
-      // Connect gateway with credentials
+      attemptedGateway = gateway;
+      const identity = { userId, source: gatewayInstanceSource, credentialId: credentialId || "default", environment: environment || "" };
+      let publication = Promise.resolve();
+      gateway.onLifecycle = (event) => {
+        publication = publication.then(async () => {
+          const redis = getRedisQueue();
+          const payload = { ...event, ...identity };
+          const key = `market:gateway-lifecycle:${userId}:${gatewayInstanceSource}:${identity.environment}:${identity.credentialId}`;
+          await redis.setex(key, 3600, JSON.stringify(payload));
+          await redis.publish("market:gateway-lifecycle", JSON.stringify(payload));
+        }).catch(error => console.error("Gateway lifecycle publication failed", error));
+      };
+
+      await getRedisQueue().setex(`market:gateway-binding:${userId}:${source}:${identity.environment}`, 3600, JSON.stringify(identity));
+      // Keep the control operation pending across transient connection closes.
       await gateway.connect(creds, {
         userId,
         credentialId: credentialId || "default",
         source: gatewayInstanceSource,
+      }).catch(async error => {
+        if (gateway.getLifecycle()?.status === "failed") throw error;
+        await gateway.waitUntilReady();
       });
 
       // Track state with streams (single source of truth)
@@ -1205,6 +1267,7 @@ export class MarketControlHandler {
         gateway,
         connectedUserId: userId,
         credentialId: credentialId || "default",
+        environment,
         streams: new Set(), // Native stream names as single source of truth
         workflowStreams: new Map(),
       });
@@ -1217,7 +1280,7 @@ export class MarketControlHandler {
         `❌ [MarketControl] Failed to connect gateway ${source}:`,
         error,
       );
-      throw error;
+      throw Object.assign(error instanceof Error ? error : new Error("Gateway connection failed"), { gatewayLifecycle: attemptedGateway?.getLifecycle() });
     }
   }
 
@@ -1236,6 +1299,7 @@ export class MarketControlHandler {
     const stateData = {
       userId: state.connectedUserId,
       credentialId: state.credentialId,
+      environment: state.environment,
       // Store native stream names directly
       streams: Array.from(state.streams),
       workflowStreams: Array.from(state.workflowStreams.entries()).map(

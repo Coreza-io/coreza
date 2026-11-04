@@ -37,6 +37,9 @@ export interface NodeExecutionData {
   forwardedDone?: boolean;                   // optional: if you gate one-time forwarding
   _edgeBuf?: Record<string, any>;            // transient per-iteration edge payloads
   
+  streamAttemptId?: string;
+  streamLifecycleStatus?: string;
+  streamLifecycleTimestamp?: string;
   // Streaming state
   isStreamingWaiting?: boolean;              // waiting for streaming data
   isListening?: boolean;                     // node is actively listening for events

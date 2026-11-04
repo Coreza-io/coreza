@@ -87,7 +87,8 @@ export function createListeningHandler<TOutput = any>(
   let ownedController: AbortController | undefined;
   let receivedTimer: ReturnType<typeof setTimeout> | undefined;
   let published = false;
-  const canPublish = () => isCurrent() && (!ownedController || abortRef.current === ownedController)
+  let streamAttemptId: string | undefined;
+  const canPublish = () => (!streamAttemptId || executionStore.getNodeData(nodeId).streamAttemptId === streamAttemptId) && isCurrent() && (!ownedController || abortRef.current === ownedController)
     && (!published || Object.prototype.hasOwnProperty.call(executionStore.storeMap.get(nodeId) ?? {}, listeningFlag));
 
   const setNodeOutput = (output: TOutput, patch: Record<string, any>) => {
@@ -123,6 +124,19 @@ export function createListeningHandler<TOutput = any>(
       return missingOutput;
     }
 
+    const current = executionStore.getNodeData(nodeId);
+    streamAttemptId = responseData?.attemptId;
+    if (responseData?.attemptId) {
+      if (current.streamAttemptId !== responseData.attemptId || current.streamLifecycleStatus === "failed" || current.streamLifecycleStatus === "stopped") return current.output as TOutput;
+      if (current.streamLifecycleTimestamp && (!responseData.lifecycle?.timestamp || current.streamLifecycleTimestamp > responseData.lifecycle.timestamp)) {
+        responseData = { ...responseData, lifecycle: { status: current.streamLifecycleStatus } };
+      }
+    }
+    if (responseData?.lifecycle?.status === "failed" || responseData?.lifecycle?.status === "stopped") {
+      const output = buildListeningOutput(responseData);
+      setNodeOutput(output, { [listeningFlag]: false, streamLifecycleStatus: responseData.lifecycle.status });
+      return output;
+    }
     const listeningOutput = buildListeningOutput(responseData);
     const listeningNodeData = buildListeningNodeData
       ? buildListeningNodeData(responseData)
@@ -238,7 +252,24 @@ export function createListeningHandler<TOutput = any>(
               if (response.ok) {
                 const result = await response.json();
                 if (resolved || abortController.signal.aborted || !canPublish()) { abortController.abort(); return; }
+                const currentState = executionStore.getNodeData(nodeId);
+                if (config.shouldStop?.(currentState)) return;
+                if (currentState.streamLifecycleTimestamp && result.timestamp && currentState.streamLifecycleTimestamp > result.timestamp) {
+                  await sleepWithAbort(interval, abortController.signal);
+                  continue;
+                }
                 const processed = processResult(result);
+                if (!processed.done && processed.output) {
+                  const current = executionStore.getNodeData(nodeId);
+                  // Do not replace delivered data with a repeated readiness acknowledgment.
+                  if ((processed.output as any).status !== "listening" || (current.output as any)?.status !== "streaming") {
+                    setNodeOutput(processed.output, current.streamAttemptId ? {
+                      streamLifecycleStatus: result.status, streamLifecycleTimestamp: result.timestamp,
+                    } : {});
+                  } else if (current.streamAttemptId) {
+                    updateNodeData({ streamLifecycleStatus: result.status, streamLifecycleTimestamp: result.timestamp });
+                  }
+                }
                 if (processed.done) {
                   const output =
                     processed.output ?? buildTimeoutOutput(listeningOutput);
@@ -246,6 +277,7 @@ export function createListeningHandler<TOutput = any>(
                     output,
                     {
                       [listeningFlag]: false,
+                      ...(currentState.streamAttemptId ? { streamLifecycleStatus: result.status === "expired" ? "failed" : result.status } : {}),
                       ...(receivedFlag && !processed.expired
                         ? { [receivedFlag]: true }
                         : {}),

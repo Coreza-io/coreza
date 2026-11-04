@@ -44,6 +44,14 @@ const TRADING_LIFECYCLE_EVENTS = new Set([
   "listen_key_expired",
 ]);
 
+export interface GatewayLifecycle {
+  status: "connecting" | "listening" | "reconnecting" | "failed" | "stopped";
+  timestamp: string;
+  code?: string;
+  message?: string;
+  retryCount: number;
+}
+
 export class MarketDataGateway {
   // Key: full source_id (e.g., 'alpaca_news', 'alpaca_stream') for unique instances
   private static instances = new Map<string, MarketDataGateway>();
@@ -72,6 +80,44 @@ export class MarketDataGateway {
   private reconnectTimer: NodeJS.Timeout | null = null;
   private connectionOpenedAt: number | null = null;
   private lastSubscribeSentAt: number | null = null;
+
+  private intentionalStop = false;
+  private readyWaiters = new Set<{ resolve: () => void; reject: (error: Error) => void }>();
+  waitUntilReady(): Promise<void> {
+    if (this.lifecycle?.status === "listening") return Promise.resolve();
+    if (this.lifecycle?.status === "failed" || this.intentionalStop) return Promise.reject(new Error(this.lifecycle?.message ?? "Gateway stopped"));
+    return new Promise((resolve, reject) => this.readyWaiters.add({ resolve, reject }));
+  }
+  private terminalReported = false;
+  private lastCloseCode: number | undefined;
+  private lifecycle: GatewayLifecycle | undefined;
+  onLifecycle?: (event: GatewayLifecycle) => void;
+
+  private reportLifecycle(status: GatewayLifecycle["status"], code?: string, message?: string): void {
+    if (this.terminalReported) return;
+    if (status === "failed") this.terminalReported = true;
+    this.lifecycle = { status, code, message, retryCount: this.reconnectAttempts, timestamp: new Date().toISOString() };
+    this.onLifecycle?.(this.lifecycle);
+    if (status === "listening" || status === "failed" || status === "stopped") {
+      for (const waiter of this.readyWaiters) {
+        if (status === "listening") waiter.resolve();
+        else waiter.reject(new Error(message ?? "Gateway stopped"));
+      }
+      this.readyWaiters.clear();
+    }
+  }
+
+  getLifecycle(): GatewayLifecycle | undefined { return this.lifecycle; }
+
+  private providerFailure(msg: any): void {
+    const code = String(msg?.reasonCode ?? msg?.code ?? "PROVIDER_REJECTED");
+    // Only decoded provider fields are exposed; never send raw auth/control payloads.
+    const reason = this.source.startsWith("dhan") ? msg?.reasonText : undefined;
+    const safeReason = typeof reason === "string" ? reason.replace(/[\r\n]/g, " ").slice(0, 240) : "Provider rejected the stream request";
+    this.reportLifecycle("failed", code, `${this.source.split("_")[0]} stream rejected (${code}). ${safeReason}`);
+    this.lastFatalControlMessage = { code };
+    this.ws?.close();
+  }
 
   private constructor(config: GatewayConfig, source: string) {
     this.config = config;
@@ -114,6 +160,16 @@ export class MarketDataGateway {
       );
     }
 
+    const wasStopped = this.intentionalStop;
+    this.intentionalStop = false;
+    if (wasStopped) this.lastCloseCode = undefined;
+    if (this.terminalReported) {
+      this.terminalReported = false;
+      this.reconnectAttempts = 0;
+      this.lastCloseCode = undefined;
+      this.lastFatalControlMessage = null;
+    }
+    if (!this.reconnectAttempts) this.reportLifecycle("connecting");
     this.credentials = credentials;
     if (preConnectContext) {
       this.preConnectContext = preConnectContext;
@@ -122,7 +178,11 @@ export class MarketDataGateway {
     this.connectPromise = this.connectSocket(
       credentials,
       preConnectContext,
-    ).finally(() => {
+    ).catch((error) => {
+      // Pre-connect failures have no socket close event to schedule the next retry.
+      if (!this.intentionalStop && !this.ws && !this.reconnectTimer && !this.terminalReported) this.handleReconnect();
+      throw error;
+    }).finally(() => {
       this.connectPromise = null;
       this.connectReject = null;
     });
@@ -234,6 +294,7 @@ export class MarketDataGateway {
         }
 
         const now = Date.now();
+        this.lastCloseCode = code;
         const reasonStr = reason.toString() || "No reason provided";
         const uptimeMs = this.connectionOpenedAt
           ? now - this.connectionOpenedAt
@@ -403,7 +464,7 @@ export class MarketDataGateway {
             { source: this.source, msg },
             "Authentication failed",
           );
-          this.ws?.close();
+          this.providerFailure(msg);
           continue;
         }
 
@@ -413,7 +474,7 @@ export class MarketDataGateway {
         }
 
         if (this.config.isFatalControlMessage?.(msg, this.source)) {
-          this.lastFatalControlMessage = msg;
+          this.providerFailure(msg);
         }
 
         // Only publish market data messages - pass source for filtering
@@ -781,6 +842,7 @@ export class MarketDataGateway {
   }
 
   private handleReconnect(): void {
+    if (this.intentionalStop || this.terminalReported) return;
     if (this.reconnectTimer) {
       if (LOG) this.logger.debug(
         { source: this.source },
@@ -802,6 +864,9 @@ export class MarketDataGateway {
     if (this.reconnectAttempts >= maxAttempts) {
       console.error(`[${this.source}] Max reconnection attempts reached`);
       alertMaxReconnectAttempts(this.source, maxAttempts);
+      const broker = this.source.startsWith("dhan") ? "Dhan" : this.source.split("_")[0];
+      this.reportLifecycle("failed", String(this.lastCloseCode ?? "CONNECT_FAILED"),
+        `${broker} stream disconnected${this.lastCloseCode ? ` (${this.lastCloseCode})` : ""}. Reconnection failed after ${maxAttempts} attempts.`);
       return;
     }
 
@@ -816,6 +881,7 @@ export class MarketDataGateway {
         : 0;
     const delay = capped + jitter;
     this.reconnectAttempts++;
+    this.reportLifecycle("reconnecting", this.lastCloseCode ? String(this.lastCloseCode) : undefined);
 
     console.log(
       `[${this.source}] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${maxAttempts})`,
@@ -890,7 +956,10 @@ export class MarketDataGateway {
   }
 
   private markConnectionReady(resolveConnect?: () => void): void {
-    this.logger.info({ source: this.source }, "Authentication successful");
+    this.logger.info({ source: this.source },
+      this.authCompletesOnSend() || !this.config.makeAuthMessage
+        ? "WebSocket ready; provider authentication acknowledgment unavailable"
+        : "Provider authentication confirmed");
     this.clearReconnectTimer();
     if (this.config.reconnectResetAfterMs === undefined) {
       this.reconnectAttempts = 0;
@@ -899,6 +968,7 @@ export class MarketDataGateway {
     this.awaitingPostAuth = false;
     this.resubscribeAll();
     this.startTradingKeepalive();
+    this.reportLifecycle("listening");
     if (resolveConnect) resolveConnect();
   }
 
@@ -943,6 +1013,8 @@ export class MarketDataGateway {
   }
 
   disconnect(): void {
+    this.intentionalStop = true;
+    this.reportLifecycle("stopped");
     this.clearReconnectTimer();
     this.connectReject?.(
       new Error(`Gateway ${this.source} disconnected intentionally`),

@@ -59,6 +59,8 @@ const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
     running: { icon: <Loader2 className="w-3 h-3 animate-spin" />, className: "bg-blue-500/20 text-blue-500" },
     waiting: { icon: <Clock className="w-3 h-3" />, className: "bg-orange-500/20 text-orange-500" },
     streaming: { icon: <Radio className="w-3 h-3" />, className: "bg-purple-500/20 text-purple-500" },
+    connecting: { icon: <Loader2 className="w-3 h-3 animate-spin" />, className: "bg-cyan-500/20 text-cyan-500" },
+    reconnecting: { icon: <Loader2 className="w-3 h-3 animate-spin" />, className: "bg-orange-500/20 text-orange-500" },
     listening: { icon: <Radio className="w-3 h-3" />, className: "bg-cyan-500/20 text-cyan-500" },
     skipped: { icon: <Clock className="w-3 h-3" />, className: "bg-slate-500/20 text-slate-500" },
     cancelled: { icon: <XCircle className="w-3 h-3" />, className: "bg-orange-500/20 text-orange-500" },

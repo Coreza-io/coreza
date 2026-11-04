@@ -245,7 +245,7 @@ export class SubscriptionService {
             retryStrategy: () => null,
             sentinelRetryStrategy: () => null,
           }))
-        : getRedisCache();
+        : getRedisQueue();
       // Bound connection, publication and reads, including a command in flight.
       const deadline = requestId ? new Promise<never>((_, reject) => {
         confirmationTimer = setTimeout(() => reject(new Error(

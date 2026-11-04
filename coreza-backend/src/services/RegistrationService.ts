@@ -19,6 +19,8 @@
  * All Redis operations use keys from REDIS_CHANNELS for consistency.
  */
 
+import { createRedisQueuePubSub, getRedisQueue } from "../config/redis";
+import { SubscriptionService } from "./SubscriptionService";
 import { getRedisCache } from "../config/redis";
 import { REDIS_CHANNELS } from "../config/redisChannels";
 import {
@@ -33,7 +35,11 @@ import logger from "../utils/logger";
 // TYPES
 // ============================================
 
+export interface ListenerDependency { source: string; credentialId: string; environment: string; }
 export interface ListenerParams {
+  attemptId?: string;
+  routingWorkflowId?: string;
+  dependencies?: ListenerDependency[];
   userId: string;
   workflowId: string;
   nodeId: string;
@@ -52,11 +58,15 @@ export interface ListenerParams {
 }
 
 export interface ListenerData {
+  attemptId?: string;
+  routingWorkflowId?: string;
+  dependencies?: ListenerDependency[];
+  lifecycle?: any;
   exchange: any;
   userId: string;
   workflowId: string;
   nodeId: string;
-  status: "listening" | "stopped";
+  status: "connecting" | "listening" | "reconnecting" | "failed" | "stopped";
   startedAt: string;
   mode: string;
   scope: string;
@@ -81,6 +91,116 @@ export interface CleanupResult {
 // ============================================
 
 export class RegistrationService {
+  private static lifecycleSubscription: ReturnType<typeof createRedisQueuePubSub> | undefined;
+
+  static async initializeLifecycle(): Promise<void> {
+    if (this.lifecycleSubscription) return;
+    const connection = createRedisQueuePubSub();
+    this.lifecycleSubscription = connection;
+    connection.sub.on("message", (_channel, raw) => {
+      void (async () => {
+        const event = JSON.parse(raw);
+        const listeners = await this.getActiveListeners(event.userId);
+        await Promise.all(listeners.filter(listener => listener.attemptId).map(listener => this.reconcileListener(listener)));
+      })().catch(error => logger.error({ error }, "Listener lifecycle reconciliation failed"));
+    });
+    await connection.sub.subscribe("market:gateway-lifecycle");
+  }
+
+  static async reconcileListener(listener: ListenerData): Promise<any> {
+    if (!listener.attemptId) return null;
+    const redis = getRedisCache();
+    if (listener.routingWorkflowId && await getRedisQueue().exists(`market:listener-stopped:${listener.userId}:${listener.routingWorkflowId}`)) {
+      await this.stopListener(listener);
+      const stopped = await redis.get(`${REDIS_CHANNELS.Listener(listener.userId, listener.workflowId, listener.nodeId)}:status:${listener.attemptId}`);
+      return stopped ? JSON.parse(stopped) : null;
+    }
+    const statusKey = `${REDIS_CHANNELS.Listener(listener.userId, listener.workflowId, listener.nodeId)}:status:${listener.attemptId}`;
+    const snapshots = await Promise.all((listener.dependencies ?? []).map(async dep => {
+      const bindingRaw = await getRedisQueue().get(`market:gateway-binding:${listener.userId}:${dep.source}:${dep.environment}`);
+      const binding = bindingRaw ? JSON.parse(bindingRaw) : dep;
+      if (listener.mode === "listen" && dep.credentialId !== "default" && binding.credentialId !== dep.credentialId) {
+        return { status: "failed", code: "GATEWAY_IDENTITY_MISMATCH", message: "The subscribed feed uses different credentials.", timestamp: new Date().toISOString() };
+      }
+      const credentialId = dep.credentialId === "default" ? binding.credentialId : dep.credentialId;
+      const raw = await getRedisQueue().get(`market:gateway-lifecycle:${listener.userId}:${binding.source}:${dep.environment}:${credentialId}`);
+      const snapshot = raw ? JSON.parse(raw) : { status: "connecting" };
+      if (listener.mode === "subscribe" && ["failed", "stopped"].includes(snapshot.status) && snapshot.timestamp < listener.startedAt) return { status: "connecting" };
+      return snapshot;
+    }));
+    const failure = snapshots.find(event => event.status === "failed" || event.status === "stopped");
+    const routingReady = await getRedisQueue().exists(`market:listener-ready:${listener.routingWorkflowId}`);
+    const state = failure ? "failed" : snapshots.some(event => event.status === "reconnecting") ? "reconnecting"
+      : routingReady && snapshots.length && snapshots.every(event => event.status === "listening") ? "listening" : "connecting";
+    const event = { type: "market_stream_lifecycle", userId: listener.userId, workflowId: listener.workflowId,
+      nodeId: listener.nodeId, attemptId: listener.attemptId, routingWorkflowId: listener.routingWorkflowId,
+      status: state, code: failure?.code ?? (failure ? "GATEWAY_STOPPED" : undefined),
+      message: failure?.message ?? (failure ? "Stream gateway stopped" : undefined),
+      retryCount: failure?.retryCount, timestamp: new Date().toISOString() };
+    const activeKey = REDIS_CHANNELS.Listener(listener.userId, listener.workflowId, listener.nodeId);
+    const updated = await redis.eval(`
+      local raw = redis.call('GET', KEYS[1])
+      if not raw then return 0 end
+      local listener = cjson.decode(raw)
+      if listener.attemptId ~= ARGV[1] then return 0 end
+      if listener.status == 'failed' or listener.status == 'stopped' then return 0 end
+      listener.status = ARGV[2]
+      listener.lifecycle = cjson.decode(ARGV[3])
+      redis.call('SET', KEYS[1], cjson.encode(listener), 'KEEPTTL')
+      redis.call('SET', KEYS[2], ARGV[3], 'EX', 3600)
+      return 1
+    `, 2, activeKey, statusKey, listener.attemptId, state, JSON.stringify(event));
+    if (updated) {
+      await getRedisQueue().publish(`ws:user:${listener.userId}`, JSON.stringify(event));
+      if (state === "failed") await this.stopListener({ ...listener, status: "failed" }, event);
+    }
+    const saved = await redis.get(statusKey);
+    return saved ? JSON.parse(saved) : event;
+  }
+
+  static async stopListener(listener: ListenerData, terminal?: any): Promise<void> {
+    const { userId, workflowId, nodeId, attemptId } = listener;
+    const key = REDIS_CHANNELS.Listener(userId, workflowId, nodeId);
+    const redis = getRedisCache();
+    // Claim this exact attempt once. Cleanup uses its private routing/ownership ID,
+    // so a concurrent replacement or live workflow cannot lose its registrations.
+    const claimed = await redis.eval(`
+      local raw = redis.call('GET', KEYS[1])
+      if not raw then return 0 end
+      local listener = cjson.decode(raw)
+      if (listener.attemptId or '') ~= ARGV[1] then return 0 end
+      redis.call('DEL', KEYS[1], KEYS[2])
+      redis.call('SREM', KEYS[3], KEYS[1])
+      local count = tonumber(redis.call('GET', KEYS[4]) or '0')
+      if count > 0 then redis.call('DECR', KEYS[4]) end
+      return 1
+    `, 4, key, REDIS_CHANNELS.ListenerResult(userId, workflowId, nodeId),
+      REDIS_CHANNELS.userActiveListeners(userId), REDIS_CHANNELS.userListenerCount(userId), attemptId ?? "");
+    if (!claimed) return;
+    const event = terminal ?? { type: "market_stream_lifecycle", workflowId, nodeId, attemptId, status: "stopped", timestamp: new Date().toISOString() };
+    await redis.setex(`${key}:status:${attemptId}`, 3600, JSON.stringify(event));
+    const owner = listener.routingWorkflowId ?? workflowId;
+    if (listener.routingWorkflowId) {
+      await getRedisQueue().setex(`market:listener-stopped:${userId}:${owner}`, 3600, "1");
+      await getRedisQueue().del(`market:listener-ready:${owner}`);
+    }
+    if (listener.mode === "subscribe") {
+      const orderMarkers = new Set(["trade_updates", "ORDER_TRADE_UPDATE", "ALGO_UPDATE", "executionReport", "account_activity", "order_alert", "order_update"]);
+      for (const dep of listener.dependencies ?? [{ source: listener.source, environment: listener.environment ?? "", credentialId: "" }]) {
+        const trading = dep.source.endsWith("_trading");
+        const news = dep.source.endsWith("_news");
+        const streamType = (listener.streamTypes ?? []).filter(type => trading ? orderMarkers.has(type) : news ? type === "news" : !orderMarkers.has(type) && type !== "news");
+        if (!streamType.length) continue;
+        await SubscriptionService.unsubscribe({ source: dep.source as any, userId, workflowId: owner, nodeId,
+          symbols: trading ? ["*"] : listener.symbols, streamType, exchange: listener.exchange,
+          assetType: listener.assetType, marketType: listener.marketType, contractType: listener.contractType,
+          interval: listener.interval, depth_levels: listener.depth_levels, environment: dep.environment,
+          scope: listener.scope === "global" ? "global" : "workflow", targetWorkflowId: owner });
+      }
+    }
+    await this.publishUnregisterWorkflow({ userId, workflowId: owner, isTestListener: true });
+  }
+
   /**
    * Delete user active listeners SET key when empty.
    */
@@ -163,7 +283,10 @@ export class RegistrationService {
       userId,
       workflowId,
       nodeId,
-      status: "listening",
+      attemptId: params.attemptId,
+      routingWorkflowId: params.routingWorkflowId,
+      dependencies: params.dependencies,
+      status: "connecting",
       startedAt: now,
       mode,
       scope,
@@ -180,11 +303,11 @@ export class RegistrationService {
     };
 
     // Store listener with TTL (auto-expire)
-    await redis.setex(
-      listenerKey,
-      LISTENER_TTL_SECONDS,
-      JSON.stringify(listenerData),
-    );
+    const created = await redis.set(listenerKey, JSON.stringify(listenerData), "EX", LISTENER_TTL_SECONDS, "NX");
+    if (!created) {
+      await this.decrementListenerCount(userId);
+      throw new Error("Another listener attempt is already starting for this node");
+    }
 
     // Add to user's active listeners SET for efficient per-user queries
     const userListenersKey = REDIS_CHANNELS.userActiveListeners(userId);
@@ -212,16 +335,14 @@ export class RegistrationService {
     const resultKey = REDIS_CHANNELS.ListenerResult(userId, workflowId, nodeId);
     const userListenersKey = REDIS_CHANNELS.userActiveListeners(userId);
 
-    // Delete listener and result keys
-    await redis.del(listenerKey);
-    await redis.del(resultKey);
-
-    // Remove from user's active listeners SET
-    await redis.srem(userListenersKey, listenerKey);
-    await this.deleteActiveListenersSetIfEmpty(userListenersKey);
-
-    // Decrement count
-    await this.decrementListenerCount(userId);
+    await redis.eval(`
+      if redis.call('DEL', KEYS[1]) == 0 then return 0 end
+      redis.call('DEL', KEYS[2])
+      redis.call('SREM', KEYS[3], KEYS[1])
+      local count = tonumber(redis.call('GET', KEYS[4]) or '0')
+      if count > 0 then redis.call('DECR', KEYS[4]) end
+      return 1
+    `, 4, listenerKey, resultKey, userListenersKey, REDIS_CHANNELS.userListenerCount(userId));
 
     logger.debug(
       { userId, workflowId, nodeId, listenerKey },
@@ -292,6 +413,8 @@ export class RegistrationService {
    * Publish registration control message to market-stream-service
    */
   static async publishRegisterWorkflow(params: {
+    manualListener?: { workflowId: string; nodeId: string; attemptId: string };
+    lookupWorkflowId?: string;
     userId: string;
     workflowId: string;
     nodeId: string;
@@ -306,10 +429,12 @@ export class RegistrationService {
     // symbolMatchMode?: "exact" | "wildcard";
     // tradingNativeStreams?: string[];
   }): Promise<void> {
-    const redis = getRedisCache();
+    const redis = getRedisQueue();
 
     const controlMessage = {
       action: "register_workflow",
+      manualListener: params.manualListener,
+      lookupWorkflowId: params.lookupWorkflowId,
       userId: params.userId,
       workflowId: params.workflowId,
       nodeId: params.nodeId,
@@ -341,7 +466,7 @@ export class RegistrationService {
     workflowId: string;
     isTestListener?: boolean;
   }): Promise<void> {
-    const redis = getRedisCache();
+    const redis = getRedisQueue();
 
     const controlMessage = {
       action: "unregister_workflow",
@@ -374,44 +499,17 @@ export class RegistrationService {
 
     for (const listenerKey of listenerKeys) {
       try {
-        // Get listener data for logging
-        const listenerJson = await redis.get(listenerKey);
-        if (listenerJson) {
-          const listenerData = JSON.parse(listenerJson);
-          logger.debug(
-            { listenerKey, source: listenerData.source },
-            "Cleaning up test listener",
-          );
-        }
-
-        // Delete the listener key and result key
-        await redis.del(listenerKey);
-        await redis.del(`${listenerKey}:result`);
-
-        // Remove from user's active listeners SET
-        await redis.srem(userListenersKey, listenerKey);
-
-        // Publish unregister message to market-stream-service
-        await this.publishUnregisterWorkflow({
-          userId,
-          workflowId: listenerKey, // Use full key as identifier
-          isTestListener: true,
-        });
-
-        cleanedCount++;
-      } catch (err) {
-        logger.error(
-          { listenerKey, error: err },
-          "Failed to cleanup test listener",
-        );
+        const raw = await redis.get(listenerKey);
+        if (raw) {
+          await this.stopListener(JSON.parse(raw));
+          cleanedCount++;
+        } else await redis.srem(userListenersKey, listenerKey);
+      } catch (error) {
+        logger.error({ listenerKey, error }, "Failed to cleanup test listener");
       }
     }
 
     await this.deleteActiveListenersSetIfEmpty(userListenersKey);
-
-    // Reset user's listener count
-    const countKey = REDIS_CHANNELS.userListenerCount(userId);
-    await redis.del(countKey);
 
     logger.info(
       { userId, cleaned: cleanedCount, total: listenerKeys.length },

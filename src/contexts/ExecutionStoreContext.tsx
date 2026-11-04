@@ -181,6 +181,20 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
               console.warn('🪝 [ExecutionStore] Webhook error for node:', nodeId, error);
             }
 
+            if (message.type === 'market_stream_lifecycle' && message.nodeId) {
+              const current = storeRef.current!.getNodeData(message.nodeId);
+              if (current.streamAttemptId !== message.attemptId || !current.isTestListening || current.streamLifecycleStatus === 'failed' || current.streamLifecycleStatus === 'stopped') return;
+              if (current.streamLifecycleTimestamp && current.streamLifecycleTimestamp > message.timestamp) return;
+              const terminal = message.status === 'failed' || message.status === 'stopped';
+              publishSocketUpdate(message.nodeId, {
+                streamLifecycleStatus: message.status, streamLifecycleTimestamp: message.timestamp,
+                ...(terminal ? { isListening: false, isTestListening: false, isStreamPaused: false, isStreamStepping: false } : {}),
+                output: !terminal && message.status === 'listening' && current.output?.status === 'streaming' ? current.output : terminal ? resultFailure(message.message ?? 'Stream listener stopped', {
+                  details: { code: message.code }, data: { endedAt: message.timestamp, retryCount: message.retryCount }, meta: { timestamp: message.timestamp },
+                }) : resultState(message.status, { message: message.status === 'reconnecting' ? 'Reconnecting' : message.status === 'connecting' ? 'Connecting' : 'Listening for stream data' }),
+              });
+            }
+
             // Handle streaming market data updates (new Redis Pub/Sub format)
             if (message.type === 'market_data' && message.payload) {
               const { workflowId, nodeId, source: eventSource, data } = message.payload;
@@ -188,7 +202,7 @@ export const ExecutionStoreProvider = ({ children }: { children: React.ReactNode
               if (nodeId && storeRef.current) {
                 // Only update if this node is actively test listening
                 const existingData = storeRef.current.getNodeData(nodeId);
-                if (existingData?.isTestListening) {
+                if (existingData?.isTestListening && !['failed', 'stopped', 'connecting', 'reconnecting'].includes(existingData.streamLifecycleStatus ?? '')) {
                   if (
                     workflowId &&
                     existingData.testListenWorkflowId &&

@@ -11,6 +11,7 @@ import { resultSuccess, resultFailure, resultState } from "../contracts/nodeResu
  */
 
 import express from "express";
+import { randomUUID } from "crypto";
 import { requireAuth } from "../middleware/jwtAuth";
 import type { AppError } from "../middleware/errorHandler";
 import { SubscriptionService } from "../services/SubscriptionService";
@@ -19,7 +20,9 @@ import { StatusService } from "../services/StatusService";
 import { MAX_LISTENERS_PER_USER } from "../config/streaming";
 import { supabase } from "../config/supabase";
 import { bullMqJobQueue } from "../infra/jobQueue/jobQueueManager";
+import { getRedisQueue } from "../config/redis";
 import { getRedisCache } from "../config/redis";
+import { REDIS_CHANNELS } from "../config/redisChannels";
 import { RedisKeys } from "../infra/redisKeys";
 import {
   StreamExecutionRequest,
@@ -720,7 +723,19 @@ router.post("/cleanup-streaming", async (req, res) => {
  * Handles subscription AND listener registration atomically - eliminates race conditions.
  * Frontend makes ONE call; backend owns all broker/source logic.
  */
+router.get("/listener-status/:workflowId/:nodeId/:attemptId", async (req, res, next) => {
+  try {
+    const { workflowId, nodeId, attemptId } = req.params;
+    const userId = req.user!.id;
+    const listener = (await RegistrationService.getActiveListeners(userId)).find(item => item.workflowId === workflowId && item.nodeId === nodeId && item.attemptId === attemptId);
+    const status = listener ? await RegistrationService.reconcileListener(listener) : null;
+    const saved = status ?? JSON.parse(await getRedisCache().get(`${REDIS_CHANNELS.Listener(userId, workflowId, nodeId)}:status:${attemptId}`) ?? "null");
+    res.json(saved ?? { status: "expired", attemptId });
+  } catch (error) { next(error); }
+});
+
 router.post("/:source/register", async (req, res) => {
+  let startedAttemptId: string | undefined;
   try {
     const userId = req.user?.id;
     const source = req.params.source;
@@ -783,7 +798,7 @@ router.post("/:source/register", async (req, res) => {
       isAlpacaCrypto || cryptoSymbols.length > 0 ? cryptoSymbols : normalizeSymbolList(symbols);
 
     // Dhan nodes historically send `stream_types`; most broker nodes send `stream_type`.
-    const streamType = normalizeStreamTypeList(stream_type);
+    const streamType = normalizeStreamTypeList(stream_type ?? stream_types);
 
     // Split order_update from market stream types (same pattern as /subscribe endpoint)
     //const hasOrderUpdate = parsedstreamType.includes("ORDER_TRADE_UPDATE");
@@ -794,6 +809,7 @@ router.post("/:source/register", async (req, res) => {
       "executionReport",
       "account_activity",
       "order_alert",
+      "order_update",
     ]);
     // Split trading lifecycle marker from market stream types
     const hasOrderUpdate = streamType.some((streamName) =>
@@ -821,136 +837,17 @@ router.post("/:source/register", async (req, res) => {
         },
       );
 
-    // If subscribe mode, subscribe first and WAIT for readiness
-    if (mode === "subscribe") {
-      if (marketstreamType.length > 0 && parsedSymbols.length === 0) {
-        return res.status(400).json(resultFailure("Subscribe mode requires at least one symbol for market streams", { data: null }));
-      }
-
-      console.log(
-        `📡 [ExecuteStreamNode] Subscribe mode - subscribing ${parsedSymbols.length} symbols`,
-      );
-      const requiredEnvironment = environment as string;
-
-      // Subscribe to trading source for order updates
-      if (hasOrderUpdate) {
-        const tradingSourceId = getTradingCompanionSource(source);
-        const tradingResult = await SubscriptionService.subscribe({
-          waitForResult: true,
-          source: tradingSourceId,
-          userId,
-          workflowId,
-          nodeId: node_id,
-          credentialId: credential_id || "",
-          symbols: ["*"],
-          streamType: tradingstreamType,
-          exchange,
-          environment: requiredEnvironment,
-          assetType: assetType,
-          marketType: marketType,
-          contractType: undefined,
-          interval: undefined,
-          scope,
-          targetWorkflowId: workflowId,
-        });
-
-        if (!tradingResult.success) {
-          console.error(
-            `❌ [ExecuteStreamNode] Trading subscription failed:`,
-            tradingResult.error,
-          );
-          return res.status(400).json(resultFailure(tradingResult.error ?? "Node operation failed", { data: null }));
-        }
-
-        // Confirmation is returned only after gateway setup and stream persistence.
-      }
-
-      if (hasNews) {
-        const newsSourceId = `${source}_news`;
-        const newsResult = await SubscriptionService.subscribe({
-          source: newsSourceId,
-          userId,
-          workflowId,
-          nodeId: node_id,
-          credentialId: credential_id || "",
-          symbols: parsedSymbols,
-          //symbols: ["*"],
-          streamType: newsStreamType.length > 0 ? newsStreamType : ["news"],
-          exchange,
-          environment: requiredEnvironment,
-          assetType: assetType,
-          marketType: marketType,
-          contractType: undefined,
-          interval: undefined,
-          scope,
-          targetWorkflowId: workflowId,
-        });
-
-        if (!newsResult.success) {
-          return res.status(400).json(resultFailure(newsResult.error ?? "Node operation failed", { data: null }));
-        }
-
-        await SubscriptionService.waitForSubscriptionReady({
-          userId,
-          source: newsSourceId,
-          environment: requiredEnvironment,
-          scope,
-          workflowId,
-        });
-      }
-
-      // Subscribe to market streams (excluding order_update)
-      if (marketstreamType.length > 0) {
-        const subscribeResult = await SubscriptionService.subscribe({
-          source: sourceId,
-          userId,
-          workflowId,
-          nodeId: node_id,
-          credentialId: credential_id || "",
-          symbols: parsedSymbols,
-          streamType:
-            marketstreamType.length > 0 ? marketstreamType : undefined,
-          exchange,
-          feed,
-          environment: requiredEnvironment,
-          assetType: assetType,
-          marketType: marketType,
-          contractType,
-          interval,
-          depth_levels: depth_levels,
-          scope,
-          targetWorkflowId: workflowId,
-        });
-
-        if (!subscribeResult.success) {
-          console.error(
-            `❌ [ExecuteStreamNode] Subscription failed:`,
-            subscribeResult.error,
-          );
-          return res.status(400).json(resultFailure(subscribeResult.error ?? "Node operation failed", { data: null }));
-        }
-
-        // Wait for market subscription readiness
-        const marketReady = await SubscriptionService.waitForSubscriptionReady({
-          userId,
-          source: sourceId,
-          environment: requiredEnvironment,
-          scope,
-          workflowId,
-        });
-        if (!marketReady) {
-          console.error(
-            `❌ [ExecuteStreamNode] Market subscription readiness timed out for ${sourceId}`,
-          );
-          return res.status(504).json(resultFailure("Market data subscription timed out before readiness. Please retry.", { data: null }));
-        }
-      }
-
-      console.log(
-        `✅ [ExecuteStreamNode] Subscription ready for ${parsedSymbols.length} symbols`,
-      );
+    const attemptId = typeof req.body.attemptId === "string" && /^[0-9a-f-]{36}$/i.test(req.body.attemptId) ? req.body.attemptId : randomUUID();
+    startedAttemptId = attemptId;
+    const routingWorkflowId = `manual-stream-${userId}-${node_id}-${attemptId}`;
+    const dependencies = [
+      ...(marketstreamType.length ? [sourceId] : []),
+      ...(hasOrderUpdate ? [getTradingCompanionSource(source)] : []),
+      ...(hasNews ? [`${source.split("_")[0]}_news`] : []),
+    ].map(source => ({ source, environment: environment || "", credentialId: credential_id || "default" }));
+    if (await getRedisQueue().exists(`market:listener-stopped:${userId}:${routingWorkflowId}`)) {
+      return res.json(resultState("cancelled", null));
     }
-
     // Rate limit check for test listener
     const allowed =
       await RegistrationService.checkAndIncrementListenerCount(userId);
@@ -962,6 +859,8 @@ router.post("/:source/register", async (req, res) => {
       return res.status(429).json(resultFailure(`Maximum concurrent test listeners (${MAX_LISTENERS_PER_USER}) exceeded.`, { data: null }));
     }
 
+    const previous = (await RegistrationService.getActiveListeners(userId)).find(listener => listener.workflowId === workflowId && listener.nodeId === node_id);
+    if (previous) await RegistrationService.stopListener(previous);
     // Create listener
     const listenerKey = await RegistrationService.createListener({
       userId,
@@ -980,19 +879,133 @@ router.post("/:source/register", async (req, res) => {
       contractType,
       interval,
       depth_levels: depth_levels,
+      attemptId, routingWorkflowId, dependencies,
     });
 
+    // Queue subscriptions before registration on the same attempt control queue
+    if (mode === "subscribe") {
+      if (marketstreamType.length > 0 && parsedSymbols.length === 0) {
+        throw new Error("Subscribe mode requires at least one symbol for market streams");
+      }
+
+      console.log(
+        `📡 [ExecuteStreamNode] Subscribe mode - subscribing ${parsedSymbols.length} symbols`,
+      );
+      const requiredEnvironment = environment as string;
+
+      // Subscribe to trading source for order updates
+      if (hasOrderUpdate) {
+        const tradingSourceId = getTradingCompanionSource(source);
+        const tradingResult = await SubscriptionService.subscribe({
+          waitForResult: false,
+          source: tradingSourceId,
+          userId,
+          workflowId: routingWorkflowId,
+          nodeId: node_id,
+          credentialId: credential_id || "",
+          symbols: ["*"],
+          streamType: tradingstreamType,
+          exchange,
+          environment: requiredEnvironment,
+          assetType: assetType,
+          marketType: marketType,
+          contractType: undefined,
+          interval: undefined,
+          scope,
+          targetWorkflowId: routingWorkflowId,
+        });
+
+        if (!tradingResult.success) {
+          console.error(
+            `❌ [ExecuteStreamNode] Trading subscription failed:`,
+            tradingResult.error,
+          );
+          throw new Error(tradingResult.error ?? "Node operation failed");
+        }
+
+        // Confirmation is returned only after gateway setup and stream persistence.
+      }
+
+      if (hasNews) {
+        const newsSourceId = `${source}_news`;
+        const newsResult = await SubscriptionService.subscribe({
+          source: newsSourceId,
+          userId,
+          workflowId: routingWorkflowId,
+          nodeId: node_id,
+          credentialId: credential_id || "",
+          symbols: parsedSymbols,
+          //symbols: ["*"],
+          streamType: newsStreamType.length > 0 ? newsStreamType : ["news"],
+          exchange,
+          environment: requiredEnvironment,
+          assetType: assetType,
+          marketType: marketType,
+          contractType: undefined,
+          interval: undefined,
+          scope,
+          targetWorkflowId: routingWorkflowId,
+        });
+
+        if (!newsResult.success) {
+          throw new Error(newsResult.error ?? "Node operation failed");
+        }
+
+
+      }
+
+      // Subscribe to market streams (excluding order_update)
+      if (marketstreamType.length > 0) {
+        const subscribeResult = await SubscriptionService.subscribe({
+          source: sourceId,
+          userId,
+          workflowId: routingWorkflowId,
+          nodeId: node_id,
+          credentialId: credential_id || "",
+          symbols: parsedSymbols,
+          streamType:
+            marketstreamType.length > 0 ? marketstreamType : undefined,
+          exchange,
+          feed,
+          environment: requiredEnvironment,
+          assetType: assetType,
+          marketType: marketType,
+          contractType,
+          interval,
+          depth_levels: depth_levels,
+          scope,
+          targetWorkflowId: routingWorkflowId,
+        });
+
+        if (!subscribeResult.success) {
+          console.error(
+            `❌ [ExecuteStreamNode] Subscription failed:`,
+            subscribeResult.error,
+          );
+          throw new Error(subscribeResult.error ?? "Node operation failed");
+        }
+
+
+      }
+
+      console.log(
+        `✅ [ExecuteStreamNode] Subscription requested for ${parsedSymbols.length} symbols`,
+      );
+    }
+
     // Publish registration control message to market-stream-service
-    // Now runs AFTER subscriptions are confirmed ready
+    // The service serializes registration after subscription setup for this owner
     await RegistrationService.publishRegisterWorkflow({
       userId,
-      workflowId,
+      workflowId: routingWorkflowId,
       nodeId: node_id,
       source: sourceId,
       scope,
       environment,
       onlyClosedBars,
       interval,
+      lookupWorkflowId: mode === "listen" ? workflowId : routingWorkflowId,
+      manualListener: { workflowId, nodeId: node_id, attemptId },
       // symbols: parsedSymbols,
       // streamTypes: streamType,
       // symbolMatchMode: "exact",
@@ -1006,13 +1019,19 @@ router.post("/:source/register", async (req, res) => {
     );
 
     // Return success response
-    const response = resultState("listening", {
+    const active = (await RegistrationService.getActiveListeners(userId)).find(listener => listener.attemptId === attemptId);
+    const lifecycle = active ? await RegistrationService.reconcileListener(active) :
+      JSON.parse(await getRedisCache().get(`${listenerKey}:status:${attemptId}`) ?? "null");
+    const response = resultState("connecting", {
+      attemptId, routingWorkflowId, lifecycle,
       symbols: parsedSymbols || [], streamType: streamType || [], source: sourceId, scope, mode,
     });
 
     console.log(`✅ [ExecuteStreamNode] Complete - testKey: ${listenerKey}`);
     res.json(response);
   } catch (error) {
+    const failed = req.user?.id ? (await RegistrationService.getActiveListeners(req.user.id)).find(listener => listener.workflowId === req.body.workflowId && listener.nodeId === req.body.node_id && listener.attemptId === startedAttemptId) : undefined;
+    if (failed) await RegistrationService.stopListener(failed);
     console.error("Error executing stream node:", error);
     res.status((error as AppError)?.statusCode || 500).json(resultFailure(error instanceof Error
           ? error.message
@@ -1048,92 +1067,13 @@ router.post("/unregister", async (req, res) => {
         activeListener.nodeId === node_id,
     );
 
-    // Derive trading companion source from source family (not hardcoded list)
-    if (listener?.source) {
-      const sourceFamily = listener.source.split("_")[0]; // "alpaca", "binance", "dhan"
-      const tradingSource = getTradingCompanionSource(sourceFamily);
-      const ORDER_UPDATE_MARKERS = new Set([
-        "trade_updates",
-        "ORDER_TRADE_UPDATE",
-        "ALGO_UPDATE",
-        "executionReport",
-        "account_activity",
-        "order_alert",
-      ]);
-      const streamTypes = listener.streamTypes ?? [];
-      const exchange = listener.exchange;
-
-      // Split trading lifecycle marker from market stream types
-      const hasOrderUpdate = streamTypes.some((streamName) =>
-        ORDER_UPDATE_MARKERS.has(streamName),
-      );
-
-      const { marketstreamType, tradingstreamType } = streamTypes.reduce(
-        (acc, t: string) => {
-          if (ORDER_UPDATE_MARKERS.has(t)) {
-            acc.tradingstreamType.push(t);
-          } else {
-            acc.marketstreamType.push(t);
-          }
-          return acc;
-        },
-        {
-          marketstreamType: [] as string[],
-          tradingstreamType: [] as string[],
-        },
-      );
-
-      // Only unsubscribe trading if this was a market/crypto/stream source
-      // (not if source is already a trading source)
-      if (hasOrderUpdate) {
-        await SubscriptionService.unsubscribe({
-          source: tradingSource as any,
-          userId,
-          workflowId,
-          nodeId: node_id,
-          symbols: ["*"],
-          streamType: tradingstreamType,
-          exchange,
-          marketType: listener.marketType,
-          scope:
-            listener.scope === "global" || listener.scope === "workflow"
-              ? listener.scope
-              : undefined,
-          environment: listener.environment,
-          targetWorkflowId: workflowId,
-        });
-      }
-
-      await SubscriptionService.unsubscribe({
-        source: listener?.source as any,
-        userId,
-        workflowId,
-        nodeId: node_id,
-        symbols: listener.symbols,
-        streamType: marketstreamType,
-        exchange,
-        assetType: listener.assetType,
-        marketType: listener.marketType,
-        contractType: listener.contractType,
-        interval: listener.interval,
-        depth_levels: listener.depth_levels,
-        environment: listener.environment,
-        scope:
-          listener.scope === "global" || listener.scope === "workflow"
-            ? listener.scope
-            : undefined,
-        targetWorkflowId: workflowId,
-      });
+    if (!listener && typeof req.body.attemptId === "string") {
+      const owner = `manual-stream-${userId}-${node_id}-${req.body.attemptId}`;
+      await getRedisQueue().setex(`market:listener-stopped:${userId}:${owner}`, 3600, "1");
     }
-
-    // Delete listener through service
-    await RegistrationService.deleteListener(userId, workflowId, node_id);
-
-    // Publish unregister control message to market-stream-service
-    await RegistrationService.publishUnregisterWorkflow({
-      userId,
-      workflowId: workflowId,
-    });
+    if (listener && (!req.body.attemptId || listener.attemptId === req.body.attemptId)) {
+      await RegistrationService.stopListener(listener);
+    }
 
     console.log(`🛑 Stopped listener: ${workflowId}:${node_id}`);
 

@@ -73,11 +73,13 @@ export const buildStreamingTriggerListeningConfig = ({
   fieldState,
   nodeId,
   workflowId,
+  attemptId,
 }: {
   definition: NodeDefinition;
   fieldState: Record<string, any>;
   nodeId: string;
   workflowId: string;
+  attemptId?: string;
 }): ListeningConfig => {
   const streamingConfig = definition?.streamingConfig ?? {};
   const listeningFlag = streamingConfig.listeningFlag ?? "isTestListening";
@@ -94,7 +96,7 @@ export const buildStreamingTriggerListeningConfig = ({
     streamingConfig.recoveryPolling?.interval ?? DEFAULT_RECOVERY_INTERVAL;
 
   return {
-    buildListeningOutput: (res) => resultState("listening", {
+    buildListeningOutput: (res) => res.lifecycle?.status === "failed" ? resultFailure(res.lifecycle.message, { details: { code: res.lifecycle.code }, meta: { timestamp: res.lifecycle.timestamp } }) : resultState(res.lifecycle?.status ?? "connecting", {
       message: `Listening for ${definition?.name || "streaming"} data...`,
       startedAt: new Date().toISOString(),
       mode: res.mode,
@@ -103,8 +105,10 @@ export const buildStreamingTriggerListeningConfig = ({
       streamType: res.streamType || [],
       scope: res.scope,
     }),
-    buildListeningNodeData: () => ({
-      testListenWorkflowId: workflowId,
+    buildListeningNodeData: (res) => ({
+      streamAttemptId: res.attemptId,
+      streamLifecycleStatus: res.lifecycle?.status ?? "connecting",
+      testListenWorkflowId: res.routingWorkflowId ?? workflowId,
       testListenNodeId: nodeId,
       testListenSource: fieldState.source || definition?.subCategory,
     }),
@@ -116,9 +120,17 @@ export const buildStreamingTriggerListeningConfig = ({
     listeningFlag,
     receivedFlag: "streamDataReceived",
     recoveryPolling: {
-      endpoint: recoveryEndpoint,
+      endpoint: attemptId ? `/stream/listener-status/${encodeURIComponent(workflowId)}/${encodeURIComponent(nodeId)}/${encodeURIComponent(attemptId)}` : recoveryEndpoint,
       interval: recoveryInterval,
       processResult: (result) => {
+        if (attemptId && result.attemptId !== attemptId) return { done: false };
+        if (result.status === "failed" || result.status === "stopped") return {
+          done: true, expired: true,
+          output: resultFailure(result.message ?? "Stream listener stopped", { details: { code: result.code }, meta: { timestamp: result.timestamp } }),
+        };
+        if (["connecting", "reconnecting", "listening"].includes(result.status)) return {
+          done: false, output: resultState(result.status, { message: result.status === "listening" ? "Listening for stream data" : result.status === "reconnecting" ? "Reconnecting" : "Connecting" }),
+        };
         if (result.status === "expired") {
           return {
             done: true,

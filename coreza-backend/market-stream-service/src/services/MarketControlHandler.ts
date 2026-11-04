@@ -50,6 +50,20 @@ interface ControlMessage {
   contractType?: "perpetual" | "current_quarter" | "next_quarter";
 }
 
+interface ManualListenerRegistration {
+  userId: string;
+  workflowId: string;
+  nodeId: string;
+  attemptId: string;
+  routingWorkflowId: string;
+  mode: string;
+  source: string;
+  scope: string;
+  environment?: string;
+  credentialId?: string;
+  dependencies?: { source: string; environment: string; credentialId: string }[];
+}
+
 interface SourceState {
   source: MarketSource;
   gateway: MarketDataGateway;
@@ -115,7 +129,26 @@ export class MarketControlHandler {
   private sourceStates = new Map<string, SourceState>();
   private initialized = false;
   private workflowControlQueues = new Map<string, Promise<void>>();
-  private gatewayMutex = new Mutex(); // Mutex to prevent race conditions
+  private pendingManualCleanups = new Set<string>();
+  private manualRoutingMutexes = new Map<string, Mutex>();
+  private getManualRoutingMutex(workflowId: string): Mutex {
+    let mutex = this.manualRoutingMutexes.get(workflowId);
+    if (!mutex) { mutex = new Mutex(); this.manualRoutingMutexes.set(workflowId, mutex); }
+    return mutex;
+  }
+  private releaseManualRouting(workflowId: string, release?: () => void): void {
+    release?.();
+    const mutex = this.manualRoutingMutexes.get(workflowId);
+    if (mutex && !mutex.isLocked()) this.manualRoutingMutexes.delete(workflowId);
+  }
+  private gatewayMutexes = new Map<string, Mutex>();
+
+  private getGatewayMutex(userId: string, source: string): Mutex {
+    const key = this.getStateKey(userId, source);
+    let mutex = this.gatewayMutexes.get(key);
+    if (!mutex) { mutex = new Mutex(); this.gatewayMutexes.set(key, mutex); }
+    return mutex;
+  }
 
   private constructor() {
     // Create isolated Redis connections for this service
@@ -178,8 +211,15 @@ export class MarketControlHandler {
    */
   private setupControlListeners(): void {
     this.redisSub.on("message", async (channel, message) => {
+      let cleanupId: string | undefined;
       try {
         const msg = JSON.parse(message);
+        const incomingCleanup = msg.manualCleanup?.id;
+        if (typeof incomingCleanup === "string") {
+          if (this.pendingManualCleanups.has(incomingCleanup)) return;
+          this.pendingManualCleanups.add(incomingCleanup);
+          cleanupId = incomingCleanup;
+        }
         console.log(`📨 [MarketControl] Received message on ${channel}:`, {
           action: msg.action,
           source: msg.source,
@@ -224,6 +264,8 @@ export class MarketControlHandler {
           `❌ [MarketControl] Error processing message on ${channel}:`,
           error,
         );
+      } finally {
+        if (cleanupId) this.pendingManualCleanups.delete(cleanupId);
       }
     });
 
@@ -274,7 +316,7 @@ export class MarketControlHandler {
       //symbolMatchMode = "exact",
       //tradingNativeStreams = [],
     } = msg;
-
+    const releaseManual = msg.manualListener ? await this.getManualRoutingMutex(workflowId).acquire() : undefined;
     try {
       console.log(
         `📡 [MarketControl] Registering streaming workflow ${workflowId} for user ${userId} (source: ${
@@ -283,14 +325,16 @@ export class MarketControlHandler {
         )})`,
       );
 
+      let manualListener: ManualListenerRegistration | undefined;
       if (msg.manualListener) {
         const manual = msg.manualListener;
         const raw = await getRedisCache().get(REDIS_CHANNELS.Listener(userId, manual.workflowId, manual.nodeId));
         if (!raw || JSON.parse(raw).attemptId !== manual.attemptId || await getRedisQueue().exists(`market:listener-stopped:${userId}:${workflowId}`)) return;
+        manualListener = JSON.parse(raw);
       }
       const subscriber = MarketDataSubscriber.getInstance();
       // NORMAL WORKFLOW MODE: Get symbols from Redis subscriptions
-      const streamToRegister =
+      const streamToRegister = manualListener ? await this.readManualRouting(manualListener) :
         scope === "global"
           ? await this.getUserSubscribedStreams(userId, source, environment)
           : await this.getWorkflowScopedStreams(
@@ -300,6 +344,7 @@ export class MarketControlHandler {
               environment,
             );
 
+      if (!streamToRegister) return;
       if (streamToRegister.length === 0) {
         console.log(
           `ℹ️ [MarketControl] No active subscriptions for user ${userId}, workflow ${workflowId} will receive data when symbols are subscribed`,
@@ -326,12 +371,12 @@ export class MarketControlHandler {
         for (const required of [source, ...this.getCompanionSources(source)]) {
           const state = this.sourceStates.get(this.getStateKey(userId, required));
           if (!state || state.environment !== environment) continue;
-          await getRedisQueue().setex(`market:gateway-binding:${userId}:${required}:${environment}`, 3600,
+          await getRedisQueue().set(`market:gateway-binding:${userId}:${required}:${environment}`,
             JSON.stringify({ source: state.source, credentialId: state.credentialId, environment }));
           const lifecycle = state.gateway.getLifecycle();
           if (lifecycle) state.gateway.onLifecycle?.(lifecycle);
         }
-        await getRedisQueue().setex(`market:listener-ready:${workflowId}`, 3600, "1");
+        await getRedisQueue().set(`market:listener-ready:${workflowId}`, "1");
         await getRedisQueue().publish("market:gateway-lifecycle", JSON.stringify({ userId }));
       }
       console.log(
@@ -344,7 +389,7 @@ export class MarketControlHandler {
         `❌ [MarketControl] Failed to register streaming workflow ${workflowId}:`,
         error,
       );
-    }
+    } finally { if (releaseManual) this.releaseManualRouting(workflowId, releaseManual); }
   }
 
   /**
@@ -354,17 +399,29 @@ export class MarketControlHandler {
     action: string;
     userId: string;
     workflowId: string;
+    manualCleanup?: { id: string; listener: ManualListenerRegistration };
   }): Promise<void> {
     const { userId, workflowId } = msg;
-
+    const releaseManual = msg.manualCleanup ? await this.getManualRoutingMutex(workflowId).acquire() : undefined;
     try {
       console.log(
         `📡 [MarketControl] Unregistering streaming workflow ${workflowId} for user ${userId} (isTestListener: 
         )`,
       );
 
+      if (msg.manualCleanup) {
+        const { listener } = msg.manualCleanup;
+        if (listener.userId !== userId || listener.routingWorkflowId !== workflowId || !workflowId.startsWith("manual-stream-")) {
+          throw new Error("Invalid manual listener cleanup owner");
+        }
+        await this.releaseManualSubscriptions(listener);
+      }
       const subscriber = MarketDataSubscriber.getInstance();
       await subscriber.unregisterWorkflow(userId, workflowId);
+      if (msg.manualCleanup) {
+        await getRedisQueue().del(`market:listener-ready:${workflowId}`);
+        await getRedisQueue().setex(`market:listener-cleanup-done:${msg.manualCleanup.id}`, 3600, "1");
+      }
 
       console.log(
         `✅ [MarketControl] Unregistered streaming workflow ${workflowId}`,
@@ -374,7 +431,102 @@ export class MarketControlHandler {
         `❌ [MarketControl] Failed to unregister streaming workflow ${workflowId}:`,
         error,
       );
+    } finally { if (releaseManual) this.releaseManualRouting(workflowId, releaseManual); }
+  }
+
+  private async releaseManualSubscriptions(listener: ManualListenerRegistration): Promise<void> {
+    if (listener.mode !== "subscribe") return;
+    for (const previous of Array.from(this.sourceStates.values())) {
+      if (previous.connectedUserId !== listener.userId) continue;
+      if (!previous.workflowStreams.has(listener.routingWorkflowId) && previous.streams.size > 0) continue;
+      await this.getGatewayMutex(listener.userId, previous.source).runExclusive(async () => {
+        const state = this.sourceStates.get(this.getStateKey(listener.userId, previous.source));
+        if (!state) return;
+        const owned = Array.from(state.workflowStreams.get(listener.routingWorkflowId) ?? []);
+        const unowned = owned.filter(stream => !Array.from(state.workflowStreams.entries())
+          .some(([owner, streams]) => owner !== listener.routingWorkflowId && streams.has(stream)));
+        // Remove this attempt's routing claims even while another owner keeps the socket stream.
+        for (const source of new Set([listener.source, ...this.getCompanionSources(listener.source)])) {
+          if (this.getStateKey(listener.userId, source) !== this.getStateKey(listener.userId, state.source)) continue;
+          const key = listener.scope === "global"
+            ? REDIS_CHANNELS.globalSubscriptionStreams(listener.userId, source, listener.environment ?? "")
+            : REDIS_CHANNELS.workflowSubscriptionStreams(listener.userId, listener.routingWorkflowId, source, listener.environment ?? "");
+          const remove = listener.scope === "global" ? unowned : owned;
+          if (remove.length) await this.redisPub.srem(key, ...remove);
+        }
+        if (unowned.length) state.gateway.unsubscribeStreams(unowned);
+        state.workflowStreams.delete(listener.routingWorkflowId);
+        unowned.forEach(stream => state.streams.delete(stream));
+        try { await this.persistState(listener.userId, state.source, true); }
+        catch (error) {
+          if (owned.length) state.workflowStreams.set(listener.routingWorkflowId, new Set(owned));
+          unowned.forEach(stream => state.streams.add(stream));
+          throw error;
+        }
+        if (state.streams.size === 0) {
+          state.gateway.disconnect();
+          await this.redisPub.del(REDIS_CHANNELS.gatewayState(listener.userId, state.source));
+          this.sourceStates.delete(this.getStateKey(listener.userId, state.source));
+        }
+      });
     }
+  }
+
+  /**
+   * Read the exact feed sets used by manual routing. Dependency tracking and
+   * subscription discovery share this read so companion feeds cannot diverge.
+   */
+  private async readManualRouting(listener: ManualListenerRegistration): Promise<string[] | undefined> {
+    const streams = new Set<string>();
+    const dependencies: NonNullable<ManualListenerRegistration["dependencies"]> = [];
+    const lookup = listener.mode === "listen" ? listener.workflowId : listener.routingWorkflowId;
+    for (const source of new Set([listener.source, ...this.getCompanionSources(listener.source)])) {
+      const key = listener.scope === "global"
+        ? REDIS_CHANNELS.globalSubscriptionStreams(listener.userId, source, listener.environment ?? "")
+        : REDIS_CHANNELS.workflowSubscriptionStreams(listener.userId, lookup, source, listener.environment ?? "");
+      const feedStreams = await this.redisPub.smembers(key);
+      if (!feedStreams.length) continue;
+      feedStreams.forEach(stream => streams.add(stream));
+      dependencies.push({ source, environment: listener.environment ?? "", credentialId: listener.credentialId ?? "default" });
+    }
+    const key = REDIS_CHANNELS.Listener(listener.userId, listener.workflowId, listener.nodeId);
+    const active = await getRedisCache().eval(`
+      local raw = redis.call('GET', KEYS[1])
+      if not raw then return 0 end
+      local listener = cjson.decode(raw)
+      if listener.attemptId ~= ARGV[1] or listener.status == 'failed' or listener.status == 'stopped' then return 0 end
+      listener.dependencies = cjson.decode(ARGV[2])
+      redis.call('SET', KEYS[1], cjson.encode(listener))
+      return 1
+    `, 1, key, listener.attemptId, JSON.stringify(dependencies));
+    return active ? Array.from(streams) : undefined;
+  }
+
+  private async refreshManualListeners(userId: string, scope: string, targetWorkflowId?: string): Promise<void> {
+    const cache = getRedisCache();
+    const subscriber = MarketDataSubscriber.getInstance();
+    for (const key of await cache.smembers(REDIS_CHANNELS.userActiveListeners(userId))) {
+      const raw = await cache.get(key);
+      if (!raw) continue;
+      const candidate: ManualListenerRegistration = JSON.parse(raw);
+      if (!candidate.attemptId || !candidate.routingWorkflowId) continue;
+      const mutex = this.getManualRoutingMutex(candidate.routingWorkflowId);
+      try { await mutex.runExclusive(async () => {
+        const current = await cache.get(key);
+        if (!current) return;
+        const listener: ManualListenerRegistration = JSON.parse(current);
+        if (listener.attemptId !== candidate.attemptId) return;
+        const lookup = listener.mode === "listen" ? listener.workflowId : listener.routingWorkflowId;
+        if (scope === "workflow" ? listener.scope !== "workflow" || lookup !== targetWorkflowId : listener.scope !== "global") return;
+        const streams = await this.readManualRouting(listener);
+        if (streams && subscriber.getRegisteredWorkflowIdsForUser(userId).includes(listener.routingWorkflowId)) {
+          await subscriber.addStreamsToRegistration(listener.routingWorkflowId, streams);
+        }
+      }); } finally {
+        if (!mutex.isLocked() && this.manualRoutingMutexes.get(candidate.routingWorkflowId) === mutex) this.manualRoutingMutexes.delete(candidate.routingWorkflowId);
+      }
+    }
+    await getRedisQueue().publish("market:gateway-lifecycle", JSON.stringify({ userId }));
   }
 
   /**
@@ -530,6 +682,7 @@ export class MarketControlHandler {
     try {
       const subscriber = MarketDataSubscriber.getInstance();
 
+      await this.refreshManualListeners(userId, scope, targetWorkflowId);
       // If workflow-scoped, only update the target workflow AND any test listeners for it
       if (scope === "workflow" && targetWorkflowId) {
         console.log(
@@ -552,41 +705,6 @@ export class MarketControlHandler {
         if (!fallbackWorkflowIds.includes(targetWorkflowId)) {
           console.warn(
             `⚠️ [MarketControl] Target workflow ${targetWorkflowId} not found in memory; skipping workflow-scoped update for user ${userId}`,
-          );
-        }
-
-        // Also update any test listeners for this workflow (handles race condition)
-        const workflowStreamListenerKey = `listener:userId:${userId}:workflowId:${targetWorkflowId}:*`;
-        try {
-          const workflowStreamListeners = await this.redisPub.keys(
-            workflowStreamListenerKey,
-          );
-          if (workflowStreamListeners.length > 0) {
-            console.log(
-              `🧪 [MarketControl] Found ${workflowStreamListeners.length} test listener(s) for workflow ${targetWorkflowId}`,
-            );
-            for (const workflowStreamListener of workflowStreamListeners) {
-              const workflowId = workflowStreamListener.split(":")[4];
-              await subscriber.addStreamsToRegistration(
-                workflowId,
-                newStreamNames,
-                tradingNativeStreams,
-              );
-              if (newSymbols.length > 0) {
-                await subscriber.addAllowedSymbolsToRegistration(
-                  workflowId,
-                  newSymbols,
-                );
-              }
-              console.log(
-                `🧪 [MarketControl] Updated test listener ${workflowStreamListener} with ${newStreamNames.length} streams`,
-              );
-            }
-          }
-        } catch (err) {
-          console.warn(
-            `⚠️ [MarketControl] Failed to update test listeners for ${targetWorkflowId}:`,
-            err,
           );
         }
 
@@ -624,6 +742,8 @@ export class MarketControlHandler {
       );
 
       for (const activeStreamingWorkflow of activeStreamingWorkflows) {
+        // Manual routing is refreshed from its own source/scope keys above.
+        if (activeStreamingWorkflow.startsWith("manual-stream-")) continue;
         try {
           // Apply stream filter if specified
           const streamsToAdd = newStreamNames;
@@ -770,8 +890,9 @@ export class MarketControlHandler {
           `[MarketControl] Missing required environment for subscribe (${source})`,
         );
       }
-      // Acquire mutex to prevent concurrent gateway connections
-      await this.gatewayMutex.runExclusive(async () => {
+      let routingStreams: string[] = [];
+      // Serialize only the gateway being connected, not unrelated users or feeds.
+      await this.getGatewayMutex(userId, source).runExclusive(async () => {
         if (workflowId?.startsWith("manual-stream-") && await getRedisQueue().exists(`market:listener-stopped:${userId}:${workflowId}`)) return;
         const stateKey = this.getStateKey(userId, source);
         let state = this.sourceStates.get(stateKey);
@@ -897,23 +1018,16 @@ export class MarketControlHandler {
           //   ),
           // ];
 
-          // Notify active streaming workflows about new symbols (respecting scope)
-          await this.updateActiveStreamingWorkflows(
-            userId,
-            routingStreamNames,
-            // symbols,
-            scope,
-            targetWorkflowId,
-            // tradingSource ? streamType : tradingNativeStreams,
-          );
+          routingStreams = routingStreamNames;
 
           console.log(
             `✅ [MarketControl] Recorded ${requestedStreamNames.length} subscription stream(s) on ${source}`,
           );
         }
       });
+      if (routingStreams.length) await this.updateActiveStreamingWorkflows(userId, routingStreams, scope, targetWorkflowId);
       const activeState = this.sourceStates.get(this.getStateKey(userId, source));
-      if (activeState) await getRedisQueue().setex(`market:gateway-binding:${userId}:${source}:${environment}`, 3600,
+      if (activeState) await getRedisQueue().set(`market:gateway-binding:${userId}:${source}:${environment}`,
         JSON.stringify({ source: activeState.source, credentialId: activeState.credentialId, environment }));
       const gateway = activeState?.gateway;
       if (gateway?.getLifecycle()) gateway.onLifecycle?.(gateway.getLifecycle()!);
@@ -1245,12 +1359,13 @@ export class MarketControlHandler {
           const redis = getRedisQueue();
           const payload = { ...event, ...identity };
           const key = `market:gateway-lifecycle:${userId}:${gatewayInstanceSource}:${identity.environment}:${identity.credentialId}`;
-          await redis.setex(key, 3600, JSON.stringify(payload));
+          if (event.status === "failed" || event.status === "stopped") await redis.setex(key, 3600, JSON.stringify(payload));
+          else await redis.set(key, JSON.stringify(payload));
           await redis.publish("market:gateway-lifecycle", JSON.stringify(payload));
         }).catch(error => console.error("Gateway lifecycle publication failed", error));
       };
 
-      await getRedisQueue().setex(`market:gateway-binding:${userId}:${source}:${identity.environment}`, 3600, JSON.stringify(identity));
+      await getRedisQueue().set(`market:gateway-binding:${userId}:${source}:${identity.environment}`, JSON.stringify(identity));
       // Keep the control operation pending across transient connection closes.
       await gateway.connect(creds, {
         userId,
@@ -1290,6 +1405,7 @@ export class MarketControlHandler {
   private async persistState(
     userId: string,
     source: MarketSource,
+    strict = false,
   ): Promise<void> {
     const state = this.sourceStates.get(this.getStateKey(userId, source));
     if (!state) return;
@@ -1328,6 +1444,7 @@ export class MarketControlHandler {
       console.warn(
         `⚠️ [MarketControl] Failed to persist state for ${source}, continuing with in-memory state`,
       );
+      if (strict) throw error;
       // Continue operation - state is still in memory
     }
   }

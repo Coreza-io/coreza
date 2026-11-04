@@ -136,7 +136,8 @@ export const LUA_ATOMIC_LISTENER = `
   -- Match found: store result but keep listener active for continuous streaming
   redis.call('SETEX', KEYS[2], ARGV[3], ARGV[2])
   listener.lastMatchAt = redis.call('TIME')[1]
-  redis.call('SETEX', KEYS[1], ARGV[4], cjson.encode(listener))
+  if listener.attemptId then redis.call('SET', KEYS[1], cjson.encode(listener))
+  else redis.call('SETEX', KEYS[1], ARGV[4], cjson.encode(listener)) end
   
   return listenerStr
 `;
@@ -158,8 +159,9 @@ export const LUA_INCREMENT_LISTENER_COUNT = `
     return 0
   end
   
+  local ttl = redis.call('TTL', KEYS[1])
   redis.call('INCR', KEYS[1])
-  redis.call('EXPIRE', KEYS[1], ARGV[2])
+  if ttl ~= -1 then redis.call('EXPIRE', KEYS[1], ARGV[2]) end
   return 1
 `;
 

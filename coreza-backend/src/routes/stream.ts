@@ -17,7 +17,6 @@ import type { AppError } from "../middleware/errorHandler";
 import { SubscriptionService } from "../services/SubscriptionService";
 import { RegistrationService } from "../services/RegistrationService";
 import { StatusService } from "../services/StatusService";
-import { MAX_LISTENERS_PER_USER } from "../config/streaming";
 import { supabase } from "../config/supabase";
 import { bullMqJobQueue } from "../infra/jobQueue/jobQueueManager";
 import { getRedisQueue } from "../config/redis";
@@ -730,7 +729,8 @@ router.get("/listener-status/:workflowId/:nodeId/:attemptId", async (req, res, n
     const listener = (await RegistrationService.getActiveListeners(userId)).find(item => item.workflowId === workflowId && item.nodeId === nodeId && item.attemptId === attemptId);
     const status = listener ? await RegistrationService.reconcileListener(listener) : null;
     const saved = status ?? JSON.parse(await getRedisCache().get(`${REDIS_CHANNELS.Listener(userId, workflowId, nodeId)}:status:${attemptId}`) ?? "null");
-    res.json(saved ?? { status: "expired", attemptId });
+    const retainedTerminal = saved && ["failed", "stopped"].includes(saved.status);
+    res.json(listener || retainedTerminal ? saved : { status: "expired", attemptId });
   } catch (error) { next(error); }
 });
 
@@ -848,17 +848,6 @@ router.post("/:source/register", async (req, res) => {
     if (await getRedisQueue().exists(`market:listener-stopped:${userId}:${routingWorkflowId}`)) {
       return res.json(resultState("cancelled", null));
     }
-    // Rate limit check for test listener
-    const allowed =
-      await RegistrationService.checkAndIncrementListenerCount(userId);
-
-    if (!allowed) {
-      console.warn(
-        `⚠️ [ExecuteStreamNode] User ${userId} exceeded max test listeners (${MAX_LISTENERS_PER_USER})`,
-      );
-      return res.status(429).json(resultFailure(`Maximum concurrent test listeners (${MAX_LISTENERS_PER_USER}) exceeded.`, { data: null }));
-    }
-
     const previous = (await RegistrationService.getActiveListeners(userId)).find(listener => listener.workflowId === workflowId && listener.nodeId === node_id);
     if (previous) await RegistrationService.stopListener(previous);
     // Create listener
@@ -879,7 +868,7 @@ router.post("/:source/register", async (req, res) => {
       contractType,
       interval,
       depth_levels: depth_levels,
-      attemptId, routingWorkflowId, dependencies,
+      attemptId, routingWorkflowId, dependencies: mode === "listen" ? [] : dependencies, credentialId: credential_id || "default",
     });
 
     // Queue subscriptions before registration on the same attempt control queue

@@ -136,6 +136,12 @@ export class MarketControlHandler {
     return MarketControlHandler.instance;
   }
 
+  private connectionOptions(source: string, feed?: string, marketType?: string) {
+    return GATEWAY_CONFIGS[source.split("_")[0]]?.normalizeConnectionOptions?.(
+      source, { feed, marketType },
+    ) ?? { feed, marketType };
+  }
+
   private credentialIdentity(source: string, credentials: any): string | undefined {
     const fields = GATEWAY_CONFIGS[source.split("_")[0]]?.connectionCredentialFields;
     if (!fields) return undefined;
@@ -330,9 +336,10 @@ export class MarketControlHandler {
         const matched = new Set<string>();
         for (const check of msg.readinessChecks) {
           const state = this.sourceStates.get(this.getStateKey(userId, check.source));
-          if (!state || state.environment !== environment || (state.feed || "iex") !== (check.feed || "iex") ||
+          const selected = this.connectionOptions(check.source, check.feed, check.marketType);
+          if (!state || state.environment !== environment || state.feed !== selected.feed ||
               (check.credentialId && state.credentialId !== check.credentialId) ||
-              (check.marketType && (state.marketType || "spot") !== check.marketType)) {
+              state.marketType !== selected.marketType) {
             throw new Error("No ready subscription matches this account, environment and feed. Subscribe first.");
           }
           await this.assertCurrentCredential(state);
@@ -848,8 +855,9 @@ export class MarketControlHandler {
           if (Date.now() >= deadline) throw new Error("Subscription startup timed out. Please retry.");
         };
         assertCurrent();
+        const selected = this.connectionOptions(source, feed, marketType);
         if (state && (state.credentialId !== (msg.credentialId || "default") ||
-            state.environment !== environment || (state.feed || "iex") !== (feed || "iex") || (state.marketType || "spot") !== (marketType || "spot"))) {
+            state.environment !== environment || state.feed !== selected.feed || state.marketType !== selected.marketType)) {
           throw new Error("An existing gateway uses a different account, environment, market or feed. Unsubscribe it before changing the connection.");
         }
         if (state) await this.assertCurrentCredential(state);
@@ -1255,6 +1263,7 @@ export class MarketControlHandler {
       const serviceType = baseSource;
       const gatewaySource = baseSource;
 
+      ({ feed, marketType } = this.connectionOptions(source, feed, marketType));
       let creds: any;
 
       // Use getCredentials (like brokers) when credentialId is provided

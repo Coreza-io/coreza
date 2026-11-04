@@ -17,6 +17,7 @@ import {
 export const dhanGatewayConfig: GatewayConfig = {
   id: 'dhan',
   connectionCredentialFields: ["api_key", "client_id"],
+  normalizeConnectionOptions: () => ({}),
   // These feeds have no positive acknowledgment; observe the current connection.
   subscriptionReadiness: source => ({
     requiresSubscriptionMessage: source !== 'dhan_trading',

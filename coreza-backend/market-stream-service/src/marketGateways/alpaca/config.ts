@@ -18,6 +18,11 @@ import {
 export const alpacaGatewayConfig: GatewayConfig = {
   id: "alpaca",
   connectionCredentialFields: ["api_key", "secret_key"],
+  normalizeConnectionOptions: (source, options) => ({
+    // News, trading and crypto have dedicated endpoints rather than stock feeds.
+    feed: ["alpaca_news", "alpaca_trading", "alpaca_crypto"].includes(source)
+      ? undefined : options.feed ?? "iex",
+  }),
   subscriptionReadiness: () => ({ requiresSubscriptionMessage: true, confirmation: "acknowledgment" }),
   describeStartupError: describeAlpacaStartupError,
   makeSubscriptionExpectation: (stream, _payload, source) => buildAlpacaSubscribeMessage([stream], source),

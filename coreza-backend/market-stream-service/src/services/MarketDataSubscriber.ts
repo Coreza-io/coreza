@@ -218,6 +218,8 @@ export class MarketDataSubscriber {
         isLive: isLive ?? false,
       };
 
+      // Database authorization may outlast the caller's startup deadline.
+      assertCurrent();
       // Replace routing and aggregation state along with the registration.
       if (startupDeadline === undefined && this.registrations.has(workflowId)) {
         await this.unregisterWorkflowLocked(userId, workflowId);

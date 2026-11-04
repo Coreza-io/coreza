@@ -18,12 +18,18 @@ export interface SubscriptionReadinessPolicy {
   observationMs?: number;
 }
 
+export interface GatewayConnectionOptions {
+  feed?: string;
+  marketType?: string;
+}
+
 export interface GatewayConfig {
   id: MarketSource;
   wsUrl: string | ((creds: any, source?: string) => string);
 
   // Stable secret fields used to detect a saved API-key credential replacement.
   connectionCredentialFields?: readonly string[];
+  normalizeConnectionOptions?: (source: string, options: GatewayConnectionOptions) => GatewayConnectionOptions;
 
   // Authentication
   makeAuthMessage?: (creds: any, source?: string) => any;

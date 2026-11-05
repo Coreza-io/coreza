@@ -326,7 +326,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
 
   return (
     <NodePortalContainerContext.Provider value={portalContainer}>
-    <div ref={capturePortalContainer} className={`relative ${presentationExpanded ? "node-expanded" : ""}`}>
+    <div ref={capturePortalContainer} className={`relative ${presentationExpanded ? "node-expanded" : ""} ${presentationExpanded && isDarkMode ? "coreza-expanded-workspace" : ""}`}>
       {/* Input Data Panel */}
       {presentationExpanded && <InputPanel key={`input:${scopeKey ?? ""}:${nodeId}`} {...mergedInputPanelProps} />}
 

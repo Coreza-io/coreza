@@ -31,7 +31,7 @@ latest user request. Tests and browser/performance validation remain unrun.
 Add a chart-type selector to the Equity Curve card shown in the first supplied screenshot. Offer **Line** and **Candle** on both backtest and live/streaming results.
 
 - **Line:** blue closing-equity line in the upper pane and blue period-return bars below, using the shared chart renderer and interval controls described above.
-- **Candle:** introduce a QuantConnect-inspired layout: portfolio-equity candlesticks in the upper pane and blue percentage-return bars in a smaller lower pane, with a shared time axis and crosshair tooltip.
+- **Candle:** use a two-pane layout: portfolio-equity candlesticks in the upper pane and blue percentage-return bars in a smaller lower pane, with a shared time axis and crosshair tooltip.
 - Keep Coreza's card, theme, typography, spacing, and currency conventions. Treat the second screenshot as interaction/layout inspiration, not a pixel copy.
 - This is an equity chart, not a security-price chart. Candle OHLC must come from portfolio valuations; symbol OHLC and trade execution prices cannot substitute for equity observations.
 
@@ -45,36 +45,14 @@ Use a padded equity range based on finite observed values and a safe nonzero ran
 
 This amendment is source/type reviewed only. Tests, browser screenshots and performance gates remain unrun. PR #871 and sparse-daily follow-up #872 have been merged; the Line-mode amendment is a separate follow-up.
 
-## 2. What QuantConnect actually does
+## 2. Equity chart presentation
 
-Research checked the current public LEAN source, official documentation, and the supplied reference image.
+Show observed portfolio-equity candles in the upper pane and percentage-return
+bars in the lower pane. Share the time axis and crosshair tooltip, while keeping
+currency and percentage scales distinct. Candle values must use actual portfolio
+valuations and the aligned bucket semantics below.
 
-### Verified engine behavior
-
-At LEAN master `22404ea28b8d3f3c9eb74d6ed9f0444426f8e417`:
-
-1. `Engine/Results/BaseResultsHandler.cs` initializes Strategy Equity with an Equity `CandlestickSeries` at index 0 and a Return `SeriesType.Bar` series at index 1, using currency and percent units respectively.
-2. `UpdateAlgorithmEquity` feeds observed portfolio value into the current aggregated equity bar. `SampleEquity` emits that bar as a candlestick and resets the accumulator.
-3. `Engine/Results/BacktestingResultHandler.cs::ProcessSynchronousEvents` updates the equity bar before its sampling check. Chart sampling therefore differs from simply taking one equity close and drawing a candle around it.
-4. `BaseResultsHandler.Sample(DateTime)` records periodic performance relative to the preceding daily portfolio value and updates the daily baseline. Return bars and equity sampling are separate series; do not assume every equity candle necessarily corresponds to one daily return sample.
-5. `Common/CandlestickSeries.cs` represents explicit open/high/low/close values. Official charting docs distinguish candle series from vertical bar series.
-
-### What the screenshot establishes
-
-The reference image shows green/red equity bodies and wicks, a distinct blue return histogram around zero, right-side scales, and a floating tooltip with date, OHLC, and Return. These are visual observations. Public LEAN code verifies the data model, not the proprietary cloud frontend's exact renderer.
-
-Do not claim that QuantConnect's cloud results page uses Plotly merely because its Research Environment examples use Plotly. The exact cloud frontend library is not established by this investigation and is unnecessary for Coreza's implementation.
-
-### Sources
-
-- [LEAN BaseResultsHandler at reviewed commit](https://github.com/QuantConnect/Lean/blob/22404ea28b8d3f3c9eb74d6ed9f0444426f8e417/Engine/Results/BaseResultsHandler.cs)
-- [LEAN BacktestingResultHandler at reviewed commit](https://github.com/QuantConnect/Lean/blob/22404ea28b8d3f3c9eb74d6ed9f0444426f8e417/Engine/Results/BacktestingResultHandler.cs)
-- [LEAN CandlestickSeries at reviewed commit](https://github.com/QuantConnect/Lean/blob/22404ea28b8d3f3c9eb74d6ed9f0444426f8e417/Common/CandlestickSeries.cs)
-- [QuantConnect charting documentation](https://www.quantconnect.com/docs/v2/writing-algorithms/charting)
-- [LEAN result handler API reference](https://www.lean.io/docs/v2/lean-engine/class-reference/classQuantConnect_1_1Lean_1_1Engine_1_1Results_1_1BaseResultsHandler.html)
-- [Lightweight Charts v5.2 panes](https://tradingview.github.io/lightweight-charts/docs/panes)
-
-Coreza should adopt the useful two-pane presentation while defining its own explicit, aligned bucket semantics below.
+Use the existing chart library's [pane support](https://tradingview.github.io/lightweight-charts/docs/panes).
 
 ## 3. Findings in Coreza dev
 
@@ -288,7 +266,7 @@ This documentation-only commit does not claim these implementation tests have ru
 
 ## 12. Scope and rollback
 
-First release covers only the results-page Equity Curve. Defer security-price chart upgrades, exact QuantConnect branding, extra OHLC-bar chart types, deposits/withdrawal-adjusted performance redesign, session-calendar buckets, and a new reporting API unless profiling requires it.
+First release covers only the results-page Equity Curve. Defer security-price chart upgrades, extra OHLC-bar chart types, deposits/withdrawal-adjusted performance redesign, session-calendar buckets, and a new reporting API unless profiling requires it.
 
 Chart returns use the existing portfolio equity valuation basis; external cash movements can affect returns until explicit flow-adjusted reporting exists. Do not imply these bars are flow-adjusted performance.
 

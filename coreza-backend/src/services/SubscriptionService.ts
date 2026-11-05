@@ -179,7 +179,9 @@ export class SubscriptionService {
       const isCompanionSource =
         String(source).endsWith("_trading") || String(source).endsWith("_news");
 
-      if (baseBroker === "dhan" && !isCompanionSource) {
+      // Resolve instruments only when subscribing. Unsubscribe uses the gateway's
+      // existing resolution map and must not depend on the scrip master CSV.
+      if (operation === "subscribe" && baseBroker === "dhan" && !isCompanionSource) {
         const exchangeSegment = exchange || "NSE_EQ";
         const resolvedSymbols: string[] = [];
 

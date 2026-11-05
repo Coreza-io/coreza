@@ -58,12 +58,7 @@ import { Link } from "react-router-dom";
 import { apiClient } from "@/lib/apiClient";
 import { StreamBadgeWithTooltip } from "@/components/market/StreamBadgeWithTooltip";
 import { getAllBrokerKeys, getSourceBadgeClasses, getSourceEmoji } from "@/utils/brokerRegistry";
-
-const TRADE_UPDATE_STREAMS = new Set([
-  "trade_updates",
-  "ORDER_TRADE_UPDATE",
-  "executionReport",
-]);
+import { KNOWN_TRADING_STREAMS } from "@/utils/streamNameParser";
 
 interface SourceStatus {
   source: string;
@@ -114,6 +109,7 @@ const sourceIcons = (source: string) => getSourceEmoji(source);
 type ParsedStreamName = {
   symbol: string;
   streamType: string;
+  exchange?: string;
   interval?: string;
   contractType?: string;
 };
@@ -127,7 +123,7 @@ const KNOWN_CONTRACT_TYPES = new Set([
 ]);
 
 const parseSubscribedStream = (stream: string): ParsedStreamName => {
-  if (TRADE_UPDATE_STREAMS.has(stream)) {
+  if (KNOWN_TRADING_STREAMS.has(stream.toLowerCase())) {
     return {
       symbol: "[*]",
       streamType: stream,
@@ -135,35 +131,28 @@ const parseSubscribedStream = (stream: string): ParsedStreamName => {
     };
   }
 
-  const [left, right] = stream.split("@");
+  const parts = stream.split("@");
+  const left = parts[0];
+  const right = parts[parts.length - 1];
+  const exchange = parts.length === 3 ? parts[1].toUpperCase() : undefined;
 
-  if (!left || !right) {
+  if ((parts.length !== 2 && parts.length !== 3) || !left || !right || (parts.length === 3 && !exchange)) {
     throw new Error(`Invalid stream format: ${stream}`);
   }
 
-  const rightParts = right.split("_");
-  const streamType = rightParts[0];
-  const interval =
-    rightParts.length > 1 ? rightParts.slice(1).join("_") : undefined;
-
-  if (!streamType) {
-    throw new Error(`Invalid stream type in stream: ${stream}`);
-  }
-
-  const leftParts = left.split("_");
-  const possibleContractType = leftParts[leftParts.length - 1];
-
-  let symbol = left;
-  let contractType: string | undefined;
-
-  if (KNOWN_CONTRACT_TYPES.has(possibleContractType)) {
-    contractType = possibleContractType;
-    symbol = leftParts.slice(0, -1).join("_");
-  }
+  // Split only a trailing time interval; event names may contain underscores.
+  const timedStream = right.match(/^(.+)_(\d+[a-zA-Z]+)$/);
+  const streamType = timedStream?.[1] ?? right;
+  const interval = timedStream?.[2];
+  const isContinuous = streamType === "continuousKline" || streamType === "continuous_kline";
+  const contractType = isContinuous
+    ? [...KNOWN_CONTRACT_TYPES].find(type => left.endsWith(`_${type}`)) : undefined;
+  const symbol = contractType ? left.slice(0, -(contractType.length + 1)) : left;
 
   return {
     symbol,
     streamType,
+    exchange,
     interval,
     contractType,
   };
@@ -238,7 +227,7 @@ const MarketSubscriptions = () => {
       setUnsubscribing(`stream-${stream}`);
 
       try {
-        const { symbol, streamType, interval, contractType } =
+        const { symbol, streamType, exchange, interval, contractType } =
           parseSubscribedStream(stream);
 
         const response = await apiClient.post(
@@ -247,7 +236,8 @@ const MarketSubscriptions = () => {
             symbols: [symbol],
             stream_type: [streamType],
             interval,
-            contract_type: contractType,
+            exchange,
+            contractType,
             scope: "global",
             environment,
           },
@@ -292,7 +282,7 @@ const MarketSubscriptions = () => {
       setUnsubscribing(`stream-${workflowId}-${stream}`);
 
       try {
-        const { symbol, streamType, interval, contractType } =
+        const { symbol, streamType, exchange, interval, contractType } =
           parseSubscribedStream(stream);
 
         const response = await apiClient.post(
@@ -303,7 +293,8 @@ const MarketSubscriptions = () => {
             symbols: [symbol],
             stream_type: [streamType],
             interval,
-            contract_type: contractType,
+            exchange,
+            contractType,
             scope: "workflow",
             environment,
           },

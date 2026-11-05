@@ -941,10 +941,11 @@ export const PlugConnectionLine: React.FC<ConnectionLineComponentProps> = ({
   const fromType = fromHandle?.type ?? "source";
   const draggingFromSource = fromType === "source";
 
-  const plugPosition = draggingFromSource ? fromPosition : toPosition;
-  // A bottom source (e.g. AIAgent Tool) should show an unmistakably
-  // downward-facing connector at the cursor, not a diagonal plug silhouette.
-  const downwardDrag = draggingFromSource && fromPosition === Position.Bottom;
+  // Bottom handles, including AIAgent's target attachment handles, should
+  // show a downward-facing tip regardless of the handle's connection type.
+  const downwardDrag = fromPosition === Position.Bottom;
+  const plugPosition =
+    downwardDrag || draggingFromSource ? fromPosition : toPosition;
 
   const plugRotation = getMalePlugRotation(plugPosition);
   const plugTailOffset = getMalePlugTailOffset(plugPosition);
@@ -986,7 +987,7 @@ export const PlugConnectionLine: React.FC<ConnectionLineComponentProps> = ({
         }}
       />
 
-      {/* Use an explicit downward tip for bottom-source drags. This shape
+      {/* Use an explicit downward tip for drags from bottom handles. This shape
           points down in SVG coordinates and needs no rotation guessing. */}
       {downwardDrag ? (
         <g

@@ -1,56 +1,87 @@
 /*
- * Coreza expanded workspace — restrained 3D dark-mode treatment.
- * Styles are strictly scoped to mounted expanded nodes; collapsed graph
- * rendering and workflow execution paths are intentionally untouched.
+ * Expanded node workspace — pronounced, restrained 3D treatment.
+ * Only dark expanded nodes get this skin. The underlying controls and
+ * execution state remain unchanged. No continuous animations.
  */
 .coreza-expanded-workspace .coreza-expanded-surface {
-  border-radius: 12px;
+  isolation: isolate;
+  border-radius: 14px;
+  /* Preserve the existing status-driven red error border. */
   box-shadow:
-    0 0 0 1px var(--node-border-color),
-    0 12px 28px rgba(0, 0, 0, .62),
-    0 0 22px var(--node-glow-color),
-    inset 0 1px 0 rgba(210, 244, 255, .14) !important;
-  transition: border-color 180ms ease, box-shadow 180ms ease;
+    0 1px 0 rgba(218, 250, 255, .24) inset,
+    0 -5px 13px rgba(0, 0, 0, .40) inset,
+    0 8px 0 rgba(4, 13, 22, .75),
+    0 22px 38px rgba(0, 0, 0, .72),
+    0 0 16px var(--node-glow-color) !important;
+  transition: box-shadow 180ms ease;
 }
 .coreza-expanded-workspace .coreza-expanded-surface:hover {
   box-shadow:
-    0 0 0 1px var(--node-border-color),
-    0 15px 32px rgba(0, 0, 0, .7),
-    0 0 28px var(--node-glow-color),
-    inset 0 1px 0 rgba(210, 244, 255, .22) !important;
+    0 1px 0 rgba(218, 250, 255, .31) inset,
+    0 -5px 13px rgba(0, 0, 0, .42) inset,
+    0 8px 0 rgba(4, 13, 22, .8),
+    0 26px 44px rgba(0, 0, 0, .78),
+    0 0 24px var(--node-glow-color) !important;
 }
-.coreza-expanded-workspace .coreza-expanded-surface > [class*="card-content"] {
+/* A fixed, non-interactive glass header adds a visible sculpted edge. */
+.coreza-expanded-workspace .coreza-expanded-surface::before {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+  inset: 1px 1px auto;
+  height: 90px;
+  border-radius: 13px 13px 35% 35%;
+  background: linear-gradient(175deg, rgba(217, 248, 255, .19), rgba(62, 187, 217, .055) 36%, transparent 100%);
+  z-index: 1;
+}
+.coreza-expanded-workspace .coreza-expanded-surface .card-content {
   position: relative;
+  z-index: 2;
 }
 .coreza-expanded-workspace .coreza-expanded-input,
 .coreza-expanded-workspace .coreza-expanded-output {
-  border-radius: 12px;
-  border-color: rgba(93, 120, 142, .42);
-  background: linear-gradient(155deg, #1d2530 0%, #111922 65%, #0e151d 100%);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.045), 0 8px 20px rgba(0,0,0,.36);
-  transition: border-color 180ms ease, box-shadow 180ms ease;
+  border-radius: 13px;
+  border-color: rgba(100, 132, 154, .48);
+  background: linear-gradient(160deg, #263340 0%, #18232e 20%, #101820 72%, #0b1119 100%);
+  box-shadow:
+    0 1px 0 rgba(240, 250, 255, .12) inset,
+    0 -3px 7px rgba(0, 0, 0, .24) inset,
+    0 5px 0 rgba(4, 10, 16, .62),
+    0 15px 29px rgba(0, 0, 0, .58);
+  transition: border-color 170ms ease, box-shadow 170ms ease;
 }
 .coreza-expanded-workspace .coreza-expanded-input:hover,
 .coreza-expanded-workspace .coreza-expanded-output:hover {
-  border-color: rgba(106, 156, 187, .55);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 10px 24px rgba(0,0,0,.42);
+  border-color: rgba(113, 181, 213, .73);
+  box-shadow:
+    0 1px 0 rgba(240, 250, 255, .17) inset,
+    0 -3px 7px rgba(0, 0, 0, .24) inset,
+    0 5px 0 rgba(4, 10, 16, .68),
+    0 18px 34px rgba(0, 0, 0, .68);
 }
-/* Existing panel headers, tabs, data trees and actions remain unchanged. */
 .coreza-expanded-workspace .coreza-expanded-input > :first-child,
 .coreza-expanded-workspace .coreza-expanded-output > :first-child {
-  background: linear-gradient(180deg, rgba(255,255,255,.055), rgba(255,255,255,0));
+  background: linear-gradient(180deg, rgba(152, 188, 211, .14), rgba(255, 255, 255, .025));
+  box-shadow: 0 1px 0 rgba(225, 245, 255, .10) inset, 0 2px 5px rgba(0, 0, 0, .24);
 }
+/* Recessed parameters — don't change values, form controls, or gestures. */
 .coreza-expanded-workspace .coreza-expanded-surface :is(input:not([type="checkbox"]):not([type="radio"]), textarea, select, [role="combobox"]) {
-  border-radius: 8px;
-  box-shadow: inset 0 2px 5px rgba(0,0,0,.28), 0 1px 0 rgba(255,255,255,.04);
-  transition: border-color 160ms ease, box-shadow 160ms ease;
+  border-radius: 9px;
+  border-color: rgba(111, 143, 166, .28);
+  background-color: rgba(14, 20, 30, .38);
+  box-shadow:
+    0 2px 5px rgba(0, 0, 0, .46) inset,
+    0 1px 0 rgba(220, 243, 255, .065);
+  transition: border-color 150ms ease, box-shadow 150ms ease;
 }
 .coreza-expanded-workspace .coreza-expanded-surface :is(input:not([type="checkbox"]):not([type="radio"]), textarea, select, [role="combobox"]):focus-visible {
-  border-color: rgba(87, 204, 245, .75);
-  box-shadow: 0 0 0 2px rgba(29, 194, 236, .20), inset 0 2px 5px rgba(0,0,0,.25);
+  border-color: rgba(98, 216, 250, .9);
+  box-shadow:
+    0 0 0 2px rgba(44, 203, 243, .26),
+    0 0 14px rgba(41, 198, 238, .14),
+    0 2px 5px rgba(0, 0, 0, .35) inset;
 }
-/* Keep keyboard/accessible tab outlines; only enhance existing focused tabs. */
-.coreza-expanded-workspace :is(.coreza-expanded-surface,.coreza-expanded-input) [role="tab"]:focus-visible {
+.coreza-expanded-workspace :is(.coreza-expanded-surface, .coreza-expanded-input) [role="tab"]:focus-visible {
   outline: 2px solid rgba(102, 214, 255, .78);
   outline-offset: 2px;
 }
@@ -58,7 +89,7 @@
   .coreza-expanded-workspace .coreza-expanded-surface,
   .coreza-expanded-workspace .coreza-expanded-input,
   .coreza-expanded-workspace .coreza-expanded-output,
-  .coreza-expanded-workspace .coreza-expanded-surface :is(input,textarea,select,[role="combobox"]) {
+  .coreza-expanded-workspace .coreza-expanded-surface :is(input, textarea, select, [role="combobox"]) {
     transition: none;
   }
 }

@@ -19,10 +19,7 @@ import {
   LiveFillRepository,
   LiveFillRow,
 } from "../repositories/LiveFillRepository";
-import {
-  CashSnapshotRepository,
-  CashSnapshotRow,
-} from "../repositories/CashSnapshotRepository";
+import { CashSnapshotRepository } from "../repositories/CashSnapshotRepository";
 import { LatestSnapshotState, SnapshotCache } from "../services/SnapshotCache";
 import Redis from "ioredis";
 import { RedisKeys } from "../infra/redisKeys";
@@ -360,6 +357,9 @@ export class FillSyncWorker {
           const snapshot: LatestSnapshotState = JSON.parse(json);
           if (!snapshot.id) throw new Error(`Snapshot retry ID missing: ${key}`);
           if (scope && (snapshot.workflow_id !== scope.workflowId || (scope.executionId && snapshot.execution_id !== scope.executionId))) continue;
+          if (!snapshot.workflow_id || !snapshot.execution_id) {
+            throw new Error(`Portfolio snapshot missing activation scope, retained for recovery: ${key}`);
+          }
           const cash = toFiniteNumber(snapshot.cash);
           const equity = toFiniteNumber(snapshot.equity);
           const realized = toFiniteNumber(snapshot.realized_pnl);

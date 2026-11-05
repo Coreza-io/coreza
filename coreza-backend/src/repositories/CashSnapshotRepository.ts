@@ -22,8 +22,8 @@ export interface CashSnapshotRow {
   snapshot_at: string;
   balances: Record<string, unknown>;
   total_value_usdt?: number;
-  workflow_id?: string;
-  execution_id?: string;
+  workflow_id: string;
+  execution_id: string;
   base_currency?: string;
   cash?: number;
   equity?: number;
@@ -34,21 +34,14 @@ export interface CashSnapshotRow {
 
 export class CashSnapshotRepository {
   /**
-   * Batch insert cash snapshots.
+   * Upsert live activation snapshots into shared portfolio reporting.
    */
   static async batchInsert(rows: CashSnapshotRow[]): Promise<void> {
     if (rows.length === 0) return;
     if (rows.some(row => !row.id)) throw new Error("Snapshot retry ID is required");
 
-    const scoped = rows.filter(row => row.workflow_id && row.execution_id);
-    const account = rows.filter(row => !row.workflow_id || !row.execution_id);
-    if (account.length) {
-      const { error } = await supabase.from("cash_snapshots").insert(account as any);
-      if (error) throw error;
-    }
-    if (!scoped.length) return;
     const { error } = await (supabase as any).from("portfolio").upsert(
-      scoped.map(row => ({ ...row, live_strategy_id: row.execution_id })),
+      rows.map(row => ({ ...row, live_strategy_id: row.execution_id })),
       { onConflict: "id" },
     );
 
@@ -60,7 +53,7 @@ export class CashSnapshotRepository {
       throw error;
     }
 
-    scoped.forEach(row => LiveStrategiesRepository.markDirty(row.execution_id!));
+    rows.forEach(row => LiveStrategiesRepository.markDirty(row.execution_id));
     logger.debug({ count: rows.length }, "snapshots inserted");
   }
 }

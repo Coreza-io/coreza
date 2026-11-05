@@ -40,7 +40,8 @@ Backtest trades and daily portfolio values use bounded 500-row batches. Live
 snapshots retain exact timestamps and raw balances. Coalescing is scoped by
 activation/account/currency, with one writer per key and atomic compare/delete
 cleanup. Failed writes remain retryable; malformed samples do not block unrelated
-activations. Account-level cash snapshots remain operational account data.
+activations. Unscoped snapshots use the existing malformed-payload handling.
+The legacy `cash_snapshots` table retains historical rows.
 
 Statement triggers mark changed live summaries durably. The worker discovers dirty
 headers on its existing cadence; a data revision prevents stale calculations from

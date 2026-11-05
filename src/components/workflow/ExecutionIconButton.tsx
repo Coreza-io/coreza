@@ -8,6 +8,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import "./MechanicalNodeControl.css";
 
 export type ExecutionPhase =
   | "idle"
@@ -63,6 +64,54 @@ export function ExecutionControl({
   const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>): void => {
     if (event.key === "Enter" || event.key === " ") event.stopPropagation();
   };
+
+
+  // Expanded node panels use the compact Mechanical Control · V2 skin.
+  // Keep the existing execution handler, state and guard logic unchanged.
+  if (targetKind === "node" && presentation === "labelled") {
+    return (
+      <TooltipProvider>
+        <div className={cn("flex w-full justify-center py-1", className)}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className={cn(
+                  "nodrag nopan mechanical-node-execute",
+                  canStop && "mechanical-node-execute--running",
+                  phase === "failed" && "mechanical-node-execute--failed",
+                  blocked && "mechanical-node-execute--blocked",
+                )}
+                aria-label={label}
+                aria-busy={busy || undefined}
+                aria-disabled={blocked || undefined}
+                onPointerDown={isolatePointer}
+                onClick={(event) => { isolateMouse(event); activate(); }}
+                onDoubleClick={isolateMouse}
+                onKeyDown={onKeyDown}
+              >
+                <span className="mechanical-node-execute__well">
+                  <span className="mechanical-node-execute__face">
+                    {canStop ? (
+                      <Square className="mechanical-node-execute__icon" fill="currentColor" aria-hidden="true" />
+                    ) : busy ? (
+                      <LoaderCircle className="mechanical-node-execute__icon animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                    ) : (
+                      <svg className="mechanical-node-execute__icon" viewBox="0 0 72 72" aria-hidden="true">
+                        <path d="M20 12 Q20 8 25 11 L60 32 Q65 36 60 40 L25 61 Q20 64 20 59 Z" fill="currentColor" stroke="currentColor" strokeLinejoin="round" />
+                      </svg>
+                    )}
+                  </span>
+                </span>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>{description}</TooltipContent>
+          </Tooltip>
+        </div>
+        <span className="sr-only" aria-live="polite">{statusDescription}</span>
+      </TooltipProvider>
+    );
+  }
 
   return (
     <TooltipProvider>

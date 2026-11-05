@@ -1,0 +1,97 @@
+/* Mechanical Control · V2: compact expanded-node Execute button. */
+.mechanical-node-execute {
+  box-sizing: border-box;
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  border: 1px solid rgba(172, 185, 205, 0.22);
+  border-radius: 50%;
+  cursor: pointer;
+  background: linear-gradient(142deg, #4d5664 0%, #272e39 13%, #111722 38%, #171d28 66%, #3b4552 85%, #0d131c 100%);
+  box-shadow: 0 5px 9px #0008, inset 1px 1px 3px #e2e9ff25, inset -2px -3px 5px #0009;
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+
+.mechanical-node-execute::after {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  border-radius: 50%;
+  pointer-events: none;
+  background: linear-gradient(130deg, transparent 38%, #02050b13 55%, #a0b5d018 80%, transparent 91%);
+  box-shadow: inset 0 0 2px #b2bfd926;
+}
+
+.mechanical-node-execute__well {
+  position: relative;
+  z-index: 1;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 46%;
+  height: 46%;
+  padding: 2px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #070b12, #414958 34%, #06080e 68%, #747b8a 98%);
+  box-shadow: inset 1px 2px 3px #000a, 0 1px 2px #b0bbd330;
+}
+
+.mechanical-node-execute__face {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  color: #b9adbf;
+  background: radial-gradient(circle at 34% 24%, #4b4a55, #292b36 60%, #14161e 100%);
+  box-shadow: inset 1px 1px 2px #ffffff2b, inset -2px -3px 4px #0009, 0 2px 3px #000b, 0 -1px 2px #a6afbf88;
+}
+
+.mechanical-node-execute__icon {
+  display: block;
+  width: 17px;
+  height: 17px;
+  flex: none;
+  filter: drop-shadow(1px 1px 1px #000b);
+}
+
+.mechanical-node-execute:hover:not([aria-disabled="true"]) {
+  box-shadow: 0 6px 11px #000a, inset 1px 1px 3px #e2e9ff35, inset -2px -3px 5px #0009;
+}
+
+.mechanical-node-execute:active:not([aria-disabled="true"]) {
+  transform: translateY(2px) scale(0.97);
+}
+
+.mechanical-node-execute:focus-visible {
+  outline: 2px solid #98ceef;
+  outline-offset: 4px;
+}
+
+.mechanical-node-execute--running .mechanical-node-execute__face {
+  color: #b4e1cb;
+  background: radial-gradient(circle at 34% 24%, #435a52, #29352f 60%, #141d1a);
+  box-shadow: inset 1px 1px 2px #ffffff20, inset -2px -3px 4px #000a, 0 2px 3px #000b, 0 -1px 3px #84d6aa88;
+}
+
+.mechanical-node-execute--failed .mechanical-node-execute__face {
+  color: #f2a0aa;
+}
+
+.mechanical-node-execute--blocked {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mechanical-node-execute { transition: none; }
+}

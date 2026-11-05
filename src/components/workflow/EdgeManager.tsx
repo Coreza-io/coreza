@@ -941,11 +941,12 @@ export const PlugConnectionLine: React.FC<ConnectionLineComponentProps> = ({
   const fromType = fromHandle?.type ?? "source";
   const draggingFromSource = fromType === "source";
 
-  // Bottom handles, including AIAgent's target attachment handles, should
-  // show a downward-facing tip regardless of the handle's connection type.
-  const downwardDrag = fromPosition === Position.Bottom;
+  // Bottom attachment handles (including AIAgent Tool) are targets, but their
+  // dragged plug must still face down, away from the handle.
   const plugPosition =
-    downwardDrag || draggingFromSource ? fromPosition : toPosition;
+    fromPosition === Position.Bottom || draggingFromSource
+      ? fromPosition
+      : toPosition;
 
   const plugRotation = getMalePlugRotation(plugPosition);
   const plugTailOffset = getMalePlugTailOffset(plugPosition);
@@ -987,32 +988,18 @@ export const PlugConnectionLine: React.FC<ConnectionLineComponentProps> = ({
         }}
       />
 
-      {/* Use an explicit downward tip for drags from bottom handles. This shape
-          points down in SVG coordinates and needs no rotation guessing. */}
-      {downwardDrag ? (
-        <g
-          transform={`translate(${toX - 12}, ${toY - 12})`}
-          className="plug-edge__plug-dragging-inner"
-          pointerEvents="none"
-        >
-          <path
-            d="M 9 2 H 15 V 11 H 20 L 12 22 L 4 11 H 9 Z"
-            className="plug-edge__plug-path"
-            fill={cordColor}
-          />
-        </g>
-      ) : (
-        <g
-          transform={`translate(${toX}, ${toY}) rotate(${plugRotation}) scale(0.9) translate(-12, -12)`}
-          className="plug-edge__plug-dragging-inner"
-        >
-          <path
-            d={MALE_PLUG_PATH}
-            className="plug-edge__plug-path"
-            fill={cordColor}
-          />
-        </g>
-      )}
+      {/* Keep the original plug silhouette and rotate it for the drag direction. */}
+      <g
+        transform={`translate(${toX}, ${toY}) rotate(${plugRotation}) scale(0.9) translate(-12, -12)`}
+        className="plug-edge__plug-dragging-inner"
+        pointerEvents="none"
+      >
+        <path
+          d={MALE_PLUG_PATH}
+          className="plug-edge__plug-path"
+          fill={cordColor}
+        />
+      </g>
     </g>
   );
 };

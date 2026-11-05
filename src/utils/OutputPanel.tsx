@@ -196,7 +196,7 @@ const OutputPanel: React.FC<OutputPanelProps> = ({
         position === "right"
           ? "left-full top-0 ml-2"
           : "right-full top-0 mr-2"
-      } w-80 h-full z-10 bg-card border border-border rounded-lg shadow-elevated overflow-hidden flex flex-col`}
+      } w-80 h-full z-10 bg-card border border-border rounded-lg shadow-elevated overflow-hidden flex flex-col coreza-expanded-output`}
     >
       <div className="flex items-center justify-between p-3 border-b border-border bg-muted/30">
         <div className="flex items-center gap-2">

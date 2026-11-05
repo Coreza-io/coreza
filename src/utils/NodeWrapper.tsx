@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { X, Edit2, Trash2, Loader2, Wrench } from "lucide-react";
 import ElectricBorderSVG from "@/components/workflow/ElectricBorderSVG";
+import "./ExpandedNode3D.css";
 import {
   FemalePlugIcon,
   MalePlugIcon,
@@ -325,7 +326,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
 
   return (
     <NodePortalContainerContext.Provider value={portalContainer}>
-    <div ref={capturePortalContainer} className={`relative ${presentationExpanded ? "node-expanded" : ""}`}>
+    <div ref={capturePortalContainer} className={`relative ${presentationExpanded ? "node-expanded" : ""} ${presentationExpanded && isDarkMode ? "coreza-expanded-workspace" : ""}`}>
       {/* Input Data Panel */}
       {presentationExpanded && <InputPanel key={`input:${scopeKey ?? ""}:${nodeId}`} {...mergedInputPanelProps} />}
 
@@ -335,6 +336,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
         className={`
           relative transition-[background-color,border-color,box-shadow] duration-300 ease-in-out
           ${isDarkMode ? "" : "shadow-card border-2 hover:shadow-elevated"}
+          ${presentationExpanded && isDarkMode ? "coreza-expanded-surface" : ""}
           ${presentationExpanded ? "" : "cursor-pointer group/node"}
           ${nodeShapeClass}
           ${isFlashing ? "animate-stream-data-flash" : ""}

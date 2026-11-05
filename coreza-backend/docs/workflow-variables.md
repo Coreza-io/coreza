@@ -21,7 +21,7 @@ Shared Redis holds one bounded record per scope with atomic revision comparison 
 
 ## Server and rollout
 
-All new server modes use the existing local overlay, initialized empty only for graphs that use `$vars` or contain typed Persistent Edit. There is no per-tick variable Redis/SQL work and no legacy SQL snapshot or commit on the active runtime path. Existing destroy/finally, pooled reset, backtest release and live stop paths release the registry.
+All new server modes use the existing local overlay, allocated only by the first successful typed Persistent Edit commit. Startup and reads do not allocate a variable snapshot; reads before initialization keep the missing-variable diagnostic. The Parallel Loop restriction is determined from the graph even before any variables exist. There is no per-tick variable Redis/SQL work and no legacy SQL snapshot or commit on the active runtime path. Existing destroy/finally, pooled reset, backtest release and live stop paths release the registry.
 
 New live write-behind admissions are disabled even if `LIVE_VARIABLE_WRITE_BEHIND_ENABLED` is set. The checkpoint classes, worker and SQL records remain for pre-cutover fenced stop/handoff and recovery. A legacy owned scope blocks new live activation. New ephemeral activations never read checkpoint values, checkpoint their RAM, or hand values back to workflow rows. An activation admission marker prevents a replacement worker from silently reconstructing lost variable state. Incomplete stops retain their recovery/admission state and cannot be treated as completed teardown.
 

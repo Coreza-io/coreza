@@ -1,3 +1,4 @@
+import { activeVariableSnapshots } from "../utils/metrics";
 import { readNodeResult } from "../contracts/nodeResult";
 import { LIVE_TIMING_ENABLED, timingNow, observeStage, type LiveExecutionTiming } from "../utils/liveTiming";
 import { DataContext, DataContextManager } from "./DataContext";
@@ -89,25 +90,26 @@ export class WorkflowRun {
           if (legacy.owned) throw new Error("Legacy live variable ownership requires stop/handoff or recovery before activation");
         }
         if (this.disposed || this.options.abortSignal?.aborted) throw new Error("Workflow initialization cancelled");
-        this.variables = emptyVariableSnapshot(this.options.userId, this.options.workflowId);
-        const { activeVariableSnapshots } = await import("../utils/metrics");
-        if (this.disposed) { this.variables = undefined; throw new Error("Workflow initialization cancelled"); }
-        activeVariableSnapshots.inc();
-        this.variablesCounted = true;
+        // The first successful Persistent Edit commit creates the registry.
       }
     })();
     return this.variableInitialization;
   }
   private commitVariables = (changes: readonly VariableChange[], token: string): void | Promise<void> => {
-    if (!this.variables || this.disposed || this.options.abortSignal?.aborted) throw new Error("Persistent variable execution unavailable");
+    if (this.disposed || this.options.abortSignal?.aborted) throw new Error("Persistent variable execution unavailable");
     if (this.liveVariables) {
       this.liveVariables.assertAdmission();
       this.liveVariables.state.apply(changes);
       return;
     }
-    // Every server mode owns an ephemeral registry for this run/activation.
-    const next = overlayVariables(this.variables, changes);
-    this.variables = Object.freeze({ ...next, revision: (BigInt(this.variables.revision) + 1n).toString() });
+    // Allocate only after all changes validate; startup and reads create nothing.
+    const base = this.variables ?? emptyVariableSnapshot(this.options.userId, this.options.workflowId);
+    const next = overlayVariables(base, changes);
+    this.variables = Object.freeze({ ...next, revision: (BigInt(base.revision) + 1n).toString() });
+    if (!this.variablesCounted) {
+      activeVariableSnapshots.inc();
+      this.variablesCounted = true;
+    }
   };
   get variableRevision(): string | undefined { return this.variables?.revision; }
   setVariableSafetyStopHandler(handler: () => void): void { this.onVariableSafetyStop = handler; }
@@ -347,7 +349,7 @@ export class WorkflowRun {
     this.liveVariables?.dispose();
     if (this.variablesCounted) {
       this.variablesCounted = false;
-      void import("../utils/metrics").then(({ activeVariableSnapshots }) => activeVariableSnapshots.dec());
+      activeVariableSnapshots.dec();
     }
     this.disposed = true;
     this.variables = undefined;

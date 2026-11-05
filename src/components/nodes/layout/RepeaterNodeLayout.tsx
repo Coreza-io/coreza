@@ -1,4 +1,3 @@
-import { insertEditFieldReference } from "@/utils/editFieldReferenceDrop";
 import { snapshotTypedExpressionContext, pickTypedJsonSource } from "../../../../coreza-backend/src/nodes/logic/typedExpressionContext";
 import { TYPED_EXPRESSION_FEATURES } from "../../../../coreza-backend/src/nodes/logic/safeExpression";
 import { useStableNodes } from "@/contexts/StableNodeContext";
@@ -77,7 +76,6 @@ import {
 import { useReferenceTextDrop, planReferenceTextDrop, finishReferenceTextDrop } from "@/hooks/useReferenceTextDrop";
 
 interface EditFieldEditorProps {
-  variableNames?: readonly string[];
   row: TypedEditFieldRow;
   index: number;
   disabled?: boolean;
@@ -99,7 +97,6 @@ interface EditFieldEditorProps {
 export const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
   row,
   index,
-  variableNames = [],
   disabled,
   update,
   updateMany,
@@ -329,20 +326,6 @@ export const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
             />
           )}
         </ReferenceDropTarget>
-        {expression && variableNames.length > 0 && (
-          <select aria-label="Insert workflow variable" className={`${editorClass} text-xs`} value="" disabled={disabled}
-            onChange={event => {
-              const control = referenceDrop.controlRef.current;
-              const current = control?.value ?? value;
-              const insertion = insertEditFieldReference(current, `{{ $vars.${event.target.value} }}`, control?.selectionStart ?? current.length, control?.selectionEnd ?? current.length);
-              if (!insertion) { setDropError("Place the reference in editable text or unquoted expression code."); return; }
-              if (update(index, "value", insertion.value) === false) return;
-              referenceDrop.recordInsertion(insertion, "expression"); setDropError(undefined);
-            }}>
-            <option value="" disabled>Insert variable…</option>
-            {variableNames.map(name => <option key={name} value={name}>{name}</option>)}
-          </select>
-        )}
         {fieldPreview.popup}
         {dropError && <p className="text-xs text-destructive">{dropError}</p>}
         {!expression &&
@@ -1094,7 +1077,6 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
                       updateMany={updateFieldsRow}
                       remove={removeCondition}
                       getExpressionContext={getEditExpressionContext}
-                      variableNames={readOnly ? [] : Object.keys(variableQuery.data?.values ?? {})}
                       makeReference={(event) =>
                         computeDropInsert(event)?.insert ?? null
                       }

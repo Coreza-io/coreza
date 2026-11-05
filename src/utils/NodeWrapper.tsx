@@ -56,7 +56,7 @@ const ROTATION_MAP: Record<HandlePosition, number> = {
   left: 45,
   right: 45,
   top: -45,
-  bottom: -45,
+  bottom: 135,
 };
 
 const HANDLE_TRANSFORM_MAP: Record<HandlePosition, string> = {
@@ -428,7 +428,9 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
               isInputHandle ? "plug-handle--female" : "plug-handle--male"
             }`;
             const handleTransform = HANDLE_TRANSFORM_MAP[pos];
-            const rotation = ROTATION_MAP[pos];
+            // Bottom output handles must match the downward drag-preview plug.
+            // Input handles keep their existing female-plug orientation.
+            const rotation = pos === "bottom" && isInputHandle ? -45 : ROTATION_MAP[pos];
             const iconTranslation = ICON_TRANSLATION_MAP[pos];
             const iconStyle = {
               transform: `${iconTranslation} rotate(${rotation}deg)`,

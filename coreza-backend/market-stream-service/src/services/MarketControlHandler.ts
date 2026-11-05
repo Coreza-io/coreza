@@ -1071,9 +1071,31 @@ export class MarketControlHandler {
       const stateKey = this.getStateKey(userId, source);
       const state = this.sourceStates.get(stateKey);
       if (!state) {
-        console.log(
-          `⚠️ [MarketControl] No gateway state found for ${source} and user ${userId}`,
-        );
+        // Routing can outlive a failed connection or a service restart. Removing
+        // persisted claims does not require recreating a gateway connection.
+        const scopedWorkflowId = targetWorkflowId || workflowId;
+        if (scope === "workflow" && !scopedWorkflowId) {
+          throw new Error("A workflow ID is required for workflow-scoped unsubscribe");
+        }
+        const streamsKey = scope === "workflow"
+          ? REDIS_CHANNELS.workflowSubscriptionStreams(userId, scopedWorkflowId, source, environment)
+          : REDIS_CHANNELS.globalSubscriptionStreams(userId, source, environment);
+        const persistedStreams = await this.redisPub.smembers(streamsKey);
+        const requestedStreams = symbols.length === 0 ? persistedStreams
+          : isTradingSource(source)
+            ? (streamType ?? []).map(type => tradingRoutingKey(source, type))
+            : buildNativeStreamNames(source, symbols, streamType, interval, contractType, exchange);
+        const streamsToRemove = persistedStreams.filter(stream => requestedStreams.includes(stream));
+        if (streamsToRemove.length > 0) {
+          // Redis removes an empty set automatically; avoid a racy SCARD/DEL.
+          await this.redisPub.srem(streamsKey, ...streamsToRemove);
+          if (scope === "workflow") {
+            await MarketDataSubscriber.getInstance().removeStreamsFromRegistration(
+              userId, scopedWorkflowId, streamsToRemove,
+            );
+          }
+        }
+        console.log(`🗑️ [MarketControl] Removed ${streamsToRemove.length} persisted subscription(s) without gateway state`);
         return;
       }
 

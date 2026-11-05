@@ -9,6 +9,15 @@ import { WorkflowRunner } from "./WorkflowRunner";
 export class WorkflowRunnerManager {
   private static instance: WorkflowRunnerManager;
   private readonly runners = new Map<string, WorkflowRunner>();
+  private readonly transitions = new Map<string, Promise<void>>();
+
+  private async transition(workflowId: string, action: () => Promise<void>): Promise<void> {
+    const previous = this.transitions.get(workflowId) ?? Promise.resolve();
+    const current = previous.catch(() => undefined).then(action);
+    this.transitions.set(workflowId, current);
+    try { await current; }
+    finally { if (this.transitions.get(workflowId) === current) this.transitions.delete(workflowId); }
+  }
 
   static getInstance(): WorkflowRunnerManager {
     if (!WorkflowRunnerManager.instance) {
@@ -18,6 +27,16 @@ export class WorkflowRunnerManager {
   }
 
   async startStrategy(
+    workflowId: string,
+    userId: string,
+    nodes: WorkflowNode[],
+    edges: WorkflowEdge[],
+    executionId?: string,
+  ): Promise<void> {
+    return this.transition(workflowId, () => this.startRunner(workflowId, userId, nodes, edges, executionId));
+  }
+
+  private async startRunner(
     workflowId: string,
     userId: string,
     nodes: WorkflowNode[],
@@ -83,6 +102,10 @@ export class WorkflowRunnerManager {
   }
 
   async stopStrategy(workflowId: string): Promise<void> {
+    return this.transition(workflowId, () => this.stopRunner(workflowId));
+  }
+
+  private async stopRunner(workflowId: string): Promise<void> {
     const runner = this.runners.get(workflowId);
     if (!runner) return;
 
@@ -97,8 +120,9 @@ export class WorkflowRunnerManager {
 
   async stopAll(): Promise<void> {
     const failures: unknown[] = [];
-    for (const [workflowId, runner] of this.runners.entries()) {
-      try { await runner.stop(); this.runners.delete(workflowId); }
+    const workflowIds = new Set([...this.runners.keys(), ...this.transitions.keys()]);
+    for (const workflowId of workflowIds) {
+      try { await this.stopStrategy(workflowId); }
       catch (error) { failures.push(error); }
     }
     if (failures.length) throw new AggregateError(failures, "Strategy stops incomplete; recovery required");

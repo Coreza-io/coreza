@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { X, Edit2, Trash2, Loader2, Wrench } from "lucide-react";
 import ElectricBorderSVG from "@/components/workflow/ElectricBorderSVG";
 import "./ExpandedNode3D.css";
+import "./ExpandedNodeExecutionFooter.css";
 import {
   FemalePlugIcon,
   MalePlugIcon,
@@ -336,6 +337,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
         className={`
           relative transition-[background-color,border-color,box-shadow] duration-300 ease-in-out
           ${isDarkMode ? "" : "shadow-card border-2 hover:shadow-elevated"}
+          ${presentationExpanded ? "coreza-expanded-layout" : ""}
           ${presentationExpanded && isDarkMode ? "coreza-expanded-surface" : ""}
           ${presentationExpanded ? "" : "cursor-pointer group/node"}
           ${nodeShapeClass}
@@ -677,7 +679,7 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
 
         {/* Expanded View */}
         {presentationExpanded && (
-          <CardContent className="space-y-3 p-4 relative" style={{ zIndex: 2 }}>
+          <CardContent className="coreza-expanded-content space-y-3 p-4 relative" style={{ zIndex: 2 }}>
             <div className="absolute top-2 right-2 z-10 flex gap-1">
               {/* <Button
                 variant="ghost"

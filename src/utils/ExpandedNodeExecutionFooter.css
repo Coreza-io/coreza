@@ -1,0 +1,22 @@
+/* Keep the expanded-node execution control at the card's bottom in every tab. */
+.node-expanded .coreza-expanded-layout {
+  display: flex;
+  flex-direction: column;
+}
+.node-expanded .coreza-expanded-content {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+}
+.node-expanded .coreza-expanded-form {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+}
+.node-expanded .coreza-expanded-form > .coreza-expanded-execution-footer {
+  display: flex;
+  justify-content: center;
+  margin-top: auto !important;
+  padding-top: 16px;
+}
+/* On taller field configurations the card grows normally, leaving the control last. */

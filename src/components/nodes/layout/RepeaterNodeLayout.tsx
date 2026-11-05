@@ -1008,7 +1008,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
         </div>
       </div>
 
-      <form className="space-y-3" onSubmit={handleSubmit}>
+      <form className="coreza-expanded-form space-y-3" onSubmit={handleSubmit}>
         <NodeConfigurationTabs
           persistent={fieldState.persistent === true}
           onPersistentChange={definition?.name === "Edit Fields" ? (checked) => handleChange("persistent", checked) : undefined}
@@ -1542,7 +1542,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
 
         </NodeConfigurationTabs>
 
-        {expandedExecutionControl}
+        {expandedExecutionControl && <div className="coreza-expanded-execution-footer">{expandedExecutionControl}</div>}
       </form>
 
       {/* Auth Modal */}

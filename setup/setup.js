@@ -28,6 +28,8 @@ function mask(value) {
 class CorezaSetup {
   constructor() {
     this.config = {};
+    this.npmEnv = process.env;
+    this.npmRetryCache = undefined;
     this.status = {
       linked: false,
       migrated: false,
@@ -52,8 +54,9 @@ class CorezaSetup {
       await this.showCompletionMessage();
     } catch (error) {
       console.error("\n❌ Setup failed:", error.message);
-      process.exit(1);
+      process.exitCode = 1;
     } finally {
+      this.cleanupNpmCache();
       rl.close();
     }
   }
@@ -70,43 +73,46 @@ class CorezaSetup {
       ],
     ];
 
-    let retryCache;
-    let npmEnv = process.env;
-    try {
-      for (const [name, cwd] of targets) {
-        console.log(`Installing ${name} dependencies...`);
-        let result = await this.runNpmInstall(cwd, npmEnv);
-        if (!retryCache && result.code !== 0 && result.cacheFileMissing) {
-          console.warn("npm could not read a cached package. Retrying with a fresh temporary cache...");
-          retryCache = fs.mkdtempSync(path.join(os.tmpdir(), "coreza-npm-cache-"));
-          npmEnv = { ...process.env };
-          for (const key of Object.keys(npmEnv)) {
-            if (key.toLowerCase() === "npm_config_cache") delete npmEnv[key];
-          }
-          npmEnv.npm_config_cache = retryCache;
-          result = await this.runNpmInstall(cwd, npmEnv);
-        }
-
-        if (result.code !== 0) {
-          const status = result.signal ? `signal ${result.signal}` : `exit code ${result.code}`;
-          throw new Error(`Dependency installation failed for ${name} (npm ${status}). See the npm error above.`);
-        }
-      }
-      console.log("✅ Dependencies installed successfully");
-    } finally {
-      if (retryCache) {
-        try {
-          fs.rmSync(retryCache, { recursive: true, force: true });
-        } catch (error) {
-          console.warn(`Could not remove temporary npm cache at ${retryCache}: ${error.message}`);
-        }
+    for (const [name, cwd] of targets) {
+      console.log(`Installing ${name} dependencies...`);
+      const result = await this.runNpmWithCacheRetry("npm install", cwd);
+      if (result.code !== 0) {
+        const status = result.signal ? `signal ${result.signal}` : `exit code ${result.code}`;
+        throw new Error(`Dependency installation failed for ${name} (npm ${status}). See the npm error above.`);
       }
     }
+    console.log("✅ Dependencies installed successfully");
   }
 
-  runNpmInstall(cwd, env) {
+  async runNpmWithCacheRetry(command, cwd = this.projectRoot) {
+    let result = await this.runNpmCommand(command, cwd, this.npmEnv);
+    if (!this.npmRetryCache && result.code !== 0 && result.cacheFileMissing) {
+      console.warn("npm could not read a cached package. Retrying with a fresh temporary cache...");
+      this.npmRetryCache = fs.mkdtempSync(path.join(os.tmpdir(), "coreza-npm-cache-"));
+      this.npmEnv = { ...process.env };
+      for (const key of Object.keys(this.npmEnv)) {
+        if (key.toLowerCase() === "npm_config_cache") delete this.npmEnv[key];
+      }
+      this.npmEnv.npm_config_cache = this.npmRetryCache;
+      result = await this.runNpmCommand(command, cwd, this.npmEnv);
+    }
+    return result;
+  }
+
+  cleanupNpmCache() {
+    if (!this.npmRetryCache) return;
+    try {
+      fs.rmSync(this.npmRetryCache, { recursive: true, force: true });
+    } catch (error) {
+      console.warn(`Could not remove temporary npm cache at ${this.npmRetryCache}: ${error.message}`);
+    }
+    this.npmRetryCache = undefined;
+    this.npmEnv = process.env;
+  }
+
+  runNpmCommand(command, cwd, env) {
     return new Promise((resolve, reject) => {
-      const npm = spawn("npm install", {
+      const npm = spawn(command, {
         cwd,
         env,
         shell: true,
@@ -145,14 +151,9 @@ class CorezaSetup {
       );
     }
 
-    try {
-      execSync(`${SUPABASE_CLI} --version`, {
-        stdio: "ignore",
-        cwd: this.projectRoot,
-        shell: true,
-      });
-    } catch {
-      throw new Error("Supabase CLI 3.0.0 is unavailable. Check npm and network access.");
+    const result = await this.runNpmWithCacheRetry(`${SUPABASE_CLI} --version`);
+    if (result.code !== 0) {
+      throw new Error("Supabase CLI 3.0.0 is unavailable. See the npm error above and check npm/network access.");
     }
 
     console.log("✅ Prerequisites check passed");
@@ -436,7 +437,7 @@ SUPABASE_DB_PASSWORD=${this.config.supabaseDbPassword}
 
   supabaseEnv() {
     return {
-      ...process.env,
+      ...this.npmEnv,
       SUPABASE_ACCESS_TOKEN: this.config.supabaseAccessToken,
       SUPABASE_DB_PASSWORD: this.config.supabaseDbPassword,
     };

@@ -5,7 +5,7 @@ import type { AgentActivitySummary } from "../../coreza-backend/src/agents/activ
 
 /** Optional process-local manual activity. Never retries the execution request. */
 export async function startManualAgentActivity(payload: Record<string, any>, token: string,
-  signal?: AbortSignal, isCurrent = () => true, abortExecution?: () => void) {
+  signal?: AbortSignal, isCurrent = () => true, abortExecution?: () => void, editorSessionId?: string) {
   if (import.meta.env.VITE_AGENT_ACTIVITY_ENABLED === "false" || signal?.aborted || !isCurrent()) return undefined;
   const clientInvocationId = crypto.randomUUID();
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(payload)));
@@ -53,7 +53,7 @@ export async function startManualAgentActivity(payload: Record<string, any>, tok
     payload.activityScopeId = scopeId;
     payload.clientInvocationId = clientInvocationId;
     payload.activityRevision = activityRevision;
-    beginAgentActivity({ scopeId, sessionId: payload.workflowSessionId, clientInvocationId,
+    beginAgentActivity({ scopeId, sessionId: editorSessionId ?? payload.workflowSessionId, executionSessionId: payload.workflowSessionId, clientInvocationId,
       agentNodeId: payload.node_id, attachmentEdges: binding.edges, cancel,
       participants: new Set([payload.node_id, ...binding.support_nodes.map((node: any) => node.id)]) });
     signal?.addEventListener("abort", cancel, { once: true });

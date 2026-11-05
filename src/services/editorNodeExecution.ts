@@ -1,4 +1,5 @@
-import { bindEditorVariableLock, closeEditorSessionVariables, releaseEditorVariableLock } from "./editorVariableScopes";
+import { bindEditorExecutionScope, selectedEditorExecutionScope, selectEditorBatchExecutionScope, releaseEditorExecutionScope } from "./editorExecutionScopes";
+import { bindEditorVariableLock, closeEditorSessionVariables, releaseEditorVariableLock, selectEditorBatchVariables } from "./editorVariableScopes";
 
 export type NodeExecutionStatus =
   | "success"
@@ -149,6 +150,7 @@ export function acquireEditorExecutionLock(
 ): symbol | null {
   if (executionLocks.has(sessionId)) return null;
   const token = Symbol(sessionId);
+  bindEditorExecutionScope(token, sessionId);
   bindEditorVariableLock(token, sessionId);
   executionLocks.set(sessionId, token);
   executionTargets.set(sessionId, target);
@@ -160,12 +162,24 @@ export function releaseEditorExecutionLock(sessionId: string, token: symbol): vo
   void releaseEditorVariableLock(token).catch(() => { /* Redis TTL covers a failed close. */ });
   variableInvocations.delete(token);
   if (executionLocks.get(sessionId) === token) {
+    const scope = selectedEditorExecutionScope(sessionId, token);
+    if (scope.batchId) clearEditorConsolidatorSeries(scope.batchId);
+  }
+  releaseEditorExecutionScope(token);
+  if (executionLocks.get(sessionId) === token) {
     executionLocks.delete(sessionId);
     executionTargets.delete(sessionId);
     executionListeners.get(sessionId)?.forEach((listener) => listener());
   }
 }
 
+/** Select one fresh runtime scope for all actions after Execute All preparation accepts. */
+export function selectEditorBatchExecution(sessionId: string, token: symbol): void {
+  if (executionLocks.get(sessionId) !== token) throw new Error("Execution lock is no longer active");
+  selectEditorBatchExecutionScope(token, sessionId);
+  selectEditorBatchVariables(token, sessionId);
+  notifyEditorExecutionScope(sessionId);
+}
 export function notifyEditorExecutionScope(sessionId: string): void {
   executionListeners.get(sessionId)?.forEach(listener => listener());
 }
@@ -219,17 +233,24 @@ export function captureEditorNodeActions(
   return Object.freeze(snapshot);
 }
 
+function clearEditorConsolidatorSeries(sessionId: string): void {
+  const prefix = `${sessionId}\u0000`;
+  for (const key of consolidatorSeries.keys()) if (key.startsWith(prefix)) consolidatorSeries.delete(key);
+}
+
 export function clearEditorNodeActions(sessionId: string): void {
   closeEditorSessionVariables(sessionId);
   const token = executionLocks.get(sessionId);
-  if (token) variableInvocations.delete(token);
+  if (token) {
+    variableInvocations.delete(token);
+    const scope = selectedEditorExecutionScope(sessionId, token);
+    if (scope.batchId) clearEditorConsolidatorSeries(scope.batchId);
+    releaseEditorExecutionScope(token);
+  }
   actions.delete(sessionId);
   canonicalNodeIds.delete(sessionId);
   executionLocks.delete(sessionId);
   executionTargets.delete(sessionId);
   executionListeners.get(sessionId)?.forEach((listener) => listener());
-  const prefix = `${sessionId}\u0000`;
-  for (const key of consolidatorSeries.keys()) {
-    if (key.startsWith(prefix)) consolidatorSeries.delete(key);
-  }
+  clearEditorConsolidatorSeries(sessionId);
 }

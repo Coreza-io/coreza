@@ -1,3 +1,4 @@
+import { editorSessionExecutionScope, selectedEditorExecutionScope, clearEditorExecutionScopes } from "./editorExecutionScopes";
 import { supabase } from "@/integrations/supabase/client";
 import { apiClient } from "@/lib/apiClient";
 import { freezeVariableSnapshot, type VariableSnapshot } from "../../coreza-backend/src/variables/contract";
@@ -35,7 +36,7 @@ const stateFor = (scope: EditorVariableScope) => {
 export function editorVariableScope(sessionId: string): EditorVariableScope {
   let state = sessions.get(sessionId);
   if (!state) {
-    state = createScopeState({ sessionId, mode: "manual", createdAt: Date.now() });
+    state = createScopeState(editorSessionExecutionScope(sessionId));
     sessions.set(sessionId, state);
   }
   return state.scope;
@@ -54,7 +55,7 @@ export function selectEditorBatchVariables(token: symbol, sessionId: string): vo
   if (!previous) throw new Error("Execution lock is no longer active");
   if (previous.renewal) clearInterval(previous.renewal);
   previous.renewal = undefined;
-  locks.set(token, createScopeState({ sessionId, mode: "batch", batchId: crypto.randomUUID(), createdAt: Date.now() }));
+  locks.set(token, createScopeState(selectedEditorExecutionScope(sessionId, token)));
 }
 export function selectedEditorVariableScope(sessionId: string, token?: symbol): EditorVariableScope {
   return (token ? locks.get(token)?.scope : undefined) ?? editorVariableScope(sessionId);
@@ -138,6 +139,7 @@ export function closeEditorSessionVariables(sessionId: string): void {
 function disposeEditorSessionVariables(sessionId: string): void {
   const state = sessions.get(sessionId);
   sessions.delete(sessionId);
+  clearEditorExecutionScopes(sessionId);
   sessionGenerations.delete(sessionId);
   if (state) void close(state).catch(() => { /* TTL covers missed teardown. */ });
   for (const [token, active] of locks) if (active.scope.sessionId === sessionId) {

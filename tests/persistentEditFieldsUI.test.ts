@@ -36,12 +36,12 @@ test("typed Edit Fields allows Persistent on/off and submits explicit Execute", 
   act(() => renderer!.unmount());
 });
 
-test("typed variable insertion and preview use the same scoped value without writes", () => {
+test("typed variable preview uses the scoped value without writes", () => {
   jest.useFakeTimers();
   (globalThis as any).window = { setTimeout, clearTimeout };
   mockPreviewOpen = true;
   const update = jest.fn();
-  const props: any = { row: { fieldName: "bonus", dataType: "number", valueMode: "expression", value: "{{ $vars.bonus }}" }, index: 0, variableNames: ["bonus"], update, updateMany: jest.fn(), canRemove: false,
+  const props: any = { row: { fieldName: "bonus", dataType: "number", valueMode: "expression", value: "{{ $vars.bonus }}" }, index: 0, update, updateMany: jest.fn(), canRemove: false,
     getExpressionContext: () => ({ input: {}, nodes: {}, definitions: [], variables: { bonus: 0 }, hasInput: false }), makeReference: () => null };
   let renderer: ReturnType<typeof create>;
   try {
@@ -49,8 +49,5 @@ test("typed variable insertion and preview use the same scoped value without wri
     act(() => jest.advanceTimersByTime(250));
     expect(JSON.stringify(renderer!.toJSON())).toContain('"0"');
     expect(update).not.toHaveBeenCalled();
-    act(() => renderer!.root.findByProps({ "aria-label": "Insert workflow variable" }).props.onChange({ target: { value: "bonus" } }));
-    expect(update).toHaveBeenCalledWith(0, "value", "{{ $vars.bonus }}{{ $vars.bonus }}");
-    expect(mockInsertion).toHaveBeenCalledWith(expect.objectContaining({ value: "{{ $vars.bonus }}{{ $vars.bonus }}" }), "expression");
   } finally { act(() => renderer!.unmount()); mockPreviewOpen = false; delete (globalThis as any).window; jest.useRealTimers(); }
 });

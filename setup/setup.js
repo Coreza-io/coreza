@@ -3,7 +3,7 @@
 const readline = require("readline");
 const fs = require("fs");
 const path = require("path");
-const { execSync, spawnSync } = require("child_process");
+const { execSync, spawn, spawnSync } = require("child_process");
 const crypto = require("crypto");
 const os = require("os");
 
@@ -61,38 +61,72 @@ class CorezaSetup {
   async installDependencies() {
     console.log("\n📦 Installing dependencies...");
 
+    const targets = [
+      ["frontend", this.projectRoot],
+      ["backend", path.join(this.projectRoot, "coreza-backend")],
+      [
+        "market-stream-service",
+        path.join(this.projectRoot, "coreza-backend", "market-stream-service"),
+      ],
+    ];
+
+    let retryCache;
+    let npmEnv = process.env;
     try {
-      console.log("Installing frontend dependencies...");
-      execSync("npm install", {
-        stdio: "inherit",
-        cwd: this.projectRoot,
-        shell: true,
-      });
+      for (const [name, cwd] of targets) {
+        console.log(`Installing ${name} dependencies...`);
+        let result = await this.runNpmInstall(cwd, npmEnv);
+        if (!retryCache && result.code !== 0 && result.cacheFileMissing) {
+          console.warn("npm could not read a cached package. Retrying with a fresh temporary cache...");
+          retryCache = fs.mkdtempSync(path.join(os.tmpdir(), "coreza-npm-cache-"));
+          npmEnv = { ...process.env };
+          for (const key of Object.keys(npmEnv)) {
+            if (key.toLowerCase() === "npm_config_cache") delete npmEnv[key];
+          }
+          npmEnv.npm_config_cache = retryCache;
+          result = await this.runNpmInstall(cwd, npmEnv);
+        }
 
-      console.log("Installing backend dependencies...");
-      execSync("npm install", {
-        stdio: "inherit",
-        cwd: path.join(this.projectRoot, "coreza-backend"),
-        shell: true,
-      });
-
-      console.log("Installing market-stream-service dependencies...");
-      execSync("npm install", {
-        stdio: "inherit",
-        cwd: path.join(
-          this.projectRoot,
-          "coreza-backend",
-          "market-stream-service",
-        ),
-        shell: true,
-      });
-
+        if (result.code !== 0) {
+          const status = result.signal ? `signal ${result.signal}` : `exit code ${result.code}`;
+          throw new Error(`Dependency installation failed for ${name} (npm ${status}). See the npm error above.`);
+        }
+      }
       console.log("✅ Dependencies installed successfully");
-    } catch (error) {
-      throw new Error(
-        "Dependency installation failed. Run npm install in project root, coreza-backend, and coreza-backend/market-stream-service.",
-      );
+    } finally {
+      if (retryCache) {
+        try {
+          fs.rmSync(retryCache, { recursive: true, force: true });
+        } catch (error) {
+          console.warn(`Could not remove temporary npm cache at ${retryCache}: ${error.message}`);
+        }
+      }
     }
+  }
+
+  runNpmInstall(cwd, env) {
+    return new Promise((resolve, reject) => {
+      const npm = spawn("npm install", {
+        cwd,
+        env,
+        shell: true,
+        stdio: ["inherit", "inherit", "pipe"],
+      });
+
+      let stderrTail = "";
+      npm.stderr.setEncoding("utf8");
+      npm.stderr.on("data", (chunk) => {
+        process.stderr.write(chunk);
+        stderrTail = (stderrTail + chunk).slice(-16384);
+      });
+      npm.once("error", reject);
+      npm.once("close", (code, signal) => {
+        const cacheFileMissing =
+          /npm (?:error|ERR!) code ENOENT\b/i.test(stderrTail) &&
+          /npm (?:error|ERR!) (?:path|enoent) [^\r\n]*[\\/]_cacache[\\/]/i.test(stderrTail);
+        resolve({ code, signal, cacheFileMissing });
+      });
+    });
   }
 
   async checkPrerequisites() {

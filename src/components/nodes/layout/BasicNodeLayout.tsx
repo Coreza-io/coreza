@@ -113,7 +113,7 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
         </div>
       </div>
 
-      <form className="space-y-3" onSubmit={handleSubmit}>
+      <form className="coreza-expanded-form space-y-3" onSubmit={handleSubmit}>
         <NodeConfigurationTabs
           incomingEdgeCount={incomingEdgeCount}
           checkDependency={Boolean(fieldState.checkDependency)}
@@ -189,7 +189,7 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
 
         </NodeConfigurationTabs>
 
-        {expandedExecutionControl}
+        {expandedExecutionControl && <div className="coreza-expanded-execution-footer">{expandedExecutionControl}</div>}
 
       </form>
 

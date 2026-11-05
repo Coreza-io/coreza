@@ -17,8 +17,9 @@ enable_signup = true
 [auth.email]
 enable_confirmations = false
 
-[functions.derive-encryption-key]
-verify_jwt = false
+[db.seed]
+enabled = false
+sql_paths = []
 
-[functions.http-request]
-verify_jwt = false
+[edge_runtime]
+enabled = false

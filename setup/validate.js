@@ -16,7 +16,6 @@ class SetupValidator {
     this.checkSetupLocalFile();
     this.checkSupabaseConfig();
     this.checkDatabaseSchema();
-    this.checkEdgeFunctions();
     this.checkMarketStreamService();
 
     this.displayResults();
@@ -100,12 +99,6 @@ class SetupValidator {
       if (!config.includes("project_id =")) {
         this.errors.push("project_id missing from supabase/config.toml");
       }
-      if (!config.includes("[functions.derive-encryption-key]")) {
-        this.errors.push("derive-encryption-key function config missing");
-      }
-      if (!config.includes("[functions.http-request]")) {
-        this.errors.push("http-request function config missing");
-      }
     }
 
     if (this.errors.length === 0) {
@@ -117,7 +110,7 @@ class SetupValidator {
     console.log("🗄️ Checking database schema...");
 
     if (!fs.existsSync("setup/database-schema.sql")) {
-      this.warnings.push(
+      this.errors.push(
         "Database schema file missing (setup/database-schema.sql)",
       );
     } else {
@@ -135,47 +128,22 @@ class SetupValidator {
         "trades",
         "portfolio",
         "live_fills",
-        "cash_snapshots",
-        "position_snapshots",
+        "coreza_chat_history",
       ];
 
       for (const table of requiredTables) {
-        const escaped = table.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
         const createTableRegex = new RegExp(
-          `CREATE\\s+TABLE\\s+IF\\s+NOT\\s+EXISTS\\s+public\\.${escaped}\\s*\\(`,
+          String.raw`CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?public\.${table}\s*\(`,
           "i",
         );
         if (!createTableRegex.test(schema)) {
-          this.warnings.push(`Table ${table} not found in schema`);
+          this.errors.push(`Table ${table} not found in schema`);
         }
       }
     }
 
-    if (this.warnings.length === 0) {
+    if (this.errors.length === 0 && this.warnings.length === 0) {
       console.log("✅ Database schema is complete");
-    }
-  }
-
-  checkEdgeFunctions() {
-    console.log("⚡ Checking edge functions...");
-
-    // Check if edge function directories exist
-    const functions = ["derive-encryption-key", "http-request"];
-
-    for (const func of functions) {
-      const funcPath = `supabase/functions/${func}`;
-      if (!fs.existsSync(funcPath)) {
-        this.errors.push(`Edge function directory missing: ${funcPath}`);
-      } else {
-        const indexPath = `${funcPath}/index.ts`;
-        if (!fs.existsSync(indexPath)) {
-          this.errors.push(`Edge function index.ts missing: ${indexPath}`);
-        }
-      }
-    }
-
-    if (this.errors.length === 0) {
-      console.log("✅ Edge functions are properly configured");
     }
   }
 
@@ -227,7 +195,7 @@ class SetupValidator {
     if (this.errors.length > 0) {
       console.log("\n🔧 To fix these issues:");
       console.log("1. Run the setup script again: node setup/setup.js");
-      console.log("2. Or follow the manual setup guide: docs/SETUP.md");
+      console.log("2. Or follow the setup guide: docs/SETUP.md");
     }
   }
 }

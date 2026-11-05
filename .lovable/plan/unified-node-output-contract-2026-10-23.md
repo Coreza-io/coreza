@@ -3,14 +3,13 @@
 Date: 2026-10-23  
 Repository: Coreza-io/coreza  
 Reviewed dev snapshot: 2844aa991344dc5262fdb05289ac5fe3e79fc8b4  
-n8n source snapshot: 8cb0242b079b8867c055143522b46747c6dfe8a5  
 Status: analysis and implementation plan only. No runtime implementation in this change.
 
 ## 1. Recommendation
 
 Use one browser-safe TypeScript result contract and one shared set of result constructors, validators, compatibility adapters, and serializers across Coreza. Every executable node should return the same outer envelope. Each node retains its own typed payload under `data`.
 
-Retain the existing expression convention `$("Node").json.data...`. Do not replace Coreza's scheduler, streaming event model, or compiled backtest VM with n8n's multi-item engine as part of this task.
+Retain the existing expression convention `$("Node").json.data...`, scheduler, streaming event model, and compiled backtest VM.
 
 The shared program should standardize result construction and interpretation. It should not compute indicators, translate every broker response, decide branches, execute loops, persist variables, send UI notifications, or summarize data for an LLM. Those remain separate responsibilities.
 
@@ -119,33 +118,21 @@ NodeResult contains `control`, broker diagnostic code/provider/recoverable, and 
 
 A naive "return only success/status/data/error/meta" migration can change execution behavior even when the UI looks correct.
 
-## 4. What n8n does, and what Coreza should adopt
+## 4. Coreza result contract requirements
 
-Primary sources:
+Use shared infrastructure and explicit contracts to address the lossy conversions
+identified above. Keep payload data separate from execution status and routing.
 
-- [Official data structure guide](https://docs.n8n.io/build/work-with-data/understand-n8ns-data-structure)
-- [INodeExecutionData, task records, connections, and node interfaces](https://github.com/n8n-io/n8n/blob/8cb0242b079b8867c055143522b46747c6dfe8a5/packages/workflow/src/interfaces.ts)
-- [returnJsonArray helper](https://github.com/n8n-io/n8n/blob/8cb0242b079b8867c055143522b46747c6dfe8a5/packages/core/src/execution-engine/node-execution-context/utils/return-json-array.ts)
-- [normalizeItems helper](https://github.com/n8n-io/n8n/blob/8cb0242b079b8867c055143522b46747c6dfe8a5/packages/core/src/execution-engine/node-execution-context/utils/normalize-items.ts)
-- [If V2 implementation](https://github.com/n8n-io/n8n/blob/8cb0242b079b8867c055143522b46747c6dfe8a5/packages/nodes-base/nodes/If/V2/IfV2.node.ts)
-- [Workflow execution engine, including task record construction](https://github.com/n8n-io/n8n/blob/8cb0242b079b8867c055143522b46747c6dfe8a5/packages/core/src/execution-engine/workflow-execute.ts)
-
-n8n's ordinary item contract uses `json` for payload, with optional binary and item-linking information. Normal execute nodes commonly return output-port arrays of item arrays. Its If implementation returns true/false item arrays rather than forcing a boolean into every node's payload schema. Task records separately carry execution status, duration, metadata, and errors.
-
-`returnJsonArray()` wraps generic object data in item containers and avoids a second json wrapper when already present. `normalizeItems()` normalizes supported item shapes and rejects inconsistent mixtures. These helpers support a contract; they are not one universal formatter automatically used identically by every node, trigger, webhook, or AI subnode. The docs explicitly distinguish automatic Code/Function wrapping from custom-node output requirements.
-
-| n8n pattern | Coreza decision |
+| Requirement | Coreza decision |
 | --- | --- |
-| Stable container, variable business payload | Adopt: one result envelope with typed data |
-| Reusable construction/normalization helpers | Adopt: shared pure helpers and explicit boundary decoding |
-| Task status separate from item JSON | Adopt the separation of concerns; retain Coreza's existing public envelope for compatibility |
+| Stable container, variable business payload | One result envelope with typed data |
+| Reusable construction/normalization helpers | Shared pure helpers and explicit boundary decoding |
+| Separate task status and payload | Retain Coreza's existing public envelope for compatibility |
 | Explicit output-port structure | Preserve Coreza routing/control; do not infer routing from display formatting |
-| Item provenance | Preserve current invocation/iteration identity; design full item linking separately if needed |
-| Item arrays as the workflow engine model | Defer: would change Coreza input, loops, expressions and VM semantics |
-| Code-node convenience wrapping | Do not copy into arbitrary provider payload handling |
-| Binary/item metadata | Keep document payloads intact; a general binary storage redesign is separate |
-
-The architectural lesson is common infrastructure and explicit contracts. Copying `INodeExecutionData[][]` alone would not solve Coreza's current lossy conversions.
+| Invocation provenance | Preserve current invocation/iteration identity |
+| Existing workflow engine model | Preserve Coreza input, loops, expressions and VM semantics |
+| Provider payload handling | Avoid implicit wrapping or guessing envelope fields |
+| Document metadata | Keep document payloads intact; a general binary storage redesign is separate |
 
 ## 5. Proposed contract
 

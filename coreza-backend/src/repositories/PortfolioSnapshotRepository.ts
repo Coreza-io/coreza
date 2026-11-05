@@ -12,9 +12,9 @@ import { LiveStrategiesRepository } from "./LiveStrategiesRepository";
 import { supabase } from "../config/supabase";
 import { createLogger } from "../utils/logger";
 
-const logger = createLogger("CashSnapshotRepository");
+const logger = createLogger("PortfolioSnapshotRepository");
 
-export interface CashSnapshotRow {
+export interface PortfolioSnapshotRow {
   id: string;
   user_id: string;
   broker: string;
@@ -32,11 +32,11 @@ export interface CashSnapshotRow {
   positions_count?: number;
 }
 
-export class CashSnapshotRepository {
+export class PortfolioSnapshotRepository {
   /**
    * Upsert live activation snapshots into shared portfolio reporting.
    */
-  static async batchInsert(rows: CashSnapshotRow[]): Promise<void> {
+  static async batchInsert(rows: PortfolioSnapshotRow[]): Promise<void> {
     if (rows.length === 0) return;
     if (rows.some(row => !row.id)) throw new Error("Snapshot retry ID is required");
 

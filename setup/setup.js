@@ -7,6 +7,9 @@ const { execSync, spawnSync } = require("child_process");
 const crypto = require("crypto");
 const os = require("os");
 
+// Pin the CLI target/flag contract used by this installer.
+const SUPABASE_CLI = "npx --yes supabase@3.0.0";
+
 const rl = readline.createInterface({
   input: process.stdin,
   output: process.stdout,
@@ -28,8 +31,7 @@ class CorezaSetup {
     this.status = {
       linked: false,
       migrated: false,
-      functionsDeployed: false,
-      secretsSet: false,
+      schemaVerified: false,
     };
     this.projectRoot = path.resolve(__dirname, "..");
   }
@@ -110,30 +112,13 @@ class CorezaSetup {
     }
 
     try {
-      execSync("npx supabase --version", {
+      execSync(`${SUPABASE_CLI} --version`, {
         stdio: "ignore",
         cwd: this.projectRoot,
         shell: true,
       });
-    } catch (error) {
-      console.log("\n📦 Installing Supabase CLI (dev dependency)...");
-      execSync("npm install -D supabase", {
-        stdio: "inherit",
-        cwd: this.projectRoot,
-        shell: true,
-      });
-
-      try {
-        execSync("npx supabase --version", {
-          stdio: "ignore",
-          cwd: this.projectRoot,
-          shell: true,
-        });
-      } catch {
-        throw new Error(
-          "Supabase CLI is not available even after installing dev dependency.",
-        );
-      }
+    } catch {
+      throw new Error("Supabase CLI 3.0.0 is unavailable. Check npm and network access.");
     }
 
     console.log("✅ Prerequisites check passed");
@@ -423,11 +408,11 @@ SUPABASE_DB_PASSWORD=${this.config.supabaseDbPassword}
     };
   }
 
-  runOrThrow(label, command, friendlyError) {
+  runOrThrow(label, command, friendlyError, cwd = this.projectRoot) {
     console.log(`\n▶  ${label}`);
     const result = spawnSync(command, {
       shell: true,
-      cwd: this.projectRoot,
+      cwd,
       env: this.supabaseEnv(),
       stdio: "inherit",
     });
@@ -437,181 +422,85 @@ SUPABASE_DB_PASSWORD=${this.config.supabaseDbPassword}
     }
   }
 
-  async runSupabaseCli() {
-    console.log("\n🏗️  Running Supabase CLI flow...");
-
-    // 1. Preflight
-    this.runOrThrow(
-      "Verify Supabase CLI",
-      "npx supabase --version",
-      "Supabase CLI is not available. Install with: npm install -D supabase",
+  async inspectDatabase() {
+    const query = fs.readFileSync(path.join(this.projectRoot, "setup", "database-contract.sql"), "utf8");
+    const response = await fetch(
+      `https://api.supabase.com/v1/projects/${this.config.projectId}/database/query/read-only`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${this.config.supabaseAccessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ query }),
+        signal: AbortSignal.timeout(30000),
+      },
     );
-
-    // 2. Login
-    this.runOrThrow(
-      "Supabase CLI login",
-      `npx supabase login --token "${this.config.supabaseAccessToken}"`,
-      "Supabase CLI login failed.\n" +
-        "Check SUPABASE_ACCESS_TOKEN.\n" +
-        "It must be a personal access token starting with sbp_.",
-    );
-
-    // 3. Generate config.toml from template
-    const templatePath = path.join(
-      this.projectRoot,
-      "supabase",
-      "config.template.toml",
-    );
-    const configPath = path.join(this.projectRoot, "supabase", "config.toml");
-    if (fs.existsSync(templatePath)) {
-      const template = fs.readFileSync(templatePath, "utf8");
-      fs.writeFileSync(
-        configPath,
-        template.replace(/\{\{PROJECT_ID\}\}/g, this.config.projectId),
-      );
-      console.log("✅ Generated supabase/config.toml from template");
+    if (!response.ok) {
+      throw new Error(`Database preflight failed (HTTP ${response.status}). Check project access; no schema changes were attempted by this check.`);
     }
+    const rows = await response.json();
+    const state = Array.isArray(rows) ? rows[0] : undefined;
+    if (!state || !Number.isInteger(state.public_objects) || typeof state.history_present !== "boolean" || !Array.isArray(state.missing)) {
+      throw new Error("Unrecognized database preflight response; refusing schema changes.");
+    }
+    return state;
+  }
 
-    // 4. Link
+  verifyDatabaseContract(state) {
+    if (state.missing.length) {
+      throw new Error(`Database schema is not current: ${state.missing.join(", ")}. Follow docs/SETUP.md for an existing-project upgrade. Migration history was not repaired or rewritten.`);
+    }
+    this.status.schemaVerified = true;
+    console.log("✅ Current database contract verified");
+  }
+
+  async runSupabaseCli() {
+    console.log("\n🏗️  Configuring Supabase...");
+    const template = fs.readFileSync(path.join(this.projectRoot, "supabase", "config.template.toml"), "utf8");
+    const config = template.replace(/\{\{PROJECT_ID\}\}/g, this.config.projectId);
+    fs.writeFileSync(path.join(this.projectRoot, "supabase", "config.toml"), config);
     this.runOrThrow(
       "Link Supabase project",
-      `npx supabase link --project-ref ${this.config.projectId}`,
-      "Supabase project linking failed.\n" +
-        "Check:\n" +
-        "1. Project ref is correct.\n" +
-        "2. The project exists.\n" +
-        "3. Your access token belongs to an Owner/Admin of the Supabase organization.",
+      `${SUPABASE_CLI} link --project-ref ${this.config.projectId}`,
+      "Supabase project linking failed. Check project ref, access token and database password.",
     );
     this.status.linked = true;
 
-    // 5. Prepare migration file
-    this.prepareMigrationFile();
+    const state = await this.inspectDatabase();
+    if (state.public_objects > 0 || state.history_present) {
+      this.verifyDatabaseContract(state);
+      console.log("Existing project: schema and migration history left unchanged. See docs/SETUP.md for upgrades.");
+      return;
+    }
 
-    // 6. db push (non-interactive — env carries SUPABASE_DB_PASSWORD)
+    // Only an empty project receives a bootstrap. Never replay repository history
+    // or retirement migrations during installation, and never mutate those files.
+    const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "coreza-setup-"));
     try {
-      this.runOrThrow(
-        "Apply database migrations (db push)",
-        "npx supabase db push",
-        "Database migration push failed.\n" +
-          "Check:\n" +
-          "1. SUPABASE_DB_PASSWORD is correct.\n" +
-          "2. Project is linked.\n" +
-          "3. Your database is active and reachable.",
-      );
-      this.status.migrated = true;
-    } catch (err) {
-      // Attempt repair-then-retry once
-      const repaired = await this.tryMigrationRepair();
-      if (!repaired) throw err;
-      this.runOrThrow(
-        "Re-apply database migrations after repair",
-        "npx supabase db push",
-        "Database migration push failed after repair.\n" +
-          "Check SUPABASE_DB_PASSWORD and project link state.",
-      );
-      this.status.migrated = true;
-    }
-
-    // 7. Functions deploy
-    this.runOrThrow(
-      "Deploy edge functions",
-      "npx supabase functions deploy",
-      "Edge function deployment failed.\n" +
-        "Check:\n" +
-        "1. Supabase CLI login.\n" +
-        "2. Project link.\n" +
-        "3. Function folders exist under supabase/functions.",
-    );
-    this.status.functionsDeployed = true;
-
-    // 8. Set encryption secret
-    this.runOrThrow(
-      "Set Supabase secret COREZA_ENCRYPTION_KEY",
-      `npx supabase secrets set COREZA_ENCRYPTION_KEY="${this.config.encryptionKey}"`,
-      "Failed to set Supabase secret COREZA_ENCRYPTION_KEY.\n" +
-        "Check Supabase CLI login and project link.",
-    );
-    this.status.secretsSet = true;
-  }
-
-  prepareMigrationFile() {
-    const schemaPath = path.join(
-      this.projectRoot,
-      "setup",
-      "database-schema.sql",
-    );
-    if (!fs.existsSync(schemaPath)) {
-      throw new Error(
-        "Database schema file not found at setup/database-schema.sql",
-      );
-    }
-
-    const migrationsDir = path.join(this.projectRoot, "supabase", "migrations");
-    if (!fs.existsSync(migrationsDir)) {
+      const stagedSupabase = path.join(workDir, "supabase");
+      const migrationsDir = path.join(stagedSupabase, "migrations");
       fs.mkdirSync(migrationsDir, { recursive: true });
-    }
-
-    const managedName = "00000000000000_coreza_initial_schema.sql";
-    // Filenames matching this pattern are considered "Lovable-generated history"
-    // (timestamp-prefixed) and are safe to wipe on self-host install.
-    const lovableHistoryPattern = /^\d{14}_.+\.sql$/;
-    const force = process.argv.includes("--force-reset-migrations");
-
-    const existing = fs
-      .readdirSync(migrationsDir)
-      .filter((f) => f.endsWith(".sql"));
-
-    const unexpected = existing.filter(
-      (f) => f !== managedName && !lovableHistoryPattern.test(f),
-    );
-    if (unexpected.length > 0 && !force) {
-      throw new Error(
-        `Refusing to wipe supabase/migrations/: unexpected files present:\n  - ${unexpected.join(
-          "\n  - ",
-        )}\nMove them aside or re-run with --force-reset-migrations.`,
+      fs.writeFileSync(path.join(stagedSupabase, "config.toml"), config);
+      fs.copyFileSync(
+        path.join(this.projectRoot, "setup", "database-schema.sql"),
+        path.join(migrationsDir, "00000000000000_coreza_initial_schema.sql"),
       );
-    }
-
-    for (const f of existing) {
-      fs.unlinkSync(path.join(migrationsDir, f));
-    }
-    if (existing.length > 0) {
-      console.log(
-        `🧹 Removed ${existing.length} existing migration file(s) from supabase/migrations/.`,
+      const beforePush = await this.inspectDatabase();
+      if (beforePush.public_objects > 0 || beforePush.history_present) {
+        throw new Error("Project changed during setup; refusing to apply the fresh-install schema. Rerun setup to inspect the existing project.");
+      }
+      this.runOrThrow(
+        "Apply current fresh-install schema",
+        `${SUPABASE_CLI} db push --remote=${this.config.projectId} --yes --skip-vault`,
+        "Fresh schema application failed. Inspect the error and docs/SETUP.md; setup will not repair migration history or retry DDL automatically.",
+        workDir,
       );
+      this.status.migrated = true;
+      this.verifyDatabaseContract(await this.inspectDatabase());
+    } finally {
+      fs.rmSync(workDir, { recursive: true, force: true });
     }
-
-    const schemaContent = fs.readFileSync(schemaPath, "utf8");
-    const migrationPath = path.join(migrationsDir, managedName);
-    fs.writeFileSync(migrationPath, schemaContent);
-    console.log(`✅ Migration created: ${managedName}`);
-  }
-
-  async tryMigrationRepair() {
-    // Best-effort: if remote has migration versions not in local, mark them reverted.
-    const probe = spawnSync("npx supabase db push --dry-run", {
-      shell: true,
-      cwd: this.projectRoot,
-      env: this.supabaseEnv(),
-      encoding: "utf8",
-    });
-    const output = `${probe.stdout || ""}\n${probe.stderr || ""}`;
-    const versionMatch = output.match(
-      /supabase migration repair --status reverted (\d+)/,
-    );
-    if (!versionMatch) return false;
-    const version = versionMatch[1];
-    console.log(`🔧 Repairing migration history for version ${version}...`);
-    const repair = spawnSync(
-      `npx supabase migration repair --status reverted ${version}`,
-      {
-        shell: true,
-        cwd: this.projectRoot,
-        env: this.supabaseEnv(),
-        stdio: "inherit",
-      },
-    );
-    return repair.status === 0;
   }
 
   async validateSetup() {
@@ -624,26 +513,13 @@ SUPABASE_DB_PASSWORD=${this.config.supabaseDbPassword}
       { path: "coreza-backend/.env", description: "Backend environment file" },
       { path: "supabase/config.toml", description: "Supabase configuration" },
       { path: "setup/database-schema.sql", description: "Database schema" },
+      { path: "setup/database-contract.sql", description: "Database contract" },
     ];
 
     for (const file of requiredFiles) {
       const fullPath = path.join(this.projectRoot, file.path);
       if (!fs.existsSync(fullPath)) {
         errors.push(`Missing ${file.description}: ${file.path}`);
-      }
-    }
-
-    const requiredFunctions = ["derive-encryption-key", "http-request"];
-    for (const name of requiredFunctions) {
-      const funcPath = path.join(
-        this.projectRoot,
-        "supabase",
-        "functions",
-        name,
-        "index.ts",
-      );
-      if (!fs.existsSync(funcPath)) {
-        warnings.push(`Edge function missing: ${name}`);
       }
     }
 
@@ -674,18 +550,8 @@ SUPABASE_DB_PASSWORD=${this.config.supabaseDbPassword}
       }
     }
 
-    const migrationsDir = path.join(this.projectRoot, "supabase", "migrations");
-    if (fs.existsSync(migrationsDir)) {
-      const migrations = fs
-        .readdirSync(migrationsDir)
-        .filter((f) => f.endsWith(".sql")).length;
-      if (migrations === 0) {
-        warnings.push("No database migrations found");
-      } else {
-        console.log(`✅ Found ${migrations} database migration(s)`);
-      }
-    } else {
-      warnings.push("Migrations directory not found");
+    if (!this.status.schemaVerified) {
+      errors.push("Current database contract has not been verified");
     }
 
     if (errors.length > 0) {
@@ -707,10 +573,8 @@ SUPABASE_DB_PASSWORD=${this.config.supabaseDbPassword}
     console.log("  ✅ Dependencies installed");
     console.log("  ✅ Environment files configured");
     if (this.status.linked) console.log("  ✅ Supabase project linked");
-    if (this.status.migrated) console.log("  ✅ Database schema applied");
-    if (this.status.functionsDeployed)
-      console.log("  ✅ Edge functions deployed");
-    if (this.status.secretsSet) console.log("  ✅ Supabase secrets configured");
+    if (this.status.migrated) console.log("  ✅ Fresh database schema applied");
+    if (this.status.schemaVerified) console.log("  ✅ Current database schema verified");
 
     console.log("\n🚀 Next Steps:");
     console.log("1. Start the frontend: npm run dev");

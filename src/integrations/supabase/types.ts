@@ -83,63 +83,6 @@ export type Database = {
           },
         ]
       }
-      cash_snapshots: {
-        Row: {
-          balances: Json
-          base_currency: string | null
-          broker: string
-          cash: number | null
-          created_at: string
-          credential_id: string
-          equity: number | null
-          execution_id: string | null
-          id: string
-          positions_count: number | null
-          realized_pnl: number | null
-          snapshot_at: string
-          total_value_usdt: number | null
-          unrealized_pnl: number | null
-          user_id: string
-          workflow_id: string | null
-        }
-        Insert: {
-          balances?: Json
-          base_currency?: string | null
-          broker: string
-          cash?: number | null
-          created_at?: string
-          credential_id: string
-          equity?: number | null
-          execution_id?: string | null
-          id?: string
-          positions_count?: number | null
-          realized_pnl?: number | null
-          snapshot_at: string
-          total_value_usdt?: number | null
-          unrealized_pnl?: number | null
-          user_id: string
-          workflow_id?: string | null
-        }
-        Update: {
-          balances?: Json
-          base_currency?: string | null
-          broker?: string
-          cash?: number | null
-          created_at?: string
-          credential_id?: string
-          equity?: number | null
-          execution_id?: string | null
-          id?: string
-          positions_count?: number | null
-          realized_pnl?: number | null
-          snapshot_at?: string
-          total_value_usdt?: number | null
-          unrealized_pnl?: number | null
-          user_id?: string
-          workflow_id?: string | null
-        }
-        Relationships: []
-      }
       coreza_chat_history: {
         Row: {
           created_at: string
@@ -296,51 +239,6 @@ export type Database = {
           },
         ]
       }
-      position_snapshots: {
-        Row: {
-          avg_entry_price: number
-          broker: string
-          created_at: string
-          credential_id: string
-          current_price: number | null
-          id: string
-          quantity: number
-          realized_pnl: number | null
-          snapshot_at: string
-          symbol: string
-          unrealized_pnl: number | null
-          user_id: string
-        }
-        Insert: {
-          avg_entry_price: number
-          broker: string
-          created_at?: string
-          credential_id: string
-          current_price?: number | null
-          id?: string
-          quantity: number
-          realized_pnl?: number | null
-          snapshot_at: string
-          symbol: string
-          unrealized_pnl?: number | null
-          user_id: string
-        }
-        Update: {
-          avg_entry_price?: number
-          broker?: string
-          created_at?: string
-          credential_id?: string
-          current_price?: number | null
-          id?: string
-          quantity?: number
-          realized_pnl?: number | null
-          snapshot_at?: string
-          symbol?: string
-          unrealized_pnl?: number | null
-          user_id?: string
-        }
-        Relationships: []
-      }
       projects: {
         Row: {
           created_at: string
@@ -367,78 +265,6 @@ export type Database = {
           name?: string
           status?: string
           updated_at?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
-      subscriptions: {
-        Row: {
-          created_at: string | null
-          current_period_end: string
-          current_period_start: string
-          id: string
-          status: Database["public"]["Enums"]["subscription_status"]
-          stripe_customer_id: string | null
-          stripe_subscription_id: string | null
-          tier: Database["public"]["Enums"]["subscription_tier"]
-          updated_at: string | null
-          user_id: string
-        }
-        Insert: {
-          created_at?: string | null
-          current_period_end?: string
-          current_period_start?: string
-          id?: string
-          status?: Database["public"]["Enums"]["subscription_status"]
-          stripe_customer_id?: string | null
-          stripe_subscription_id?: string | null
-          tier?: Database["public"]["Enums"]["subscription_tier"]
-          updated_at?: string | null
-          user_id: string
-        }
-        Update: {
-          created_at?: string | null
-          current_period_end?: string
-          current_period_start?: string
-          id?: string
-          status?: Database["public"]["Enums"]["subscription_status"]
-          stripe_customer_id?: string | null
-          stripe_subscription_id?: string | null
-          tier?: Database["public"]["Enums"]["subscription_tier"]
-          updated_at?: string | null
-          user_id?: string
-        }
-        Relationships: []
-      }
-      usage_metrics: {
-        Row: {
-          created_at: string | null
-          execution_count: number | null
-          id: string
-          overage_count: number | null
-          period_end: string
-          period_start: string
-          updated_at: string | null
-          user_id: string
-        }
-        Insert: {
-          created_at?: string | null
-          execution_count?: number | null
-          id?: string
-          overage_count?: number | null
-          period_end?: string
-          period_start?: string
-          updated_at?: string | null
-          user_id: string
-        }
-        Update: {
-          created_at?: string | null
-          execution_count?: number | null
-          id?: string
-          overage_count?: number | null
-          period_end?: string
-          period_start?: string
-          updated_at?: string | null
           user_id?: string
         }
         Relationships: []
@@ -770,24 +596,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      check_execution_limit: { Args: { p_user_id: string }; Returns: boolean }
       cluster_hierarchy_write_ready: { Args: never; Returns: boolean }
-      get_current_usage: {
-        Args: { p_user_id: string }
-        Returns: {
-          execution_count: number
-          period_end: string
-          period_start: string
-        }[]
-      }
-      get_user_tier: {
-        Args: { p_user_id: string }
-        Returns: Database["public"]["Enums"]["subscription_tier"]
-      }
-      increment_execution_count: {
-        Args: { p_user_id: string }
-        Returns: number
-      }
       save_workflow_document: {
         Args: {
           p_cluster_format_version?: number
@@ -825,8 +634,7 @@ export type Database = {
       }
     }
     Enums: {
-      subscription_status: "active" | "cancelled" | "expired" | "trial"
-      subscription_tier: "free" | "trader" | "professional" | "enterprise"
+      [_ in never]: never
     }
     CompositeTypes: {
       [_ in never]: never
@@ -953,9 +761,6 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {
-      subscription_status: ["active", "cancelled", "expired", "trial"],
-      subscription_tier: ["free", "trader", "professional", "enterprise"],
-    },
+    Enums: {},
   },
 } as const

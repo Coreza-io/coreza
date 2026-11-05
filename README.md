@@ -77,7 +77,6 @@ The setup script will:
 - Configure your Supabase project
 - Generate secure encryption keys
 - Set up environment files
-- Deploy edge functions
 - Initialize the database schema
 - Validate your installation
 
@@ -107,7 +106,7 @@ The setup script will:
 
 ### Data & Infrastructure
 
-- **Core data platform**: Supabase (PostgreSQL, Auth, Edge Functions, Row Level Security)
+- **Core data platform**: Supabase (PostgreSQL, Auth, Row Level Security)
 - **Queue and state transport**: Dual Redis topology (`REDIS_QUEUE_URL` for BullMQ, `REDIS_CACHE_URL` for cache/state)
 - **Deployment/runtime tooling**: Docker Compose
 - **Observability (optional stack)**: Prometheus + Grafana
@@ -117,7 +116,7 @@ The setup script will:
 - **Credential protection**: AES-256-GCM encryption for broker/API secrets
 - **Auth/session model**: JWT auth (global token checks without per-request DB lookups)
 - **Data isolation**: Supabase Row Level Security policies
-- **Key handling**: Derived encryption keys managed through Supabase edge functions
+- **Key handling**: User-scoped encryption keys derived in the backend from `COREZA_ENCRYPTION_KEY`
 
 ## ✨ Core Features
 
@@ -142,7 +141,7 @@ If you prefer manual setup or the automated setup fails:
 ### Prerequisites
 
 - Node.js 18+
-- A Supabase account and project (required for authentication, database, and edge functions)
+- A Supabase account and project (required for authentication and database)
 - Git
 
 ### Required Credentials (for `node setup/setup.js`)
@@ -185,7 +184,15 @@ cd ..
 
 ### 3. Database Setup
 
-The database schema is already configured through migrations (including `public.coreza_chat_history` for AI Agent memory). If needed, you can apply it manually using the Supabase dashboard or CLI.
+Run `node setup/setup.js` for a fresh Supabase project. Setup stages only the
+current bootstrap schema, including AI Agent chat memory, workflow hierarchy,
+reporting OHLC and selected-market preferences. It does not create retired tables
+or deploy Edge Functions, and it leaves repository migrations intact.
+
+For an existing project, setup checks compatibility without changing its schema
+or migration history. Apply selected forward upgrades explicitly using the
+[installation and upgrade guide](docs/SETUP.md); rerunning setup does not replay
+historical migrations or automatically apply retirement migrations.
 
 ### 4. Start Development Servers
 
@@ -204,7 +211,7 @@ npm run dev
 coreza/
 ├── src/                    # Frontend React application
 ├── coreza-backend/         # Backend Node.js application
-├── supabase/              # Supabase configuration & functions
+├── supabase/              # Supabase configuration & migrations
 ├── setup/                 # Setup and validation scripts
 ├── docs/                  # Documentation
 └── tests/                 # Test suites

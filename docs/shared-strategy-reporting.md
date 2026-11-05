@@ -41,7 +41,12 @@ snapshots retain exact timestamps and raw balances. Coalescing is scoped by
 activation/account/currency, with one writer per key and atomic compare/delete
 cleanup. Failed writes remain retryable; malformed samples do not block unrelated
 activations. Unscoped snapshots use the existing malformed-payload handling.
-The legacy `cash_snapshots` table retains historical rows.
+Manual portfolio operations do not use the snapshot worker. Backtest equity history
+and scoped Live snapshots are persisted and read through `portfolio`. Live snapshot
+IDs remain the upsert conflict target and successful writes mark live metrics dirty.
+The legacy `cash_snapshots` table is retired by a separate forward migration.
+Its historical rows are intentionally discarded without archiving or importing
+into `portfolio`. See the [retirement rollout](cash-snapshots-removal-plan.md#rollout).
 
 Statement triggers mark changed live summaries durably. The worker discovers dirty
 headers on its existing cadence; a data revision prevents stale calculations from
@@ -65,5 +70,15 @@ with the operator before switching versions; existing activations are not adopte
 this schema. Reload affected clients and resume starts only after matching code is
 available. The migration does not stop or restart trading automatically.
 
-No tests, application execution or live database changes were performed for this PR.
-Static type checks retain the existing development-branch diagnostics.
+Deploy the snapshot repository rename and reload all workers and clients before
+applying the legacy-table drop migration. Keep that migration out of automatic
+deployment until all shared-database consumers, rollback versions, external readers
+and scheduled jobs have moved off `cash_snapshots`.
+Recheck dependencies and apply without `CASCADE`. Rollback versions must support
+the retired schema; historical data will not be retained.
+
+Additional unused SQL variable, billing and legacy reporting objects are covered
+by the [database retirement audit](database-retirement-audit.md).
+
+No tests, static type checks, application execution or live database changes were
+performed for this PR. Database inspection was read-only.

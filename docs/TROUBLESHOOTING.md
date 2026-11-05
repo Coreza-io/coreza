@@ -15,11 +15,8 @@ This guide helps you resolve common issues when setting up and running the Corez
 4. Run manual setup steps from [SETUP.md](SETUP.md)
 
 ```bash
-# If setup fails, try manual approach
-npm install -g supabase
-supabase link --project-ref YOUR_PROJECT_ID
-supabase db push
-supabase functions deploy
+# Setup selects a current bootstrap only for an empty project.
+node setup/setup.js
 ```
 
 ### Environment Variables Not Loading
@@ -138,31 +135,20 @@ WHERE schemaname = 'public';
 **Problem**: Database migrations fail to apply.
 
 **Solutions**:
-1. Check migration syntax for errors
-2. Ensure proper permissions
-3. Run migrations manually:
-```bash
-supabase db reset
-supabase db push
-```
-
-4. Check Supabase logs for specific errors
+1. Inspect the error and selected project's actual schema and migration history.
+2. Follow the [existing-project upgrade guide](SETUP.md#existing-project-or-repeat-installation).
+3. Stage only the needed forward migrations and preview with CLI 3.0.0's
+   `db push --remote --dry-run` before applying them.
+4. Resolve history mismatches manually after verifying schema effects. Setup does
+   not reset databases, revert ledger entries or retry failed DDL automatically.
 
 ### Missing Tables
 
-**Problem**: Application reports missing database tables.
+**Problem**: Setup or the application reports missing database objects.
 
-**Solutions**:
-1. Run the setup script again
-2. Apply database schema manually:
-```bash
-supabase db push --include-all
-```
-
-3. Check if migrations were applied:
-```bash
-supabase migration list
-```
+Use the missing-object list from setup to select an existing-project upgrade.
+Fresh projects receive only the current bootstrap. Do not run `db reset` or replay
+all repository migrations to fix an existing installation. See [SETUP.md](SETUP.md).
 
 ## Authentication Issues
 
@@ -186,40 +172,6 @@ supabase migration list
 3. Ensure localStorage is working
 4. Check for auth token refresh issues
 
-## Edge Functions Issues
-
-### Functions Not Deploying
-
-**Problem**: Supabase edge functions fail to deploy.
-
-**Solutions**:
-1. Check Supabase CLI authentication:
-```bash
-supabase login
-supabase projects list
-```
-
-2. Verify function syntax and dependencies
-3. Check function logs:
-```bash
-supabase functions logs function-name
-```
-
-4. Manual deployment:
-```bash
-supabase functions deploy function-name
-```
-
-### Function Execution Errors
-
-**Problem**: Edge functions return errors when called.
-
-**Solutions**:
-1. Check function logs in Supabase dashboard
-2. Verify environment variables/secrets are set
-3. Test function locally if possible
-4. Check CORS configuration
-
 ## Encryption Issues
 
 ### Credential Encryption Fails
@@ -227,13 +179,9 @@ supabase functions deploy function-name
 **Problem**: Cannot encrypt/decrypt trading credentials.
 
 **Solutions**:
-1. Verify encryption key is set:
-```bash
-supabase secrets list
-```
-
+1. Verify `COREZA_ENCRYPTION_KEY` is set in the backend environment.
 2. Check key format (base64, 32 bytes)
-3. Ensure edge function has access to secrets
+3. Ensure the backend uses the same key that encrypted the stored credentials
 4. Test encryption/decryption manually
 
 ### Invalid Encryption Format
@@ -266,7 +214,7 @@ curl -X GET "YOUR_BACKEND_URL/health"
 **Problem**: Cross-origin request blocked.
 
 **Solutions**:
-1. Check CORS headers in edge functions
+1. Check the backend CORS configuration
 2. Verify allowed origins in Supabase
 3. Ensure proper request headers
 4. Test from same origin first
@@ -360,9 +308,7 @@ cd coreza-backend && npm run dev
 # Supabase operations
 supabase login
 supabase link --project-ref PROJECT_ID
-supabase db push
-supabase functions deploy
-supabase secrets set KEY=value
+# For upgrades, stage selected migrations as described in docs/SETUP.md
 
 # Debugging
 npm run build

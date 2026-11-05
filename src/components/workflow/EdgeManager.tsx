@@ -941,10 +941,12 @@ export const PlugConnectionLine: React.FC<ConnectionLineComponentProps> = ({
   const fromType = fromHandle?.type ?? "source";
   const draggingFromSource = fromType === "source";
 
-  // Bottom attachment handles (including AIAgent Tool) are targets, but their
-  // dragged plug must still face down, away from the handle.
+  // Bottom attachments and left inputs are targets, but their dragged plug
+  // must still face outward from the starting handle.
   const plugPosition =
-    fromPosition === Position.Bottom || draggingFromSource
+    fromPosition === Position.Bottom ||
+    fromPosition === Position.Left ||
+    draggingFromSource
       ? fromPosition
       : toPosition;
 

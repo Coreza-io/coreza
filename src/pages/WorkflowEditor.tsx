@@ -150,6 +150,7 @@ import {
   syncEditorNodeActionIds,
 } from "@/services/editorNodeExecution";
 import { ActivateControl } from "@/components/workflow/ActivateControl";
+import "@/components/workflow/WorkflowSaveControl.css";
 import { ToastAction } from "@/components/ui/toast";
 import { CompactClusterNode } from "@/components/workflow/CompactClusterNode";
 import { getExpandedClusterFrameRect, getVisibleClusterNodes, projectClusterGraph, resolveProjectedConnection, type ClusterProjection } from "@/domain/clusters/projection";
@@ -2756,8 +2757,9 @@ const WorkflowEditorContent = () => {
           <Button
             onClick={() => handleSaveWorkflow()}
             disabled={loading || persistSaving}
+            aria-busy={persistSaving || undefined}
             variant="outline"
-            className="h-10 px-4 font-medium"
+            className="coreza-workflow-save h-10 px-4 font-medium"
           >
             <Save className="h-4 w-4 mr-2" />
             {persistSaving ? "Saving..." : "Save"}

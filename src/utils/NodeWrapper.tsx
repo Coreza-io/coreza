@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { X, Edit2, Trash2, Loader2, Wrench } from "lucide-react";
 import ElectricBorderSVG from "@/components/workflow/ElectricBorderSVG";
 import "./ExpandedNode3D.css";
+import "./ExpandedNodeExecutionFooter.css";
 import {
   FemalePlugIcon,
   MalePlugIcon,

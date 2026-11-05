@@ -79,5 +79,8 @@ and scheduled jobs have moved off `cash_snapshots`, and the archive is verified.
 Recheck dependencies and apply without `CASCADE`. Before rolling back to a version
 that needs the table, restore its schema, grants, policies and archived rows.
 
+Additional unused SQL variable, billing and legacy reporting objects are covered
+by the [database retirement audit](database-retirement-audit.md).
+
 No tests, static type checks, application execution or live database changes were
-performed for this PR.
+performed for this PR. Database inspection was read-only.

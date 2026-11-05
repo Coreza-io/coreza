@@ -173,22 +173,6 @@ CREATE TABLE IF NOT EXISTS public.live_fills (
   CONSTRAINT uq_live_fills_dedup UNIQUE (user_id, broker, symbol, fill_id)
 );
 
-CREATE TABLE IF NOT EXISTS public.position_snapshots (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL,
-  credential_id uuid NOT NULL,
-  broker text NOT NULL,
-  symbol text NOT NULL,
-  quantity numeric NOT NULL,
-  avg_entry_price numeric NOT NULL,
-  current_price numeric,
-  unrealized_pnl numeric,
-  realized_pnl numeric,
-  snapshot_at timestamptz NOT NULL,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-
-
 CREATE INDEX IF NOT EXISTS idx_workflow_runs_workflow_id ON public.workflow_runs(workflow_id);
 CREATE UNIQUE INDEX IF NOT EXISTS workflow_runs_manual_idempotency ON public.workflow_runs(workflow_id, initiated_by, idempotency_key) WHERE idempotency_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS workflow_runs_active_cluster_lookup ON public.workflow_runs(workflow_id, initiated_by, scope_cluster_id, started_at DESC) WHERE scope_kind = 'cluster' AND status IN ('pending', 'queued', 'running', 'cancelling');
@@ -237,7 +221,6 @@ ALTER TABLE public.node_executions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_credentials ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.backtests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.live_fills ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.position_snapshots ENABLE ROW LEVEL SECURITY;
 
 -- representative idempotent policies for all OSS tables
 DROP POLICY IF EXISTS "Users can view their own profile" ON public.users;
@@ -342,8 +325,6 @@ CREATE POLICY "Service role full access" ON public.user_credentials FOR ALL USIN
 -- Live-trading state tables
 DROP POLICY IF EXISTS "Users can manage own live fills" ON public.live_fills;
 CREATE POLICY "Users can manage own live fills" ON public.live_fills FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
-DROP POLICY IF EXISTS "Users can manage own position snapshots" ON public.position_snapshots;
-CREATE POLICY "Users can manage own position snapshots" ON public.position_snapshots FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
 -- (existing workflow/workflow_runs/node_executions/user_credentials policies retained)
 DROP POLICY IF EXISTS "Users can view their own workflows" ON public.workflows;

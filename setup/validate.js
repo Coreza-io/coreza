@@ -128,7 +128,6 @@ class SetupValidator {
         "trades",
         "portfolio",
         "live_fills",
-        "position_snapshots",
       ];
 
       for (const table of requiredTables) {

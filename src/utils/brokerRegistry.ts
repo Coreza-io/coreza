@@ -24,6 +24,8 @@ export interface BrokerUIConfig {
   badgeClasses: string;
   /** Stream name format: 'at' for symbol@type (Binance), 'dot' for type.symbol (Alpaca) */
   streamFormat: 'at' | 'dot' | 'generic';
+  /** Optional provider-specific symbol/contract decoding for subscription streams. */
+  parseStreamSymbol?: (symbol: string, eventType: string) => { symbol: string; contractType?: string };
   /** Source IDs that map to this broker (e.g. alpaca, alpaca_market, alpaca_news) */
   sourceIds: string[];
   /** Whether this broker supports news streams */
@@ -47,6 +49,12 @@ export const BROKER_REGISTRY: Record<string, BrokerUIConfig> = {
     emoji: '₿',
     badgeClasses: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
     streamFormat: 'at',
+    parseStreamSymbol: (symbol, eventType) => {
+      if (eventType !== "continuousKline" && eventType !== "continuous_kline") return { symbol };
+      const contractType = ["perpetual", "current_quarter", "next_quarter", "current_month", "next_month"]
+        .find(type => symbol.endsWith(`_${type}`));
+      return { symbol: contractType ? symbol.slice(0, -(contractType.length + 1)) : symbol, contractType };
+    },
     sourceIds: ['binance', 'binance_testnet'],
   },
   dhan: {

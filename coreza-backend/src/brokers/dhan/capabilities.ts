@@ -1,4 +1,5 @@
 import { BrokerCapabilities } from "../capabilities";
+import { lookupSecurityId } from "./scripMaster";
 import { extractDhanOrderOwnerIds } from "./orderOwnerExtract";
 
 function toRecord(value: unknown): Record<string, unknown> | undefined {
@@ -22,6 +23,21 @@ export const dhanCapabilities: BrokerCapabilities = {
     sourceId: "dhan_stream",
     tradingSourceId: "dhan_trading",
     tradingStreams: ["order_alert"],
+  },
+
+  prepareSubscriptionSymbols: async (symbols, { exchange }) => {
+    const segment = exchange || "NSE_EQ";
+    const resolved: string[] = [];
+    for (const symbol of symbols) {
+      if (symbol === "*" || /^\d+$/.test(symbol)) {
+        resolved.push(symbol);
+        continue;
+      }
+      const securityId = await lookupSecurityId(symbol, segment);
+      if (!securityId) throw new Error(`Security ID not found for symbol="${symbol}" segment="${segment}"`);
+      resolved.push(`${symbol}:${securityId}`);
+    }
+    return resolved;
   },
 
   streamParser: {

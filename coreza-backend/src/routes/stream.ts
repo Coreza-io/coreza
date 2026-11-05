@@ -567,9 +567,10 @@ router.post("/:source/unsubscribe", async (req, res) => {
     const resolvedSymbols =
       isAlpacaCrypto || normalizedSymbols.length > 0 ? normalizedSymbols : symbols;
 
+    let result;
     if (hasOrderUpdate) {
       const tradingSourceId = getTradingCompanionSource(source);
-      await SubscriptionService.unsubscribe({
+      result = await SubscriptionService.unsubscribe({
         source: tradingSourceId as any,
         userId,
         workflowId: workflowId,
@@ -580,10 +581,11 @@ router.post("/:source/unsubscribe", async (req, res) => {
         environment,
         targetWorkflowId,
       });
+      if (!result.success) return res.status(400).json(resultFailure(result.error ?? "Unsubscribe failed", { data: null }));
     }
 
     if (hasNews) {
-      await SubscriptionService.unsubscribe({
+      result = await SubscriptionService.unsubscribe({
         source: `${source}_news` as any,
         userId,
         workflowId: workflowId,
@@ -594,9 +596,9 @@ router.post("/:source/unsubscribe", async (req, res) => {
         environment,
         targetWorkflowId,
       });
+      if (!result.success) return res.status(400).json(resultFailure(result.error ?? "Unsubscribe failed", { data: null }));
     }
-    let result: any;
-    if (marketstreamType) {
+    if (marketstreamType.length > 0 || (!hasOrderUpdate && !hasNews)) {
       result = await SubscriptionService.unsubscribe({
         source: sourceId,
         userId,
@@ -616,10 +618,11 @@ router.post("/:source/unsubscribe", async (req, res) => {
         scope,
         targetWorkflowId,
       });
+      if (!result.success) return res.status(400).json(resultFailure(result.error ?? "Unsubscribe failed", { data: null }));
     }
 
-    if (!result.success) {
-      return res.status(400).json(resultFailure(result.error ?? "Node operation failed", { data: null }));
+    if (!result || !result.success) {
+      return res.status(400).json(resultFailure(result?.error ?? "Node operation failed", { data: null }));
     }
 
     res.json(resultSuccess({ message: result.data?.message, sourceId, symbols: result.data?.symbols, stream_type: result.data?.streamType, targetWorkflowId: targetWorkflowId || null }));

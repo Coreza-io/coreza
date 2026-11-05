@@ -58,12 +58,7 @@ import { Link } from "react-router-dom";
 import { apiClient } from "@/lib/apiClient";
 import { StreamBadgeWithTooltip } from "@/components/market/StreamBadgeWithTooltip";
 import { getAllBrokerKeys, getSourceBadgeClasses, getSourceEmoji } from "@/utils/brokerRegistry";
-
-const TRADE_UPDATE_STREAMS = new Set([
-  "trade_updates",
-  "ORDER_TRADE_UPDATE",
-  "executionReport",
-]);
+import { parseSubscriptionStreamName } from "@/utils/streamNameParser";
 
 interface SourceStatus {
   source: string;
@@ -110,64 +105,6 @@ interface SubscriptionStatus {
 // Derived from broker registry — no hardcoded broker lists
 const sourceColors = (source: string) => getSourceBadgeClasses(source);
 const sourceIcons = (source: string) => getSourceEmoji(source);
-
-type ParsedStreamName = {
-  symbol: string;
-  streamType: string;
-  interval?: string;
-  contractType?: string;
-};
-
-const KNOWN_CONTRACT_TYPES = new Set([
-  "perpetual",
-  "current_quarter",
-  "next_quarter",
-  "current_month",
-  "next_month",
-]);
-
-const parseSubscribedStream = (stream: string): ParsedStreamName => {
-  if (TRADE_UPDATE_STREAMS.has(stream)) {
-    return {
-      symbol: "[*]",
-      streamType: stream,
-      interval: undefined,
-    };
-  }
-
-  const [left, right] = stream.split("@");
-
-  if (!left || !right) {
-    throw new Error(`Invalid stream format: ${stream}`);
-  }
-
-  const rightParts = right.split("_");
-  const streamType = rightParts[0];
-  const interval =
-    rightParts.length > 1 ? rightParts.slice(1).join("_") : undefined;
-
-  if (!streamType) {
-    throw new Error(`Invalid stream type in stream: ${stream}`);
-  }
-
-  const leftParts = left.split("_");
-  const possibleContractType = leftParts[leftParts.length - 1];
-
-  let symbol = left;
-  let contractType: string | undefined;
-
-  if (KNOWN_CONTRACT_TYPES.has(possibleContractType)) {
-    contractType = possibleContractType;
-    symbol = leftParts.slice(0, -1).join("_");
-  }
-
-  return {
-    symbol,
-    streamType,
-    interval,
-    contractType,
-  };
-};
 
 const MarketSubscriptions = () => {
   const { user, session } = useAuth();
@@ -238,8 +175,8 @@ const MarketSubscriptions = () => {
       setUnsubscribing(`stream-${stream}`);
 
       try {
-        const { symbol, streamType, interval, contractType } =
-          parseSubscribedStream(stream);
+        const { symbol, eventType: streamType, exchange, interval, contractType } =
+          parseSubscriptionStreamName(source, stream);
 
         const response = await apiClient.post(
           `/stream/${source}/unsubscribe`,
@@ -247,7 +184,8 @@ const MarketSubscriptions = () => {
             symbols: [symbol],
             stream_type: [streamType],
             interval,
-            contract_type: contractType,
+            exchange,
+            contractType,
             scope: "global",
             environment,
           },
@@ -292,8 +230,8 @@ const MarketSubscriptions = () => {
       setUnsubscribing(`stream-${workflowId}-${stream}`);
 
       try {
-        const { symbol, streamType, interval, contractType } =
-          parseSubscribedStream(stream);
+        const { symbol, eventType: streamType, exchange, interval, contractType } =
+          parseSubscriptionStreamName(source, stream);
 
         const response = await apiClient.post(
           `/stream/${source}/unsubscribe`,
@@ -303,7 +241,8 @@ const MarketSubscriptions = () => {
             symbols: [symbol],
             stream_type: [streamType],
             interval,
-            contract_type: contractType,
+            exchange,
+            contractType,
             scope: "workflow",
             environment,
           },

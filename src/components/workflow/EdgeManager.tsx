@@ -942,6 +942,9 @@ export const PlugConnectionLine: React.FC<ConnectionLineComponentProps> = ({
   const draggingFromSource = fromType === "source";
 
   const plugPosition = draggingFromSource ? fromPosition : toPosition;
+  // A bottom source (e.g. AIAgent Tool) should show an unmistakably
+  // downward-facing connector at the cursor, not a diagonal plug silhouette.
+  const downwardDrag = draggingFromSource && fromPosition === Position.Bottom;
 
   const plugRotation = getMalePlugRotation(plugPosition);
   const plugTailOffset = getMalePlugTailOffset(plugPosition);
@@ -983,17 +986,32 @@ export const PlugConnectionLine: React.FC<ConnectionLineComponentProps> = ({
         }}
       />
 
-      {/* Male plug that follows cursor */}
-      <g
-        transform={`translate(${toX}, ${toY}) rotate(${plugRotation}) scale(0.9) translate(-12, -12)`}
-        className="plug-edge__plug-dragging-inner"
-      >
-        <path
-          d={MALE_PLUG_PATH}
-          className="plug-edge__plug-path"
-          fill={cordColor}
-        />
-      </g>
+      {/* Use an explicit downward tip for bottom-source drags. This shape
+          points down in SVG coordinates and needs no rotation guessing. */}
+      {downwardDrag ? (
+        <g
+          transform={`translate(${toX - 12}, ${toY - 12})`}
+          className="plug-edge__plug-dragging-inner"
+          pointerEvents="none"
+        >
+          <path
+            d="M 9 2 H 15 V 11 H 20 L 12 22 L 4 11 H 9 Z"
+            className="plug-edge__plug-path"
+            fill={cordColor}
+          />
+        </g>
+      ) : (
+        <g
+          transform={`translate(${toX}, ${toY}) rotate(${plugRotation}) scale(0.9) translate(-12, -12)`}
+          className="plug-edge__plug-dragging-inner"
+        >
+          <path
+            d={MALE_PLUG_PATH}
+            className="plug-edge__plug-path"
+            fill={cordColor}
+          />
+        </g>
+      )}
     </g>
   );
 };

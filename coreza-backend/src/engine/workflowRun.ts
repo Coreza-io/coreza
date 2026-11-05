@@ -10,9 +10,8 @@ import {
 import { IndicatorStateManager } from "./indicatorStateManager";
 import { NodeStoreV2 } from "./nodeStoreV2";
 import { ENGINE_CONFIG } from "./config/engineConfig";
-import { emptyVariableSnapshot, isPersistentVariableEdit, overlayVariables, type VariableChange, referencesVariables, type VariableSnapshot } from "../variables/contract";
+import { emptyVariableSnapshot, overlayVariables, type VariableChange, type VariableSnapshot } from "../variables/contract";
 import { WorkflowPlan } from "./workflowPlan";
-import type { LiveVariableSession } from "../variables/LiveVariableSession";
 import {
   ExecutionMode,
   FlushPolicy,
@@ -70,38 +69,16 @@ function mergeActivationInputs(inputs: WorkflowEntryActivation["inputs"]): unkno
 export class WorkflowRun {
   private _lastBuildResultMs = 0;
   private variables?: VariableSnapshot;
-  private variableInitialization?: Promise<void>;
   private disposed = false;
   private variablesCounted = false;
-  private liveVariables?: LiveVariableSession;
-  private variableEventId = "initial";
-  private variableSafetyStopped = false;
-  private onVariableSafetyStop?: () => void;
 
   initialize(): Promise<void> {
     if (this.disposed || this.options.abortSignal?.aborted) return Promise.reject(new Error("Workflow initialization cancelled"));
-    if (this.variableInitialization) return this.variableInitialization;
-    this.variableInitialization = (async () => {
-      if (referencesVariables(this.plan.nodes.map(node => node.values)) || this.plan.nodes.some(isPersistentVariableEdit)) {
-        if (this.plan.executionMode === "live") {
-          // Do not admit over a legacy fenced scope, even with its writer flag off.
-          const { liveRPC } = await import("../variables/LiveVariableProtocol");
-          const legacy = await liveRPC("eligible", this.options.userId, this.options.workflowId);
-          if (legacy.owned) throw new Error("Legacy live variable ownership requires stop/handoff or recovery before activation");
-        }
-        if (this.disposed || this.options.abortSignal?.aborted) throw new Error("Workflow initialization cancelled");
-        // The first successful Persistent Edit commit creates the registry.
-      }
-    })();
-    return this.variableInitialization;
+    return Promise.resolve();
   }
+
   private commitVariables = (changes: readonly VariableChange[], token: string): void | Promise<void> => {
     if (this.disposed || this.options.abortSignal?.aborted) throw new Error("Persistent variable execution unavailable");
-    if (this.liveVariables) {
-      this.liveVariables.assertAdmission();
-      this.liveVariables.state.apply(changes);
-      return;
-    }
     // Allocate only after all changes validate; startup and reads create nothing.
     const base = this.variables ?? emptyVariableSnapshot(this.options.userId, this.options.workflowId);
     const next = overlayVariables(base, changes);
@@ -112,21 +89,6 @@ export class WorkflowRun {
     }
   };
   get variableRevision(): string | undefined { return this.variables?.revision; }
-  setVariableSafetyStopHandler(handler: () => void): void { this.onVariableSafetyStop = handler; }
-  assertVariableAdmission(): void { this.liveVariables?.assertAdmission(); }
-  get variableSafetyStop(): boolean { return this.variableSafetyStopped; }
-  get variableCheckpoint() { return this.liveVariables?.metadata; }
-  async drainVariables(deadline = performance.now() + 10000): Promise<void> {
-    if (this.variableInitialization) {
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      try {
-        await Promise.race([this.variableInitialization.catch(() => undefined), new Promise<never>((_, reject) => {
-          timer = setTimeout(() => reject(new Error("Live variable stop incomplete: initialization pending")), Math.max(0, deadline - performance.now()));
-        })]);
-      } finally { if (timer) clearTimeout(timer); }
-    }
-    await this.liveVariables?.stop(deadline);
-  }
 
   private readonly store: NodeStoreV2;
   private runtime: BaseExecutionRuntime;
@@ -194,8 +156,7 @@ export class WorkflowRun {
       allowedExecutableNodeIds: this.options.allowedExecutableNodeIds,
       executionScope: this.options.executionScope,
       commitVariables: this.commitVariables,
-      getVariables: () => this.liveVariables?.state.values ?? this.variables?.values,
-      assertAdmission: () => this.assertVariableAdmission(),
+      getVariables: () => this.variables?.values,
     };
 
     return this.plan.isBacktest
@@ -332,7 +293,6 @@ export class WorkflowRun {
   }
 
   setExecutionContextExtras(extras: ExecutionContextExtras): void {
-    if (extras.variableEventId !== undefined) this.variableEventId = extras.variableEventId;
     this.runtime.setExecutionContextExtras(extras);
   }
 
@@ -345,8 +305,6 @@ export class WorkflowRun {
   }
 
   destroy(): void {
-    if (this.liveVariables && this.liveVariables.state.lifecycle !== "stopped") throw new Error("Drain live variable ownership before destroying the workflow");
-    this.liveVariables?.dispose();
     if (this.variablesCounted) {
       this.variablesCounted = false;
       activeVariableSnapshots.dec();
@@ -362,16 +320,9 @@ export class WorkflowRun {
     enqueueWork: () => void,
   ): Promise<WorkflowExecutionResult> {
     this._lastBuildResultMs = 0;
-    let variableEventStarted = false;
-    let variableOutcome: "success" | "failed" | "cancelled" = "failed";
 
     try {
       await this.initialize();
-      if (this.liveVariables) {
-        this.liveVariables.assertAdmission();
-        this.liveVariables.state.beginEvent(this.variableEventId);
-        variableEventStarted = true;
-      }
       enqueueWork();
       const nodeWorkStartedAt = timingNow();
       let nodeWorkOutcome = "error";
@@ -396,7 +347,6 @@ export class WorkflowRun {
         this._lastBuildResultMs = performance.now() - startedAtMs;
         if (this.plan.executionMode === "live") observeStage("result_build", startedAtMs, buildOutcome);
       }
-      variableOutcome = executionResult.success ? "success" : "failed";
 
       return executionResult;
     } catch (error) {
@@ -404,7 +354,6 @@ export class WorkflowRun {
       try { return this.buildFailureResult(error); }
       finally { if (this.plan.executionMode === "live") observeStage("result_build", startedAtMs, "error"); }
     } finally {
-      if (variableEventStarted) this.liveVariables?.state.settle(this.options.abortSignal?.aborted ? "cancelled" : variableOutcome);
       await this.flushIfNeeded();
     }
   }
@@ -417,7 +366,6 @@ export class WorkflowRun {
 
   private async drainQueue(): Promise<void> {
     while (this.runtime.hasPending()) {
-      this.assertVariableAdmission();
       if (this.options.abortSignal?.aborted) {
         throw new Error("Workflow cancelled by user");
       }

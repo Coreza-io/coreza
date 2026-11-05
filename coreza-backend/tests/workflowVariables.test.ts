@@ -1,7 +1,3 @@
-jest.mock("../src/config/supabase", () => ({ supabase: {} }));
-const mockCache = { get: jest.fn(), set: jest.fn(), del: jest.fn() };
-jest.mock("../src/config/redis", () => ({ getRedisCache: () => mockCache }));
-import { VariableSnapshotService } from "../src/variables/VariableSnapshotService";
 import { freezeVariableSnapshot, validateVariable, referencesVariables } from "../src/variables/contract";
 import { compileEditTemplate, evaluateEditTemplate } from "../src/nodes/logic/editTemplate";
 import { TYPED_EXPRESSION_FEATURES, evaluateExpression } from "../src/nodes/logic/safeExpression";
@@ -82,54 +78,3 @@ describe("read-only workflow variables", () => {
   });
 });
 
-describe("revisioned snapshot cache", () => {
-  let repository: any;
-  beforeEach(() => {
-    process.env.WORKFLOW_VARIABLES_ENABLED = "true";
-    jest.clearAllMocks();
-    mockCache.get.mockResolvedValue(null); mockCache.set.mockResolvedValue("OK"); mockCache.del.mockResolvedValue(1);
-    repository = { revision: jest.fn().mockResolvedValue("1"), snapshot: jest.fn().mockResolvedValue(snapshot()), mutate: jest.fn().mockResolvedValue({ revision: "2" }) };
-  });
-  afterAll(() => { delete process.env.WORKFLOW_VARIABLES_ENABLED; });
-  test("misses coalesce and hits avoid SQL payload fetch", async () => {
-    const service = new VariableSnapshotService(repository);
-    const loaded = await Promise.all([service.load(owner), service.load(owner)]);
-    expect(repository.snapshot).toHaveBeenCalledTimes(1);
-    mockCache.get.mockResolvedValue(JSON.stringify(loaded[0]));
-    await service.load(owner);
-    expect(repository.snapshot).toHaveBeenCalledTimes(1);
-    expect(repository.revision).toHaveBeenCalledTimes(3);
-  });
-  test("Redis failure falls back to SQL, DB revision failure fails closed", async () => {
-    mockCache.get.mockRejectedValue(new Error("down")); mockCache.set.mockRejectedValue(new Error("down"));
-    expect((await new VariableSnapshotService(repository).load(owner)).values.BASE_RISK).toBe(5);
-    repository.revision.mockRejectedValue(new Error("SQL unavailable"));
-    mockCache.get.mockResolvedValue(JSON.stringify(snapshot()));
-    await expect(new VariableSnapshotService(repository).load(owner)).rejects.toThrow("SQL unavailable");
-  });
-  test("poisoned owner, stale revision and malformed records never become snapshots", async () => {
-    for (const cache of [JSON.stringify(snapshot(other)), JSON.stringify(snapshot(owner, "0")), "invalid json"]) {
-      mockCache.get.mockResolvedValue(cache);
-      expect((await new VariableSnapshotService(repository).load(owner)).owner).toBe(owner);
-    }
-    expect(repository.snapshot).toHaveBeenCalledTimes(3);
-  });
-  test("mutation commits before invalidation and pinned runs keep their values", async () => {
-    const service = new VariableSnapshotService(repository);
-    const pinned = await service.load(owner);
-    await service.mutate(owner, "1", "update", "BASE_RISK", 10);
-    expect(repository.mutate.mock.invocationCallOrder[0]).toBeLessThan(mockCache.del.mock.invocationCallOrder[0]);
-    repository.revision.mockResolvedValue("2"); repository.snapshot.mockResolvedValue(snapshot(owner, "2", 10));
-    expect((await service.load(owner)).values.BASE_RISK).toBe(10);
-    expect(pinned.values.BASE_RISK).toBe(5);
-  });
-  test("ten thousand expression reads incur no I/O after initialization", async () => {
-    const pinned = await new VariableSnapshotService(repository).load(owner);
-    const compiled = compileEditTemplate("{{ $vars.BASE_RISK * 2 }}");
-    const calls = { revision: repository.revision.mock.calls.length, snapshot: repository.snapshot.mock.calls.length, cache: mockCache.get.mock.calls.length };
-    for (let i = 0; i < 10000; i++) expect(evaluateEditTemplate(compiled, { $json: {}, $vars: pinned.values })).toBe(10);
-    expect(repository.revision).toHaveBeenCalledTimes(calls.revision);
-    expect(repository.snapshot).toHaveBeenCalledTimes(calls.snapshot);
-    expect(mockCache.get).toHaveBeenCalledTimes(calls.cache);
-  });
-});

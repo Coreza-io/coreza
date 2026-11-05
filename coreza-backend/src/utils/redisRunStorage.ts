@@ -96,7 +96,6 @@ export async function updateRunStatusInRedis(
   executionResult?: RedisRunResultUpdate,
   metadata?: {
     variableRevision?: string;
-    variableCheckpoint?: Readonly<Record<string, unknown>>;
   },
 ): Promise<void> {
 
@@ -116,9 +115,6 @@ export async function updateRunStatusInRedis(
 
   if (metadata?.variableRevision !== undefined) {
     updates.variable_revision = metadata.variableRevision;
-  }
-  if (metadata?.variableCheckpoint !== undefined) {
-    updates.variable_checkpoint = JSON.stringify(metadata.variableCheckpoint);
   }
 
   await RedisOps.hset(RedisKeys.userRun(userId, runId), updates);

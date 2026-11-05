@@ -59,11 +59,6 @@ export class WorkflowEngine {
   }
   initialize(): Promise<void> { return this.run.initialize(); }
   get variableRevision(): string | undefined { return this.run.variableRevision; }
-  setVariableSafetyStopHandler(handler: () => void): void { this.run.setVariableSafetyStopHandler(handler); }
-  assertVariableAdmission(): void { this.run.assertVariableAdmission(); }
-  get variableSafetyStop(): boolean { return this.run.variableSafetyStop; }
-  get variableCheckpoint() { return this.run.variableCheckpoint; }
-  drainVariables(deadline?: number): Promise<void> { return this.run.drainVariables(deadline); }
   getNodeExecutorMap(): ReadonlyMap<string, INodeExecutor> {
     return this.plan.nodeExecutorMap;
   }
@@ -196,7 +191,6 @@ export async function executeWorkflow(
     if (opts?.entryActivations) return await run.executeFromActivations(opts.entryActivations);
     return await run.execute(opts?.initialInput, opts?.startNodeId);
   } finally {
-    await run.drainVariables();
     run.destroy();
   }
 }

@@ -1,4 +1,4 @@
-import { withLiveRedis } from "../variables/LiveVariableProtocol";
+import { withActivationRedis } from "../variables/ActivationRegistry";
 import { RedisKeys } from "../infra/redisKeys";
 import { isPersistentVariableEdit, referencesVariables } from "../variables/contract";
 import { LiveStrategiesRepository } from "../repositories/LiveStrategiesRepository";
@@ -26,7 +26,7 @@ export class WorkflowRunnerManager {
   ): Promise<void> {
     const existing = this.runners.get(workflowId);
     if (existing) {
-      if (existing.requiresRecovery) throw new Error("Strategy paused for live variable recovery; reconcile before restarting");
+      if (existing.requiresRecovery) throw new Error("Strategy stop incomplete; finish stopping before restarting");
       // If the existing runner has the same session, no-op.
       // Otherwise stop the stale runner first so the new session takes over.
       if (executionId && existing.runnerInstanceId !== executionId) {
@@ -46,7 +46,7 @@ export class WorkflowRunnerManager {
       // A worker may not reconstruct lost RAM for an already admitted activation.
       const status = await LiveStrategiesRepository.status(executionId);
       if (status && status !== "pending") throw new Error("Variable-dependent activation interrupted; stop it and activate again");
-      const admitted = await withLiveRedis(client => client.set(RedisKeys.liveEphemeralActivation(userId, workflowId, executionId!), "started", "NX"));
+      const admitted = await withActivationRedis(client => client.set(RedisKeys.liveEphemeralActivation(userId, workflowId, executionId!), "started", "NX"));
       if (admitted !== "OK") throw new Error("Variable-dependent activation interrupted; stop it and activate again");
     }
 

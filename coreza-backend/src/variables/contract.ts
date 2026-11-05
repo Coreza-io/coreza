@@ -12,7 +12,6 @@ export interface VariableSnapshot {
   loadedAt: number;
   values: Readonly<Record<string, VariableValue>>;
   entries: readonly VariableEntry[];
-  checkpoint?: Readonly<{ epoch: string; writerFence: string; sqlCheckpointGeneration: string; source: "sql-checkpoint" }>;
 }
 export function validateVariable(key: unknown, value: unknown): asserts value is VariableValue {
   if (typeof key !== "string" || !/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(key) || ["__proto__", "constructor", "prototype"].includes(key))

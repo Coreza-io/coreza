@@ -1,3 +1,5 @@
+import { notifyEditorExecutionScope } from "@/services/editorNodeExecution";
+import { activateEditorSessionVariables, selectEditorBatchVariables, releaseEditorVariableLock } from "@/services/editorVariableScopes";
 import { publishNodeResult } from "@/utils/publishNodeResult";
 
 import { RUNTIME_NODE_DATA_KEYS } from "@/contexts/canonicalGraphStore";
@@ -481,6 +483,7 @@ const WorkflowEditorContent = () => {
   }, []);
   const historyRef = useRef<{ past: HistoryEntry[]; future: HistoryEntry[] }>({ past: [], future: [] });
   useLayoutEffect(() => {
+    activateEditorSessionVariables(workflowSessionId);
     historyRef.current = { past: [], future: [] };
     clipboardRef.current = null;
     setIsAutoExecuting(false);
@@ -1667,6 +1670,10 @@ const WorkflowEditorContent = () => {
         }
       }
       if (generation !== preparationRef.current || currentWorkflowSessionRef.current !== acceptedSession) return;
+      if (!nodeId) {
+        selectEditorBatchVariables(lockToken, acceptedSession);
+        notifyEditorExecutionScope(acceptedSession);
+      }
       executor = createAcceptedExecutor(acceptedSession);
       if (!executor) return;
       setIsAutoExecuting(true);
@@ -1679,7 +1686,13 @@ const WorkflowEditorContent = () => {
     } finally {
       if (activeExecutorRef.current === executor) activeExecutorRef.current = null;
       if (currentWorkflowSessionRef.current === acceptedSession) setIsAutoExecuting(false);
+      // Release restores the manual preview immediately; close rejects late requests.
+      const closingVariables = releaseEditorVariableLock(lockToken);
       releaseEditorExecutionLock(acceptedSession, lockToken);
+      try { await closingVariables; }
+      catch (error) {
+        if (currentWorkflowSessionRef.current === acceptedSession) toast({ title: "Variable cleanup incomplete", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
+      }
     }
   }, [workflowSessionId, createAcceptedExecutor, ensureBacktestExecutionReady, hasBacktestInitNode, loading, persistLoading, hasLoadedWorkflowId, workflowLoadKey, canMutateDocument]);
 

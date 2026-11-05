@@ -42,6 +42,7 @@ interface NodeFieldRendererProps {
   fetchDependentOptions?: (field: any, parentValue: string) => void;
   setShowAuth?: (show: boolean) => void;
   workflowId?: string;
+  workflowSessionId?: string;
   nodeId?: string;
   userId?: string;
   readOnly?: boolean;
@@ -87,6 +88,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
   fetchDependentOptions,
   setShowAuth,
   workflowId,
+  workflowSessionId,
   nodeId,
   userId,
   readOnly,
@@ -145,7 +147,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
   const supportsValueMode = ["string", "number", "text", "textarea", "password"].includes(field.type)
     && !field.options?.length && !!onBatchChange;
   const valueMode = getFieldValueMode({ ...fieldState, [field.key]: fieldValue }, field.key);
-  const variableQuery = useVariableSnapshot(shouldRender && !readOnly && supportsValueMode && valueMode === "expression", workflowId);
+  const variableQuery = useVariableSnapshot(shouldRender && !readOnly && supportsValueMode && valueMode === "expression", workflowId, workflowSessionId);
   const variableListId = React.useId();
   const updateValueMode = (mode: FieldValueMode, updates: Record<string, any> = {}) =>
     onBatchChange?.({

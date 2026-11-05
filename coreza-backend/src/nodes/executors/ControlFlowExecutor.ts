@@ -1,3 +1,4 @@
+import { isPersistentVariableEdit, referencesVariables } from "../../variables/contract";
 import { resultSuccess, resultFailure, resultState } from "../../contracts/nodeResult";
 import { snapshotTypedExpressionContext } from "../logic/typedExpressionContext";
 /**
@@ -303,7 +304,8 @@ export class ControlFlowExecutor implements INodeExecutor {
       : Number(resolvedParams.throttleMs) || 200;
     const maxConcurrency = Number(resolvedParams.maxConcurrency) || 10;
 
-    if (resolvedParams.parallel && context?.variables)
+    if (resolvedParams.parallel && (context?.variables || context?.nodes?.some(node =>
+      referencesVariables(node.values) || isPersistentVariableEdit(node))))
       throw new Error("Workflow variables require sequential Loop execution; disable Parallel");
     // If parallel=true and we have required context, delegate to LoopExecutorV2 for BullMQ distributed execution
     if (

@@ -25,6 +25,7 @@ import {
 
 interface UseNodeReferencesProps {
   workflowId?: string;
+  workflowSessionId?: string;
   readOnly?: boolean;
   enabled?: boolean;
   previewValues?: Record<string, unknown>;
@@ -53,6 +54,7 @@ interface UseNodeReferencesReturn {
  */
 export function useNodeReferences({
   workflowId,
+  workflowSessionId,
   readOnly = false,
   enabled = true,
   previewValues,
@@ -65,7 +67,7 @@ export function useNodeReferences({
   const { getNodes, getSnapshot } = useStableNodes();
   const previewContext = useRef<{ nodes: readonly SemanticNode[]; version: number; value: ReturnType<typeof buildPreviewData> } | null>(null);
   const executionStore = useExecutionStore();
-  const variableQuery = useVariableSnapshot(enabled && !readOnly && referencesVariables(previewValues ?? fieldState), workflowId);
+  const variableQuery = useVariableSnapshot(enabled && !readOnly && referencesVariables(previewValues ?? fieldState), workflowId, workflowSessionId);
   const [sourceMap, setSourceMap] = useState<Record<string, string>>({});
 
   const sourceMapRef = useRef(sourceMap); sourceMapRef.current = sourceMap;
@@ -144,7 +146,7 @@ export function useNodeReferences({
         // Read nodes imperatively for reference resolution - avoids subscription re-renders
         if (readOnly && referencesVariables(expr)) return "Workflow variables are not included in execution history.";
         if (referencesVariables(expr) && !workflowId) return "Save the workflow to preview variables";
-        if (referencesVariables(expr) && !variableQuery.data) return variableQuery.error ? "Variable snapshot unavailable" : "Loading variables…";
+        if (referencesVariables(expr) && !variableQuery.data) return variableQuery.error ? variableQuery.error.message : "Loading variables…";
         const resolved = resolveReferences(expr, srcData, allNodeData, nodes, variableQuery.data?.values);
 
         // For very large arrays, use quick summarized preview to avoid performance issues

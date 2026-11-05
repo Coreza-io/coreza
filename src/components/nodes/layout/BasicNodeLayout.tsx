@@ -25,6 +25,7 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
   selectedPrevNodeId,
   incomingEdgeCount,
   workflowId,
+  workflowSessionId,
   nodeId,
   readOnly,
   handleChange,
@@ -170,6 +171,7 @@ const BasicNodeLayout: React.FC<BasicNodeLayoutProps> = ({
               fetchDependentOptions={fetchDependentOptions}
               setShowAuth={setShowAuth}
               workflowId={workflowId}
+              workflowSessionId={workflowSessionId}
               nodeId={nodeId}
               userId={user?.id || ""}
               readOnly={readOnly}

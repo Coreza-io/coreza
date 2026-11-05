@@ -41,7 +41,7 @@ export function NodeConfigurationTabs({ children, persistent, onPersistentChange
               <Switch id={persistentId} checked={Boolean(persistent)} onCheckedChange={onPersistentChange} disabled={readOnly} />
             </div>
             {persistent && (
-              <p className="text-xs text-muted-foreground">Execute saves String, Number and Boolean fields as workflow variables. Use {"{{ $vars.name }}"} in following nodes.</p>
+              <p className="text-xs text-muted-foreground">Execute keeps String, Number and Boolean variables for this editor session or execution. A new session or run starts empty. Use {"{{ $vars.name }}"} in following nodes.</p>
             )}
           </>
         ) : null}

@@ -1,3 +1,5 @@
+import { isPersistentVariableEdit, referencesVariables } from "../variables/contract";
+import { withActivationRedis } from "../variables/ActivationRegistry";
 import { FillSyncWorker } from "../workers/FillSyncWorker";
 import { LiveStrategiesRepository } from "../repositories/LiveStrategiesRepository";
 import { resultSuccess } from "../contracts/nodeResult";
@@ -50,8 +52,9 @@ export class WorkflowRunner {
   private activeMessage?: Promise<void>;
   private stopTask?: Promise<void>;
   private stopIncomplete = false;
+  private readonly usesVariables: boolean;
   get runnerInstanceId(): string { return this.executionId; }
-  get requiresRecovery(): boolean { return this.stopIncomplete || this.engine.variableSafetyStop; }
+  get requiresRecovery(): boolean { return this.stopIncomplete; }
   private readonly abortController: AbortController;
   private readonly consumerName: string;
   private readonly serializedSnapshot: {
@@ -73,6 +76,7 @@ export class WorkflowRunner {
     executionId?: string,
   ) {
     this.executionId = executionId ?? "";
+    this.usesVariables = referencesVariables(nodes.map(node => node.values)) || nodes.some(isPersistentVariableEdit);
     this.streamRedisClient = createDedicatedStreamConnection(
       `Strategy-${workflowId}`,
     );
@@ -95,14 +99,6 @@ export class WorkflowRunner {
       this.abortController.signal,
       "live",
     );
-    this.engine.setVariableSafetyStopHandler(() => {
-      // Retain pending source events and ownership for approved recovery.
-      void LiveStrategiesRepository.setStatus(this.executionId, userId, workflowId, "failed", "Strategy paused for live variable recovery")
-        .catch(error => console.error("Failed to record activation safety stop", error));
-      this.running = false;
-      this.abortController.abort();
-    });
-
     // Cache trigger node IDs and their downstream targets at build time
     const graph = this.engine.getGraph();
     this.triggerNodeIds = graph.entryNodeIds;
@@ -231,12 +227,6 @@ export class WorkflowRunner {
     } : undefined;
     if (timing && message.batchReceivedAt !== undefined) observeStage("consumer_batch_wait", message.batchReceivedAt);
     try {
-      try { this.engine.assertVariableAdmission(); }
-      catch {
-        if (timing) timing.outcome = "admission_blocked";
-        this.running = false;
-        return; // Safety stops retain the pending source event.
-      }
       const task = this.executeMessage(message, timing);
       this.activeMessage = task;
       try { await task; } finally { if (this.activeMessage === task) this.activeMessage = undefined; }
@@ -336,7 +326,7 @@ export class WorkflowRunner {
         );
         if (timing) timing.outcome = executionResult.success ? "success" : executionResult.error?.code === "CANCELLED" ? "cancelled" : "failed";
       } catch (error) {
-        if (timing) timing.outcome = this.abortController.signal.aborted && !this.engine.variableSafetyStop ? "cancelled" : "failed";
+        if (timing) timing.outcome = this.abortController.signal.aborted ? "cancelled" : "failed";
         throw error;
       } finally {
         this.observeExecution(timing, messageId);
@@ -354,7 +344,6 @@ export class WorkflowRunner {
     }
 
     // Phase 6: Ack
-    if (this.engine.variableSafetyStop) { if (timing) timing.outcome = "safety_stop"; this.running = false; return; }
     if (!(await this.ack(messageId)) && timing) {
       timing.outcome = timing.outcome === "outcome_error" ? "outcome_and_ack_error" : "ack_error";
     }
@@ -455,7 +444,6 @@ export class WorkflowRunner {
         executionResult,
         {
           variableRevision: this.engine.variableRevision,
-          variableCheckpoint: this.engine.variableCheckpoint,
         },
       );
       outcome = "success";
@@ -480,7 +468,7 @@ export class WorkflowRunner {
     let outcome = "error";
     try {
       // Prefer the finalized outcome over an abort received during indicator flushing.
-      const cancelled = !this.engine.variableSafetyStop && (
+      const cancelled = (
         executionResult
           ? executionResult.error?.code === "CANCELLED"
           : this.abortController.signal.aborted
@@ -495,7 +483,6 @@ export class WorkflowRunner {
         },
         {
           variableRevision: this.engine.variableRevision,
-          variableCheckpoint: this.engine.variableCheckpoint,
         },
       );
       outcome = "success";
@@ -547,7 +534,6 @@ export class WorkflowRunner {
   }
 
   private async stopRunner(): Promise<void> {
-    const deadline = performance.now() + 10000;
     this.running = false;
     this.abortController.abort();
     if (this.activeMessage) {
@@ -558,13 +544,15 @@ export class WorkflowRunner {
         })]);
       } finally { if (timer) clearTimeout(timer); }
     }
-    // This drain deliberately does not use the execution abort signal.
-    await this.engine.drainVariables(deadline);
     await FillSyncWorker.flushWorkflow(this.userId, this.workflowId, this.executionId);
     this.engine.destroy();
     PortfolioManager.retireInstance(this.userId, this.executionId);
     await this.cleanupRunnerKeys();
     await this.streamRedisClient.quit();
+    if (this.usesVariables) {
+      // A successful teardown bounds the interruption marker; incomplete stops retain it.
+      await withActivationRedis(client => client.expire(RedisKeys.liveEphemeralActivation(this.userId, this.workflowId, this.executionId), 86400)).catch(() => { /* Retain the marker if expiry cannot be scheduled. */ });
+    }
   }
 
   private async cleanupRunnerKeys(): Promise<void> {

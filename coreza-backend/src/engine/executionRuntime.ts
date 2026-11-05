@@ -38,7 +38,6 @@ export type RuntimeOptions = {
   allowedExecutableNodeIds?: readonly string[];
   executionScope?: NodeExecutionContext["executionScope"];
   commitVariables?: (changes: readonly import("../variables/contract").VariableChange[], token: string) => void | Promise<void>;
-  assertAdmission?: () => void;
   getVariables?: () => Readonly<Record<string, unknown>> | undefined;
 };
 
@@ -154,7 +153,6 @@ export abstract class BaseExecutionRuntime {
   }
 
   protected getExecutionContext(nodeId: string): NodeExecutionContext {
-    this.options.assertAdmission?.();
     if (!this.execCtx) {
       const ctx: NodeExecutionContext = {
         user_id: this.options.userId,

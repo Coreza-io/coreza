@@ -332,6 +332,7 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected, workflowId }) =
           itemCount={data.itemCount}
           inputPanelProps={{
             workflowId: renderProps.workflowId,
+            workflowSessionId: data.workflowSessionId,
             handleDragStart: renderProps.handleDragStart,
             selectedPrevNodeId: renderProps.selectedPrevNodeId,
             setSelectedPrevNodeId: renderProps.setSelectedPrevNodeId,

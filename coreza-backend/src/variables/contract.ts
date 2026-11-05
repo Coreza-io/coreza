@@ -12,7 +12,6 @@ export interface VariableSnapshot {
   loadedAt: number;
   values: Readonly<Record<string, VariableValue>>;
   entries: readonly VariableEntry[];
-  checkpoint?: Readonly<{ epoch: string; writerFence: string; sqlCheckpointGeneration: string; source: "sql-checkpoint" }>;
 }
 export function validateVariable(key: unknown, value: unknown): asserts value is VariableValue {
   if (typeof key !== "string" || !/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(key) || ["__proto__", "constructor", "prototype"].includes(key))
@@ -35,6 +34,9 @@ export function freezeVariableSnapshot(raw: unknown, owner: string, workflowId?:
   });
   if (new TextEncoder().encode(JSON.stringify(entries)).length > VARIABLE_LIMITS.snapshotBytes) throw new Error("Variable snapshot exceeds 65536 bytes");
   return Object.freeze({ schemaVersion: 1, owner, ...(workflowId ? { workflowId } : {}), revision: data.revision, loadedAt: data.loadedAt, values: Object.freeze(values), entries: Object.freeze(entries) });
+}
+export function emptyVariableSnapshot(owner: string, workflowId?: string): VariableSnapshot {
+  return freezeVariableSnapshot({ schemaVersion: 1, owner, workflowId, revision: "0", loadedAt: Date.now(), entries: [] }, owner, workflowId);
 }
 export function referencesVariables(value: unknown): boolean {
   if (typeof value === "string") {

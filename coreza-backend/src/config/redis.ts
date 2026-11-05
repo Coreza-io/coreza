@@ -362,7 +362,7 @@ export function createDedicatedStreamConnection(label: string): Redis {
 }
 
 /** Durable queue topology with bounded commands; never reuse BullMQ settings. */
-export function createLiveVariableConnection(): Redis {
+export function createActivationRegistryConnection(): Redis {
   const bounded: RedisOptions = {
     maxRetriesPerRequest: 0, enableOfflineQueue: false,
     autoResendUnfulfilledCommands: false, commandTimeout: 1000,
@@ -373,7 +373,7 @@ export function createLiveVariableConnection(): Redis {
   let client: Redis;
   if (sentinel.enabled) client = new Redis({ ...buildSentinelOptions(sentinel, bounded), ...bounded });
   else {
-    const { redisUrl, hasTlsFlag } = getRedisOrThrow(resolveRedisConfig("REDIS_QUEUE_URL"), "Live variables");
+    const { redisUrl, hasTlsFlag } = getRedisOrThrow(resolveRedisConfig("REDIS_QUEUE_URL"), "Activation registry");
     client = new Redis(redisUrl, { ...buildQueueOptions(redisUrl, hasTlsFlag), ...bounded });
   }
   client.on("error", () => { /* Commands report bounded failures without values. */ });

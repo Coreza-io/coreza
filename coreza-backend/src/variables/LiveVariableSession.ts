@@ -4,7 +4,8 @@ import { LiveVariableSafetyStop, LiveVariableState, type SettledVariables } from
 import { decodeCheckpoint, decodeLiveRecord, encodeCheckpoint, fields, liveCommand, liveKeys, liveRPC, liveRedisClock, redisLeaseDeadline, liveDecimal, sameVersion, version, type EncodedCheckpoint } from "./LiveVariableProtocol";
 import { liveVariableResources, liveVariableOperations } from "../utils/metrics";
 
-export const liveVariablesEnabled = () => process.env.LIVE_VARIABLE_WRITE_BEHIND_ENABLED === "true";
+// Retained only to finish/recover pre-cutover ownership. New runs are ephemeral.
+export const liveVariablesEnabled = () => false;
 const scopes = new Map<string, string>();
 const sessions = new Map<string, LiveVariableSession>();
 let scheduler: ReturnType<typeof setInterval> | undefined;

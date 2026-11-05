@@ -35,6 +35,7 @@ const owns = (value: unknown, key: PropertyKey): value is Record<PropertyKey, un
 
 type InputPanelProps = {
   workflowId?: string;
+  workflowSessionId?: string;
   nodeId?: string;
   nodes: readonly SemanticNode[];
   edges: readonly any[];
@@ -59,6 +60,7 @@ type InputPanelProps = {
 
 const InputPanel: React.FC<InputPanelProps> = ({
   workflowId,
+  workflowSessionId,
   nodeId,
   nodes: initialNodes,
   edges: initialEdges,
@@ -77,7 +79,7 @@ const InputPanel: React.FC<InputPanelProps> = ({
   const canonicalGraph = useOptionalTopologyGraphSnapshot(!readOnly);
   const { timezone: userTimezone } = useUserPreferences();
   const [activeTab, setActiveTab] = useState("previous");
-  const variableQuery = useVariableSnapshot(isExpanded && activeTab === "variables" && !readOnly, workflowId);
+  const variableQuery = useVariableSnapshot(isExpanded && activeTab === "variables" && !readOnly, workflowId, workflowSessionId);
 
   if (!readOnly && !canonicalGraph) {
     throw new Error("Live InputPanel must be used within StableNodeProvider");
@@ -213,7 +215,7 @@ const InputPanel: React.FC<InputPanelProps> = ({
           ) : variableQuery.isLoading ? (
             <p className="text-xs text-muted-foreground">Loading variables...</p>
           ) : variableQuery.isError ? (
-            <p role="alert" className="text-xs text-destructive">Unable to load workflow variables.</p>
+            <p role="alert" className="text-xs text-destructive">{variableQuery.error instanceof Error ? variableQuery.error.message : "Unable to load workflow variables."}</p>
           ) : variableQuery.data?.entries.length ? (
             <DraggableFieldsPanel
               data={variableQuery.data.values}
@@ -222,7 +224,7 @@ const InputPanel: React.FC<InputPanelProps> = ({
               onDragStart={handleDragStart ?? (() => {})}
             />
           ) : (
-            <p className="text-xs text-muted-foreground">No workflow variables saved yet. Execute a Persistent Edit Fields node to create them.</p>
+            <p className="text-xs text-muted-foreground">No variables in this scope yet. Execute a Persistent Edit Fields node to create them.</p>
           )}
         </TabsContent>
       </Tabs>

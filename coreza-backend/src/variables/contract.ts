@@ -36,6 +36,9 @@ export function freezeVariableSnapshot(raw: unknown, owner: string, workflowId?:
   if (new TextEncoder().encode(JSON.stringify(entries)).length > VARIABLE_LIMITS.snapshotBytes) throw new Error("Variable snapshot exceeds 65536 bytes");
   return Object.freeze({ schemaVersion: 1, owner, ...(workflowId ? { workflowId } : {}), revision: data.revision, loadedAt: data.loadedAt, values: Object.freeze(values), entries: Object.freeze(entries) });
 }
+export function emptyVariableSnapshot(owner: string, workflowId?: string): VariableSnapshot {
+  return freezeVariableSnapshot({ schemaVersion: 1, owner, workflowId, revision: "0", loadedAt: Date.now(), entries: [] }, owner, workflowId);
+}
 export function referencesVariables(value: unknown): boolean {
   if (typeof value === "string") {
     if (!value.includes("{{") || !/\$vars\b/.test(value)) return false;

@@ -88,6 +88,7 @@ export interface BaseNodeRenderProps {
   displayedData: any;
   isPinned: boolean;
   workflowId?: string;
+  workflowSessionId?: string;
   nodeId?: string;
   readOnly?: boolean;
   // Node name editing
@@ -328,6 +329,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
   // References (drag-drop and previews)
   const referencesHook = useNodeReferences({
     workflowId,
+    workflowSessionId,
     readOnly,
     fieldState: fieldStateHook.fieldState,
     previousNodes,
@@ -493,6 +495,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     displayedData: outputHook.displayedData,
     isPinned: outputHook.isPinned,
     workflowId,
+    workflowSessionId,
     nodeId: nodeId || undefined,
     readOnly,
     // Node name editing

@@ -9,6 +9,9 @@
  */
 
 export const RedisKeys = {
+  liveEphemeralActivation: (owner: string, workflow: string, activation: string): string =>
+    `coreza:ephemeral-vars:v1:${owner}:${workflow}:${activation}`,
+  editorVariables: (identity: string): string => `coreza:editor-vars:v1:${identity}`,
   liveVariableDirty: (bucket: number): string => `coreza:livevars:{lv:${bucket}}:dirty`,
   liveVariableScope: (bucket: number, member: string) => ({
     member,

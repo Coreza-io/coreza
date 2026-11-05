@@ -1,3 +1,6 @@
+import { withLiveRedis } from "../variables/LiveVariableProtocol";
+import { RedisKeys } from "../infra/redisKeys";
+import { isPersistentVariableEdit, referencesVariables } from "../variables/contract";
 import { LiveStrategiesRepository } from "../repositories/LiveStrategiesRepository";
 import { FillSyncWorker } from "../workers/FillSyncWorker";
 import { WorkflowEdge, WorkflowNode } from "../nodes/types";
@@ -35,6 +38,16 @@ export class WorkflowRunnerManager {
       } else {
         return;
       }
+    }
+
+    const usesVariables = referencesVariables(nodes.map(node => node.values)) || nodes.some(isPersistentVariableEdit);
+    if (usesVariables) {
+      if (!executionId) throw new Error("Variable-dependent live strategies require a new activation ID");
+      // A worker may not reconstruct lost RAM for an already admitted activation.
+      const status = await LiveStrategiesRepository.status(executionId);
+      if (status && status !== "pending") throw new Error("Variable-dependent activation interrupted; stop it and activate again");
+      const admitted = await withLiveRedis(client => client.set(RedisKeys.liveEphemeralActivation(userId, workflowId, executionId!), "started", "NX"));
+      if (admitted !== "OK") throw new Error("Variable-dependent activation interrupted; stop it and activate again");
     }
 
     const runner = new WorkflowRunner(

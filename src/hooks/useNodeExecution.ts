@@ -1,3 +1,4 @@
+import { selectedEditorVariableScope, openEditorVariables, renewEditorVariables, variableQueryKey, bindEditorVariableOwner } from "@/services/editorVariableScopes";
 import { readNodeResult, isNodeResult, isFailedResult, toPublicNodeResult, resultFailure, resultSuccess, type ResultErrorDetails, type ResultMeta } from "@/utils/nodeResult";
 import { publishNodeResult } from "@/utils/publishNodeResult";
 import { snapshotTypedExpressionContext, pickTypedJsonSource } from "../../coreza-backend/src/nodes/logic/typedExpressionContext";
@@ -24,7 +25,6 @@ import { useStableNodes } from "@/contexts/StableNodeContext";
 import { resolveReferences } from "@/utils/resolveReferences";
 import { isFixedField, parameterEntries } from "../../coreza-backend/src/utils/fieldValueModes";
 import { freezeVariableSnapshot, referencesVariables, type VariableSnapshot } from "../../coreza-backend/src/variables/contract";
-import { loadVariableSnapshot } from "./useVariableSnapshot";
 import { supabase } from "@/integrations/supabase/client";
 import { getEditorVariableSnapshot, publishEditorVariableSnapshot } from "@/services/editorNodeExecution";
 import { isTypedEditFieldRow } from "../../coreza-backend/src/nodes/logic/typedEditFieldRow";
@@ -512,13 +512,22 @@ export function useNodeExecution({
           effectiveInput = { ...fieldState };
         }
 
+        const variableScope = selectedEditorVariableScope(String(data?.workflowSessionId ?? ""), lockToken);
+        const scopedVariableKey = variableQueryKey(userId, workflowId, variableScope);
         let variables: VariableSnapshot | undefined;
         if (referencesVariables(fieldState) || (definition?.name === "Edit Fields" && fieldState.persistent === true && fieldState.fields?.some(isTypedEditFieldRow))) {
           const { data: { session } } = await supabase.auth.getSession();
-          variables = await getEditorVariableSnapshot(lockToken, userId, () => loadVariableSnapshot(userId, session?.access_token, workflowId), workflowId);
+          if (!workflowId) throw new Error("Save the workflow before using variables");
+          bindEditorVariableOwner(variableScope, userId, workflowId, session?.access_token, () => {
+            void variableQueryClient.cancelQueries({ queryKey: scopedVariableKey, exact: true });
+            variableQueryClient.removeQueries({ queryKey: scopedVariableKey, exact: true });
+          }, variableQueryClient);
+          variables = await getEditorVariableSnapshot(lockToken, userId, () => openEditorVariables(variableScope, userId, workflowId, session?.access_token), workflowId);
+          await renewEditorVariables(variableScope);
           if (!executionIsCurrent()) return { nodeId: outcomeNodeId, status: "cancelled", reason: "Execution changed during variable initialization" };
         }
         let payload = buildPayload(fieldState, effectiveInput, variables);
+        if (variables) payload.variableScope = variableScope;
         let consolidatorSeriesSignature: string | undefined;
         payload.node_id = nodeId;
         payload.nodeName = definition.name;
@@ -744,6 +753,11 @@ export function useNodeExecution({
               Authorization: `Bearer ${session?.access_token}`,
             },
           };
+          if (method === "GET" && variables) {
+            (fetchOptions.headers as Record<string, string>)["X-Workflow-Variable-Context"] = JSON.stringify({
+              workflowId, variableScope, variableRevision: variables.revision,
+            });
+          }
           if (method !== "GET") {
             fetchOptions.body = JSON.stringify(payload);
           } else if (fetchOptions.headers) {
@@ -788,12 +802,13 @@ export function useNodeExecution({
           agentActivity?.finish(activitySummary, !executionIsCurrent() ? "cancelled"
             : res.ok && responseResult.status === "success" ? "completed" : "failed");
           if (!executionIsCurrent()) return { nodeId: outcomeNodeId, status: "cancelled", reason: "The editor execution changed." };
+          if (variables) await renewEditorVariables(variableScope);
           if (res.ok && committedVariables) {
             const committed = freezeVariableSnapshot(committedVariables, userId, workflowId);
-            await variableQueryClient.cancelQueries({ queryKey: ["workflow-variables", userId, workflowId] });
+            await variableQueryClient.cancelQueries({ queryKey: scopedVariableKey, exact: true });
             if (!executionIsCurrent()) return { nodeId: outcomeNodeId, status: "cancelled", reason: "The editor execution changed." };
             publishEditorVariableSnapshot(lockToken, userId, committed);
-            variableQueryClient.setQueryData(["workflow-variables", userId, workflowId], committed);
+            variableQueryClient.setQueryData(scopedVariableKey, committed);
           }
           if (!executionIsCurrent()) {
             return { nodeId: outcomeNodeId, status: "cancelled", reason: "The editor execution changed." };

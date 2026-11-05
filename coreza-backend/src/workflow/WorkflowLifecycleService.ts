@@ -130,7 +130,7 @@ export class WorkflowLifecycleService {
           trigger.node,
           workflow.nodes,
           workflow.edges,
-          executionId,
+          executionId ?? randomUUID(),
         );
         message = `Workflow subscribed to streaming source ${sourceId}`;
         break;

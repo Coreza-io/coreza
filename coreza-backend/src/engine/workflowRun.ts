@@ -9,7 +9,7 @@ import {
 import { IndicatorStateManager } from "./indicatorStateManager";
 import { NodeStoreV2 } from "./nodeStoreV2";
 import { ENGINE_CONFIG } from "./config/engineConfig";
-import { isPersistentVariableEdit, overlayVariables, type VariableChange, referencesVariables, type VariableSnapshot } from "../variables/contract";
+import { emptyVariableSnapshot, isPersistentVariableEdit, overlayVariables, type VariableChange, referencesVariables, type VariableSnapshot } from "../variables/contract";
 import { WorkflowPlan } from "./workflowPlan";
 import type { LiveVariableSession } from "../variables/LiveVariableSession";
 import {
@@ -82,20 +82,14 @@ export class WorkflowRun {
     if (this.variableInitialization) return this.variableInitialization;
     this.variableInitialization = (async () => {
       if (referencesVariables(this.plan.nodes.map(node => node.values)) || this.plan.nodes.some(isPersistentVariableEdit)) {
-        const { variableSnapshots } = await import("../variables/VariableSnapshotService");
         if (this.plan.executionMode === "live") {
-          const { LiveVariableSession } = await import("../variables/LiveVariableSession");
-          this.liveVariables = await LiveVariableSession.open(this.options.userId, this.options.workflowId, () => {
-            this.variableSafetyStopped = true;
-            this.onVariableSafetyStop?.();
-          });
+          // Do not admit over a legacy fenced scope, even with its writer flag off.
+          const { liveRPC } = await import("../variables/LiveVariableProtocol");
+          const legacy = await liveRPC("source", this.options.userId, this.options.workflowId);
+          if (legacy.active) throw new Error("Legacy live variable ownership requires stop/handoff or recovery before activation");
         }
-        const snapshot = this.liveVariables?.snapshot ?? await variableSnapshots.load(this.options.userId, this.options.workflowId);
-        if (!this.liveVariables && snapshot.checkpoint && this.plan.executionMode === "live") throw new Error("Live variable scope is owned; legacy runner admission refused");
-        if (this.disposed || this.options.abortSignal?.aborted) {
-          throw new Error("Workflow initialization cancelled");
-        }
-        this.variables = snapshot;
+        if (this.disposed || this.options.abortSignal?.aborted) throw new Error("Workflow initialization cancelled");
+        this.variables = emptyVariableSnapshot(this.options.userId, this.options.workflowId);
         const { activeVariableSnapshots } = await import("../utils/metrics");
         if (this.disposed) { this.variables = undefined; throw new Error("Workflow initialization cancelled"); }
         activeVariableSnapshots.inc();
@@ -111,15 +105,9 @@ export class WorkflowRun {
       this.liveVariables.state.apply(changes);
       return;
     }
-    if (this.plan.isBacktest) {
-      this.variables = overlayVariables(this.variables, changes);
-      return;
-    }
-    const previous = this.variables;
-    return import("../variables/VariableSnapshotService").then(({ variableSnapshots }) => variableSnapshots.commit(previous, changes, token)).then(snapshot => {
-      if (this.disposed || this.options.abortSignal?.aborted) throw new Error("Workflow cancelled after variable commit");
-      this.variables = snapshot;
-    });
+    // Every server mode owns an ephemeral registry for this run/activation.
+    const next = overlayVariables(this.variables, changes);
+    this.variables = Object.freeze({ ...next, revision: (BigInt(this.variables.revision) + 1n).toString() });
   };
   get variableRevision(): string | undefined { return this.variables?.revision; }
   setVariableSafetyStopHandler(handler: () => void): void { this.onVariableSafetyStop = handler; }

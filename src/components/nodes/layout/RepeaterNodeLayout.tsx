@@ -377,6 +377,7 @@ interface RepeaterNodeLayoutProps extends BaseNodeRenderProps {
 
 const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   workflowId,
+  workflowSessionId,
   definition,
   fieldState,
   loadingSelect,
@@ -401,7 +402,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
 }) => {
   const { getNodes, getSnapshot } = useStableNodes();
   const previewCache = useRef<{ nodes: Parameters<typeof buildPreviewData>[0]; version: number; value: ReturnType<typeof buildPreviewData> } | null>(null);
-  const variableQuery = useVariableSnapshot(!readOnly && (referencesVariables(fieldState) || (definition?.name === "Edit Fields" && fieldState.fields?.some((row: unknown) => isTypedEditFieldRow(row) && row.valueMode === "expression"))), workflowId);
+  const variableQuery = useVariableSnapshot(!readOnly && (referencesVariables(fieldState) || (definition?.name === "Edit Fields" && fieldState.fields?.some((row: unknown) => isTypedEditFieldRow(row) && row.valueMode === "expression"))), workflowId, workflowSessionId);
   const executionContext = useExecutionStore();
   const executionStoreVersion = useReferenceVersions(fieldState, selectedPrevNodeId, referenceNodes);
   const { user } = useAuth();
@@ -1032,6 +1033,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
               key={f.key}
               field={f}
               workflowId={workflowId}
+              workflowSessionId={workflowSessionId}
               definition={definition}
               fieldState={fieldState}
               value={fieldState[f.key]}

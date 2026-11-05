@@ -1,3 +1,5 @@
+import { bindEditorVariableLock, closeEditorSessionVariables, releaseEditorVariableLock } from "./editorVariableScopes";
+
 export type NodeExecutionStatus =
   | "success"
   | "failed"
@@ -147,6 +149,7 @@ export function acquireEditorExecutionLock(
 ): symbol | null {
   if (executionLocks.has(sessionId)) return null;
   const token = Symbol(sessionId);
+  bindEditorVariableLock(token, sessionId);
   executionLocks.set(sessionId, token);
   executionTargets.set(sessionId, target);
   executionListeners.get(sessionId)?.forEach((listener) => listener());
@@ -154,6 +157,7 @@ export function acquireEditorExecutionLock(
 }
 
 export function releaseEditorExecutionLock(sessionId: string, token: symbol): void {
+  void releaseEditorVariableLock(token).catch(() => { /* Redis TTL covers a failed close. */ });
   variableInvocations.delete(token);
   if (executionLocks.get(sessionId) === token) {
     executionLocks.delete(sessionId);
@@ -162,6 +166,9 @@ export function releaseEditorExecutionLock(sessionId: string, token: symbol): vo
   }
 }
 
+export function notifyEditorExecutionScope(sessionId: string): void {
+  executionListeners.get(sessionId)?.forEach(listener => listener());
+}
 export function subscribeEditorExecution(sessionId: string, listener: () => void): () => void {
   const listeners = executionListeners.get(sessionId) ?? new Set<() => void>();
   listeners.add(listener);
@@ -213,6 +220,7 @@ export function captureEditorNodeActions(
 }
 
 export function clearEditorNodeActions(sessionId: string): void {
+  closeEditorSessionVariables(sessionId);
   const token = executionLocks.get(sessionId);
   if (token) variableInvocations.delete(token);
   actions.delete(sessionId);

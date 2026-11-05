@@ -79,6 +79,7 @@ export function LoopNode({ id, data, selected, workflowId, readOnly }: LoopNodeP
             selected={selected}
             inputPanelProps={{
               workflowId: renderProps.workflowId,
+              workflowSessionId: data.workflowSessionId,
               handleDragStart: renderProps.handleDragStart,
               selectedPrevNodeId: renderProps.selectedPrevNodeId,
               setSelectedPrevNodeId: renderProps.setSelectedPrevNodeId,

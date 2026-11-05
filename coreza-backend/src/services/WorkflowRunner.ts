@@ -1,3 +1,5 @@
+import { isPersistentVariableEdit, referencesVariables } from "../variables/contract";
+import { withLiveRedis } from "../variables/LiveVariableProtocol";
 import { FillSyncWorker } from "../workers/FillSyncWorker";
 import { LiveStrategiesRepository } from "../repositories/LiveStrategiesRepository";
 import { resultSuccess } from "../contracts/nodeResult";
@@ -50,6 +52,7 @@ export class WorkflowRunner {
   private activeMessage?: Promise<void>;
   private stopTask?: Promise<void>;
   private stopIncomplete = false;
+  private readonly usesVariables: boolean;
   get runnerInstanceId(): string { return this.executionId; }
   get requiresRecovery(): boolean { return this.stopIncomplete || this.engine.variableSafetyStop; }
   private readonly abortController: AbortController;
@@ -73,6 +76,7 @@ export class WorkflowRunner {
     executionId?: string,
   ) {
     this.executionId = executionId ?? "";
+    this.usesVariables = referencesVariables(nodes.map(node => node.values)) || nodes.some(isPersistentVariableEdit);
     this.streamRedisClient = createDedicatedStreamConnection(
       `Strategy-${workflowId}`,
     );
@@ -565,6 +569,10 @@ export class WorkflowRunner {
     PortfolioManager.retireInstance(this.userId, this.executionId);
     await this.cleanupRunnerKeys();
     await this.streamRedisClient.quit();
+    if (this.usesVariables) {
+      // A successful teardown bounds the interruption marker; incomplete stops retain it.
+      await withLiveRedis(client => client.expire(RedisKeys.liveEphemeralActivation(this.userId, this.workflowId, this.executionId), 86400)).catch(() => { /* Retain the marker if expiry cannot be scheduled. */ });
+    }
   }
 
   private async cleanupRunnerKeys(): Promise<void> {

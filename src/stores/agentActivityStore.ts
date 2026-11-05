@@ -5,6 +5,7 @@ type ActivitySpan = Omit<AgentActivityEvent, "state"> & { state: AgentActivityEv
 export interface ManualAgentActivity {
   scopeId: string;
   sessionId: string;
+  executionSessionId?: string;
   clientInvocationId: string;
   agentNodeId: string;
   attachmentEdges: readonly { id: string; source: string; target: string }[];
@@ -42,7 +43,7 @@ const terminal = (state: ManualAgentActivity["state"]): boolean =>
   state === "completed" || state === "failed" || state === "cancelled";
 function belongsTo(record: ManualAgentActivity, event: AgentActivityEvent): boolean {
   return event.version === 1 && event.clientInvocationId === record.clientInvocationId
-    && event.agentNodeId === record.agentNodeId && event.workflowExecutionId === record.sessionId
+    && event.agentNodeId === record.agentNodeId && event.workflowExecutionId === (record.executionSessionId ?? record.sessionId)
     && record.participants.has(event.participantNodeId ?? event.agentNodeId)
     && Number.isSafeInteger(event.sequence) && event.sequence > 0;
 }

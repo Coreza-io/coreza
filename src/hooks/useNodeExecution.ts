@@ -1,3 +1,4 @@
+import { selectedEditorExecutionScope } from "@/services/editorExecutionScopes";
 import { selectedEditorVariableScope, openEditorVariables, renewEditorVariables, variableQueryKey, bindEditorVariableOwner } from "@/services/editorVariableScopes";
 import { readNodeResult, isNodeResult, isFailedResult, toPublicNodeResult, resultFailure, resultSuccess, type ResultErrorDetails, type ResultMeta } from "@/utils/nodeResult";
 import { publishNodeResult } from "@/utils/publishNodeResult";
@@ -500,6 +501,7 @@ export function useNodeExecution({
 
       setError("");
       setIsSending(true);
+      let executionSessionId = String(data?.workflowSessionId ?? "");
       let agentActivity: Awaited<ReturnType<typeof startManualAgentActivity>>;
       try {
         if (!userId) {
@@ -512,6 +514,8 @@ export function useNodeExecution({
           effectiveInput = { ...fieldState };
         }
 
+        const executionScope = selectedEditorExecutionScope(executionSessionId, lockToken);
+        executionSessionId = executionScope.batchId ?? executionScope.sessionId;
         const variableScope = selectedEditorVariableScope(String(data?.workflowSessionId ?? ""), lockToken);
         const scopedVariableKey = variableQueryKey(userId, workflowId, variableScope);
         let variables: VariableSnapshot | undefined;
@@ -534,7 +538,8 @@ export function useNodeExecution({
         payload.node_type = definition.node_type;
         payload.workflowId = workflowId;
         if (definition?.name === "Edit Fields" && payload.persistent === true) payload.variableInvocationId = crypto.randomUUID();
-        payload.workflowSessionId = data?.workflowSessionId;
+        payload.workflowSessionId = executionSessionId;
+        payload.executionId = executionSessionId;
         payload.category = definition.category;
         payload.subCategory = definition.subCategory;
         payload.provider = definition.provider;
@@ -559,7 +564,7 @@ export function useNodeExecution({
             sourceRunId ?? "",
           ].join("|");
           payload.seriesAction =
-            getEditorConsolidatorSeries(String(data?.workflowSessionId ?? ""), outcomeNodeId) === consolidatorSeriesSignature
+            getEditorConsolidatorSeries(executionSessionId, outcomeNodeId) === consolidatorSeriesSignature
               ? "continue"
               : "start";
           payload.sourceProvenance = {
@@ -599,7 +604,7 @@ export function useNodeExecution({
             );
 
           // Init / resume state
-          const loopSig = makeArraySignature(loopItems);
+          const loopSig = `${executionSessionId}:${makeArraySignature(loopItems)}`;
           const prev = executionStore.getNodeData(nodeId!) || {};
           const inputChanged =
             !Array.isArray(prev.loopItems) || (prev.loopSig ?? "") !== loopSig;
@@ -741,7 +746,7 @@ export function useNodeExecution({
             signal?.addEventListener("abort", abortAgent, { once: true });
             if (signal?.aborted) agentController.abort();
             try { agentActivity = await startManualAgentActivity(payload, session.access_token,
-              agentController.signal, executionIsCurrent, abortAgent); }
+              agentController.signal, executionIsCurrent, abortAgent, String(data?.workflowSessionId ?? "")); }
             catch { /* optional observer setup cannot fail the action */ }
             activeAgentRef.current = agentActivity;
             if (!executionIsCurrent()) return { nodeId: outcomeNodeId, status: "cancelled", reason: "Execution changed during Agent activity setup" };
@@ -816,7 +821,7 @@ export function useNodeExecution({
           if (!res.ok || isFailedResult(responseResult))
             throw new Error(JSON.stringify(responseResult) || "Action failed");
           if (consolidatorSeriesSignature) {
-            setEditorConsolidatorSeries(String(data?.workflowSessionId ?? ""), outcomeNodeId, consolidatorSeriesSignature);
+            setEditorConsolidatorSeries(executionSessionId, outcomeNodeId, consolidatorSeriesSignature);
           }
 
           // Handle listening modes (streaming and webhook)
@@ -942,7 +947,7 @@ export function useNodeExecution({
           code = typeof err?.code === "string" ? err.code : undefined;
         }
         if (definition?.name === "Consolidator" && code === "EDITOR_CONTEXT_EXPIRED") {
-          setEditorConsolidatorSeries(String(data?.workflowSessionId ?? ""), outcomeNodeId);
+          setEditorConsolidatorSeries(executionSessionId, outcomeNodeId);
         }
         return publishFailure(message, executionIsCurrent, code, parsed?.details, parsed?.data, parsed?.meta);
       } finally {

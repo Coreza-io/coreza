@@ -1,5 +1,5 @@
-import { notifyEditorExecutionScope } from "@/services/editorNodeExecution";
-import { activateEditorSessionVariables, selectEditorBatchVariables, releaseEditorVariableLock } from "@/services/editorVariableScopes";
+import { selectEditorBatchExecution } from "@/services/editorNodeExecution";
+import { activateEditorSessionVariables, releaseEditorVariableLock } from "@/services/editorVariableScopes";
 import { publishNodeResult } from "@/utils/publishNodeResult";
 
 import { RUNTIME_NODE_DATA_KEYS } from "@/contexts/canonicalGraphStore";
@@ -1671,8 +1671,7 @@ const WorkflowEditorContent = () => {
       }
       if (generation !== preparationRef.current || currentWorkflowSessionRef.current !== acceptedSession) return;
       if (!nodeId) {
-        selectEditorBatchVariables(lockToken, acceptedSession);
-        notifyEditorExecutionScope(acceptedSession);
+        selectEditorBatchExecution(acceptedSession, lockToken);
       }
       executor = createAcceptedExecutor(acceptedSession);
       if (!executor) return;

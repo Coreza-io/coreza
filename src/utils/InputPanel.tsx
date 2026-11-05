@@ -159,7 +159,7 @@ const InputPanel: React.FC<InputPanelProps> = ({
       onDoubleClick={(e) => e.stopPropagation()}
       className={`absolute ${
         position === "left" ? "right-full top-0 mr-2" : "left-full top-0 ml-2"
-      } w-72 h-full z-10 bg-card border border-border rounded-lg shadow-elevated overflow-hidden`}
+      } w-72 h-full z-10 bg-card border border-border rounded-lg shadow-elevated overflow-hidden coreza-expanded-input`}
     >
       <div className="flex items-center justify-between p-3 border-b border-border bg-muted/30">
         <div className="font-semibold text-foreground text-sm tracking-tight">

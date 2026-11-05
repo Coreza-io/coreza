@@ -76,18 +76,14 @@ The connected project contained the following exact row counts at inspection:
 Deploy the current application to all workers and clients sharing the database
 before applying `20261105121812_retire_unused_database_objects.sql`. Keep it out
 of automatic deployment. Confirm external clients, SQL jobs and rollback versions
-have moved off the retired objects. Recount and archive all retired rows, including
-variable values and receipts, full payloads, IDs and timestamps, in restricted
-storage. Preserve schema, grants, policies, enums and function definitions and
-verify restoration before applying either retirement migration. Do not assign old
-reporting data to a different activation.
+have moved off the retired objects. Historical rows and receipts are intentionally
+discarded; no archive, data reconciliation or restore verification is required.
+Do not import old reporting data into a different activation.
 
 Recheck database dependencies immediately before applying. The migration runs
 transactionally, rejects non-idle live-variable ownership, updates signup before
 dropping billing, and uses explicit `RESTRICT` drops without `CASCADE`. It does not
-stop live workers or create an archive. Restore archived objects and rows,
-including the previous signup behavior, before deploying a rollback version that
-requires them.
+stop live workers. Rollback versions must support the retired schema.
 
 No tests, type checks, application execution or migration execution were performed.
 Database access was limited to read-only catalog, row-count and reference audits.

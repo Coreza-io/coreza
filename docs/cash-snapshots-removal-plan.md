@@ -21,8 +21,8 @@ Remove `public.cash_snapshots` and its remaining setup and application reference
 ## Rollout
 
 1. Deploy the application changes before applying the drop migration. `main` and `sit` still contained the old fallback at review time. Confirm that every worker and client sharing the target database has moved off the table, including deployed rollback versions and any external readers or scheduled jobs. Keep the migration out of automatic deployment until these checks pass.
-2. Recount and archive the legacy rows with their IDs, timestamps, and full payloads. The connected project had 737 rows and none matched a live reporting header by owner, workflow, and execution ID. Keep the archive in restricted storage and verify it can be restored. Avoid attaching unmatched records to another activation.
-3. Recheck dependencies and apply the forward migration without `CASCADE`. For a rollback to a version that requires the table, restore the table, its grants and policies, and the archived rows before deploying that version.
+2. Historical rows are intentionally discarded without archiving. Do not attach unmatched records to another activation or copy them into `portfolio`.
+3. Recheck dependencies and apply the forward migration without `CASCADE`. Rollback versions must support the retired schema; historical data will not be retained.
 
 ## Verification before release
 

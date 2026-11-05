@@ -1,7 +1,7 @@
 -- Manual rollout only: see docs/database-retirement-audit.md.
--- Deploy all consumers first, archive all retired rows/receipts and schema with
--- grants/policies, and verify restore before applying. Recheck external readers,
--- scheduled jobs and rollback versions. Do not include in automatic deployment.
+-- Deploy all consumers first. Recheck external readers, scheduled jobs and
+-- rollback versions. Do not include in automatic deployment.
+-- Historical rows and receipts are intentionally discarded; no archive is required.
 -- RESTRICT intentionally rejects unexpected dependencies; never use CASCADE.
 BEGIN;
 

@@ -45,10 +45,8 @@ Manual portfolio operations do not use the snapshot worker. Backtest equity hist
 and scoped Live snapshots are persisted and read through `portfolio`. Live snapshot
 IDs remain the upsert conflict target and successful writes mark live metrics dirty.
 The legacy `cash_snapshots` table is retired by a separate forward migration.
-Before dropping it, preserve its historical rows, including IDs, timestamps and full
-payloads, in a restricted operator-managed archive and verify restoration. These
-unmatched records must not be attached to another activation or imported into
-`portfolio`. See the [retirement rollout](cash-snapshots-removal-plan.md#rollout).
+Its historical rows are intentionally discarded without archiving or importing
+into `portfolio`. See the [retirement rollout](cash-snapshots-removal-plan.md#rollout).
 
 Statement triggers mark changed live summaries durably. The worker discovers dirty
 headers on its existing cadence; a data revision prevents stale calculations from
@@ -75,9 +73,9 @@ available. The migration does not stop or restart trading automatically.
 Deploy the snapshot repository rename and reload all workers and clients before
 applying the legacy-table drop migration. Keep that migration out of automatic
 deployment until all shared-database consumers, rollback versions, external readers
-and scheduled jobs have moved off `cash_snapshots`, and the archive is verified.
-Recheck dependencies and apply without `CASCADE`. Before rolling back to a version
-that needs the table, restore its schema, grants, policies and archived rows.
+and scheduled jobs have moved off `cash_snapshots`.
+Recheck dependencies and apply without `CASCADE`. Rollback versions must support
+the retired schema; historical data will not be retained.
 
 Additional unused SQL variable, billing and legacy reporting objects are covered
 by the [database retirement audit](database-retirement-audit.md).

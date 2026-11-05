@@ -938,6 +938,7 @@ router.post("/:source/register", async (req, res) => {
       return res.status(429).json(resultFailure(`Maximum concurrent test listeners (${MAX_LISTENERS_PER_USER}) exceeded.`, { data: null }));
     }
 
+    let listenerKey: string;
     // Publish registration control message to market-stream-service
     // Now runs AFTER subscriptions are confirmed ready
     try {
@@ -966,30 +967,33 @@ router.post("/:source/register", async (req, res) => {
         //   ? getTradingNativeStreams(`${source}_trading`, marketType)
         //   : [],
       });
+      // Create listener
+      listenerKey = await RegistrationService.createListener({
+        userId,
+        workflowId,
+        nodeId: node_id,
+        source: sourceId,
+        mode,
+        scope,
+        environment,
+        symbols: parsedSymbols,
+        //symbols: ["*"],
+        streamTypes: streamType,
+        exchange,
+        assetType: assetType,
+        marketType: marketType,
+        contractType,
+        interval,
+        depth_levels: depth_levels,
+      });
     } catch (error) {
-      await RegistrationService.decrementListenerCount(userId);
+      try {
+        await RegistrationService.decrementListenerCount(userId);
+      } catch {
+        console.warn("Failed to release listener reservation after startup failure");
+      }
       throw error;
     }
-
-    // Create listener
-    const listenerKey = await RegistrationService.createListener({
-      userId,
-      workflowId,
-      nodeId: node_id,
-      source: sourceId,
-      mode,
-      scope,
-      environment,
-      symbols: parsedSymbols,
-      //symbols: ["*"],
-      streamTypes: streamType,
-      exchange,
-      assetType: assetType,
-      marketType: marketType,
-      contractType,
-      interval,
-      depth_levels: depth_levels,
-    });
 
     console.log(
       `📡 [ExecuteStreamNode] Published register_workflow (manual test, no WorkflowRunner)`,

@@ -981,15 +981,29 @@ export class MarketControlHandler {
           } catch (error) {
             // Only release resources acquired by this attempt; prior claims survive.
             newStreamNames.forEach(name => state!.streams.delete(name));
-            state.gateway.unsubscribeStreams(newStreamNames);
+            try {
+              state.gateway.unsubscribeStreams(newStreamNames);
+            } catch {
+              console.warn("Failed to send unsubscribe during subscription rollback");
+            }
             if (previousWorkflowStreams.size) state.workflowStreams.set(workflowId, previousWorkflowStreams);
             else state.workflowStreams.delete(workflowId);
             const addedRouting = requestedStreamNames.filter(name => !previousRouting.has(name));
-            if (addedRouting.length) await this.redisPub.srem(streamsKey, ...addedRouting);
+            if (addedRouting.length) {
+              try {
+                await this.redisPub.srem(streamsKey, ...addedRouting);
+              } catch {
+                console.warn("Failed to remove routing entries during subscription rollback");
+              }
+            }
             if (state.streams.size === 0) {
               state.gateway.disconnect();
               this.sourceStates.delete(stateKey);
-              await this.redisPub.del(REDIS_CHANNELS.gatewayState(userId, getUnifiedSocketStateSource(source)));
+              try {
+                await this.redisPub.del(REDIS_CHANNELS.gatewayState(userId, getUnifiedSocketStateSource(source)));
+              } catch {
+                console.warn("Failed to remove persisted gateway state during subscription rollback");
+              }
             } else {
               await this.persistState(userId, source);
             }

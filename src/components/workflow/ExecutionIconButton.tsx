@@ -70,10 +70,8 @@ export function ExecutionControl({
   // Keep the existing execution handler, state and guard logic unchanged.
   if (targetKind === "node" && presentation === "labelled") {
     return (
-      <TooltipProvider>
+      <>
         <div className={cn("flex w-full justify-center py-1", className)}>
-          <Tooltip>
-            <TooltipTrigger asChild>
               <button
                 type="button"
                 className={cn(
@@ -104,12 +102,9 @@ export function ExecutionControl({
                   </span>
                 </span>
               </button>
-            </TooltipTrigger>
-            <TooltipContent>{description}</TooltipContent>
-          </Tooltip>
         </div>
         <span className="sr-only" aria-live="polite">{statusDescription}</span>
-      </TooltipProvider>
+      </>
     );
   }
 

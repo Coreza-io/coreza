@@ -8,12 +8,14 @@
  * See the LICENSE file for details.
  */
 
-import { getBrokerConfig } from "./brokerRegistry";
+import { getBrokerConfig, type BrokerUIConfig } from "./brokerRegistry";
 
 export interface ParsedStream {
   symbol: string;
   eventType: string;
   interval?: string;
+  exchange?: string;
+  contractType?: string;
 }
 
 export const KNOWN_TRADING_STREAMS = new Set([
@@ -52,48 +54,70 @@ export function parseStreamName(
   const format = config?.streamFormat ?? 'generic';
 
   if (format === 'at') {
-    return parseAtFormat(streamName);
+    return parseAtFormat(streamName, false, config?.parseStreamSymbol);
   }
 
   if (format === 'dot') {
     // Alpaca subscriptions also store symbol@event names.
-    if (streamName.includes('@')) return parseAtFormat(streamName);
+    if (streamName.includes('@')) return parseAtFormat(streamName, false, config?.parseStreamSymbol);
     return parseDotFormat(streamName);
   }
 
   // Generic fallback: try both formats
-  if (streamName.includes('@')) return parseAtFormat(streamName);
+  if (streamName.includes('@')) return parseAtFormat(streamName, false, config?.parseStreamSymbol);
   if (streamName.includes('.')) return parseDotFormat(streamName);
 
   return { symbol: streamName.toUpperCase(), eventType: "unknown" };
 }
 
 /** Parse symbol@type_interval format */
-function parseAtFormat(streamName: string): ParsedStream {
+function parseAtFormat(
+  streamName: string,
+  preserveNativeType = false,
+  parseSymbol?: BrokerUIConfig["parseStreamSymbol"],
+): ParsedStream {
   const atIndex = streamName.indexOf("@");
   if (atIndex === -1) {
     return { symbol: streamName.toUpperCase(), eventType: "unknown" };
   }
-  const sym = streamName.slice(0, atIndex).toUpperCase();
-  const typeWithInterval = streamName.slice(atIndex + 1);
-
-  if (typeWithInterval.startsWith("depth")) {
-    return {
-      symbol: sym,
-      eventType: "depth",
-      interval: typeWithInterval.slice(5) || "20",
-    };
+  const parts = streamName.split("@");
+  const exchange = parts.length === 3 ? parts[1].toUpperCase() : undefined;
+  const typeWithInterval = parts[parts.length - 1];
+  const rawSymbol = parts[0].toUpperCase();
+  if (parts.length !== 2 && parts.length !== 3) {
+    return { symbol: rawSymbol, eventType: "unknown" };
   }
 
-  const underscoreIndex = typeWithInterval.indexOf("_");
-  if (underscoreIndex !== -1) {
-    return {
-      symbol: sym,
-      eventType: typeWithInterval.slice(0, underscoreIndex),
-      interval: typeWithInterval.slice(underscoreIndex + 1),
-    };
+  if (!preserveNativeType && typeWithInterval.startsWith("depth")) {
+    return { symbol: rawSymbol, eventType: "depth", interval: typeWithInterval.slice(5) || "20", exchange };
   }
-  return { symbol: sym, eventType: typeWithInterval };
+  const timedStream = typeWithInterval.match(/^(.+)_(\d+[a-zA-Z]+)$/);
+  const eventType = timedStream?.[1] ?? typeWithInterval;
+  const decoded = parseSymbol?.(parts[0], eventType) ?? { symbol: parts[0] };
+  return {
+    symbol: decoded.symbol.toUpperCase(),
+    eventType,
+    interval: timedStream?.[2],
+    exchange,
+    contractType: decoded.contractType,
+  };
+}
+
+/** Parse subscription actions without converting native trading/depth event names to display labels. */
+export function parseSubscriptionStreamName(source: string, streamName: string): ParsedStream {
+  if (KNOWN_TRADING_STREAMS.has(streamName.toLowerCase())) {
+    return { symbol: "*", eventType: streamName };
+  }
+  const config = getBrokerConfig(source);
+  const format = config?.streamFormat ?? "generic";
+  const parsed = streamName.includes("@")
+    ? parseAtFormat(streamName, true, config?.parseStreamSymbol)
+    : (format === "dot" || format === "generic") && streamName.includes(".")
+      ? parseDotFormat(streamName) : undefined;
+  if (!parsed?.symbol || !parsed.eventType || parsed.eventType === "unknown" || parsed.exchange === "") {
+    throw new Error(`Invalid subscription stream: ${streamName}`);
+  }
+  return parsed;
 }
 
 /** Parse type.SYMBOL format */

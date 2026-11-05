@@ -112,3 +112,5 @@ export function getSourceMapping(source: string): SourceMapping {
 export * from "./types";
 export * from "./gatewayTypes";
 export * from "./capabilities";
+
+export { BROKER_CAPABILITIES } from "./capabilities";

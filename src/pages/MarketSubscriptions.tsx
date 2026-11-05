@@ -58,7 +58,7 @@ import { Link } from "react-router-dom";
 import { apiClient } from "@/lib/apiClient";
 import { StreamBadgeWithTooltip } from "@/components/market/StreamBadgeWithTooltip";
 import { getAllBrokerKeys, getSourceBadgeClasses, getSourceEmoji } from "@/utils/brokerRegistry";
-import { KNOWN_TRADING_STREAMS } from "@/utils/streamNameParser";
+import { parseSubscriptionStreamName } from "@/utils/streamNameParser";
 
 interface SourceStatus {
   source: string;
@@ -105,58 +105,6 @@ interface SubscriptionStatus {
 // Derived from broker registry — no hardcoded broker lists
 const sourceColors = (source: string) => getSourceBadgeClasses(source);
 const sourceIcons = (source: string) => getSourceEmoji(source);
-
-type ParsedStreamName = {
-  symbol: string;
-  streamType: string;
-  exchange?: string;
-  interval?: string;
-  contractType?: string;
-};
-
-const KNOWN_CONTRACT_TYPES = new Set([
-  "perpetual",
-  "current_quarter",
-  "next_quarter",
-  "current_month",
-  "next_month",
-]);
-
-const parseSubscribedStream = (stream: string): ParsedStreamName => {
-  if (KNOWN_TRADING_STREAMS.has(stream.toLowerCase())) {
-    return {
-      symbol: "[*]",
-      streamType: stream,
-      interval: undefined,
-    };
-  }
-
-  const parts = stream.split("@");
-  const left = parts[0];
-  const right = parts[parts.length - 1];
-  const exchange = parts.length === 3 ? parts[1].toUpperCase() : undefined;
-
-  if ((parts.length !== 2 && parts.length !== 3) || !left || !right || (parts.length === 3 && !exchange)) {
-    throw new Error(`Invalid stream format: ${stream}`);
-  }
-
-  // Split only a trailing time interval; event names may contain underscores.
-  const timedStream = right.match(/^(.+)_(\d+[a-zA-Z]+)$/);
-  const streamType = timedStream?.[1] ?? right;
-  const interval = timedStream?.[2];
-  const isContinuous = streamType === "continuousKline" || streamType === "continuous_kline";
-  const contractType = isContinuous
-    ? [...KNOWN_CONTRACT_TYPES].find(type => left.endsWith(`_${type}`)) : undefined;
-  const symbol = contractType ? left.slice(0, -(contractType.length + 1)) : left;
-
-  return {
-    symbol,
-    streamType,
-    exchange,
-    interval,
-    contractType,
-  };
-};
 
 const MarketSubscriptions = () => {
   const { user, session } = useAuth();
@@ -227,8 +175,8 @@ const MarketSubscriptions = () => {
       setUnsubscribing(`stream-${stream}`);
 
       try {
-        const { symbol, streamType, exchange, interval, contractType } =
-          parseSubscribedStream(stream);
+        const { symbol, eventType: streamType, exchange, interval, contractType } =
+          parseSubscriptionStreamName(source, stream);
 
         const response = await apiClient.post(
           `/stream/${source}/unsubscribe`,
@@ -282,8 +230,8 @@ const MarketSubscriptions = () => {
       setUnsubscribing(`stream-${workflowId}-${stream}`);
 
       try {
-        const { symbol, streamType, exchange, interval, contractType } =
-          parseSubscribedStream(stream);
+        const { symbol, eventType: streamType, exchange, interval, contractType } =
+          parseSubscriptionStreamName(source, stream);
 
         const response = await apiClient.post(
           `/stream/${source}/unsubscribe`,

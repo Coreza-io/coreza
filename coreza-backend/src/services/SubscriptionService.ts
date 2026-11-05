@@ -11,7 +11,7 @@
 import { randomUUID } from "crypto";
 import { getRedisCache, getRedisQueue } from "../config/redis";
 import { REDIS_CHANNELS } from "../config/redisChannels";
-import { lookupSecurityId } from "../brokers/dhan/scripMaster";
+import { BROKER_CAPABILITIES } from "../brokers";
 import { MarketSource } from "../types/marketEvent";
 
 export interface SubscriptionParams {
@@ -179,30 +179,11 @@ export class SubscriptionService {
       const isCompanionSource =
         String(source).endsWith("_trading") || String(source).endsWith("_news");
 
-      // Resolve instruments only when subscribing. Unsubscribe uses the gateway's
-      // existing resolution map and must not depend on the scrip master CSV.
-      if (operation === "subscribe" && baseBroker === "dhan" && !isCompanionSource) {
-        const exchangeSegment = exchange || "NSE_EQ";
-        const resolvedSymbols: string[] = [];
-
-        for (const symbol of symbolArray) {
-          if (symbol === "*" || /^\d+$/.test(symbol)) {
-            resolvedSymbols.push(symbol);
-            continue;
-          }
-
-          const securityId = await lookupSecurityId(symbol, exchangeSegment);
-          if (!securityId) {
-            return {
-              success: false,
-              error: `Security ID not found for symbol="${symbol}" segment="${exchangeSegment}"`,
-            };
-          }
-
-          resolvedSymbols.push(`${symbol}:${securityId}`);
-        }
-
-        symbolArray = resolvedSymbols;
+      // Provider-specific instrument preparation lives in capabilities. Removing
+      // a subscription always uses the existing gateway resolution state.
+      const prepareSymbols = BROKER_CAPABILITIES[baseBroker]?.prepareSubscriptionSymbols;
+      if (operation === "subscribe" && !isCompanionSource && prepareSymbols) {
+        symbolArray = await prepareSymbols(symbolArray, { exchange });
       }
 
       // Build control message with RAW data

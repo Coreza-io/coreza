@@ -100,6 +100,9 @@ export interface BrokerCapabilities {
   /** Symbol normalization (e.g., Alpaca crypto slash formatting) */
   normalizeSymbol?: (symbol: string, assetType?: string) => string;
 
+  /** Optional preparation for new market subscriptions; never used for unsubscribe. */
+  prepareSubscriptionSymbols?: (symbols: string[], options: { exchange?: string }) => Promise<string[]>;
+
   /** Normalize crypto symbol from composite params (crypto_base + crypto_quote) */
   normalizeCryptoParams?: (params: Record<string, any>) => void;
 

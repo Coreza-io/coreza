@@ -16,9 +16,3 @@ enable_signup = true
 
 [auth.email]
 enable_confirmations = false
-
-[functions.derive-encryption-key]
-verify_jwt = false
-
-[functions.http-request]
-verify_jwt = false

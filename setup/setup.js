@@ -28,8 +28,6 @@ class CorezaSetup {
     this.status = {
       linked: false,
       migrated: false,
-      functionsDeployed: false,
-      secretsSet: false,
     };
     this.projectRoot = path.resolve(__dirname, "..");
   }
@@ -511,27 +509,6 @@ SUPABASE_DB_PASSWORD=${this.config.supabaseDbPassword}
       );
       this.status.migrated = true;
     }
-
-    // 7. Functions deploy
-    this.runOrThrow(
-      "Deploy edge functions",
-      "npx supabase functions deploy",
-      "Edge function deployment failed.\n" +
-        "Check:\n" +
-        "1. Supabase CLI login.\n" +
-        "2. Project link.\n" +
-        "3. Function folders exist under supabase/functions.",
-    );
-    this.status.functionsDeployed = true;
-
-    // 8. Set encryption secret
-    this.runOrThrow(
-      "Set Supabase secret COREZA_ENCRYPTION_KEY",
-      `npx supabase secrets set COREZA_ENCRYPTION_KEY="${this.config.encryptionKey}"`,
-      "Failed to set Supabase secret COREZA_ENCRYPTION_KEY.\n" +
-        "Check Supabase CLI login and project link.",
-    );
-    this.status.secretsSet = true;
   }
 
   prepareMigrationFile() {
@@ -633,20 +610,6 @@ SUPABASE_DB_PASSWORD=${this.config.supabaseDbPassword}
       }
     }
 
-    const requiredFunctions = ["derive-encryption-key", "http-request"];
-    for (const name of requiredFunctions) {
-      const funcPath = path.join(
-        this.projectRoot,
-        "supabase",
-        "functions",
-        name,
-        "index.ts",
-      );
-      if (!fs.existsSync(funcPath)) {
-        warnings.push(`Edge function missing: ${name}`);
-      }
-    }
-
     if (fs.existsSync(path.join(this.projectRoot, ".env"))) {
       const env = fs.readFileSync(path.join(this.projectRoot, ".env"), "utf8");
       for (const v of [
@@ -708,9 +671,6 @@ SUPABASE_DB_PASSWORD=${this.config.supabaseDbPassword}
     console.log("  ✅ Environment files configured");
     if (this.status.linked) console.log("  ✅ Supabase project linked");
     if (this.status.migrated) console.log("  ✅ Database schema applied");
-    if (this.status.functionsDeployed)
-      console.log("  ✅ Edge functions deployed");
-    if (this.status.secretsSet) console.log("  ✅ Supabase secrets configured");
 
     console.log("\n🚀 Next Steps:");
     console.log("1. Start the frontend: npm run dev");

@@ -16,7 +16,6 @@ class SetupValidator {
     this.checkSetupLocalFile();
     this.checkSupabaseConfig();
     this.checkDatabaseSchema();
-    this.checkEdgeFunctions();
     this.checkMarketStreamService();
 
     this.displayResults();
@@ -100,12 +99,6 @@ class SetupValidator {
       if (!config.includes("project_id =")) {
         this.errors.push("project_id missing from supabase/config.toml");
       }
-      if (!config.includes("[functions.derive-encryption-key]")) {
-        this.errors.push("derive-encryption-key function config missing");
-      }
-      if (!config.includes("[functions.http-request]")) {
-        this.errors.push("http-request function config missing");
-      }
     }
 
     if (this.errors.length === 0) {
@@ -152,29 +145,6 @@ class SetupValidator {
 
     if (this.warnings.length === 0) {
       console.log("✅ Database schema is complete");
-    }
-  }
-
-  checkEdgeFunctions() {
-    console.log("⚡ Checking edge functions...");
-
-    // Check if edge function directories exist
-    const functions = ["derive-encryption-key", "http-request"];
-
-    for (const func of functions) {
-      const funcPath = `supabase/functions/${func}`;
-      if (!fs.existsSync(funcPath)) {
-        this.errors.push(`Edge function directory missing: ${funcPath}`);
-      } else {
-        const indexPath = `${funcPath}/index.ts`;
-        if (!fs.existsSync(indexPath)) {
-          this.errors.push(`Edge function index.ts missing: ${indexPath}`);
-        }
-      }
-    }
-
-    if (this.errors.length === 0) {
-      console.log("✅ Edge functions are properly configured");
     }
   }
 

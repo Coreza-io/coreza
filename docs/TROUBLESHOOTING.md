@@ -19,7 +19,6 @@ This guide helps you resolve common issues when setting up and running the Corez
 npm install -g supabase
 supabase link --project-ref YOUR_PROJECT_ID
 supabase db push
-supabase functions deploy
 ```
 
 ### Environment Variables Not Loading
@@ -186,40 +185,6 @@ supabase migration list
 3. Ensure localStorage is working
 4. Check for auth token refresh issues
 
-## Edge Functions Issues
-
-### Functions Not Deploying
-
-**Problem**: Supabase edge functions fail to deploy.
-
-**Solutions**:
-1. Check Supabase CLI authentication:
-```bash
-supabase login
-supabase projects list
-```
-
-2. Verify function syntax and dependencies
-3. Check function logs:
-```bash
-supabase functions logs function-name
-```
-
-4. Manual deployment:
-```bash
-supabase functions deploy function-name
-```
-
-### Function Execution Errors
-
-**Problem**: Edge functions return errors when called.
-
-**Solutions**:
-1. Check function logs in Supabase dashboard
-2. Verify environment variables/secrets are set
-3. Test function locally if possible
-4. Check CORS configuration
-
 ## Encryption Issues
 
 ### Credential Encryption Fails
@@ -227,13 +192,9 @@ supabase functions deploy function-name
 **Problem**: Cannot encrypt/decrypt trading credentials.
 
 **Solutions**:
-1. Verify encryption key is set:
-```bash
-supabase secrets list
-```
-
+1. Verify `COREZA_ENCRYPTION_KEY` is set in the backend environment.
 2. Check key format (base64, 32 bytes)
-3. Ensure edge function has access to secrets
+3. Ensure the backend uses the same key that encrypted the stored credentials
 4. Test encryption/decryption manually
 
 ### Invalid Encryption Format
@@ -266,7 +227,7 @@ curl -X GET "YOUR_BACKEND_URL/health"
 **Problem**: Cross-origin request blocked.
 
 **Solutions**:
-1. Check CORS headers in edge functions
+1. Check the backend CORS configuration
 2. Verify allowed origins in Supabase
 3. Ensure proper request headers
 4. Test from same origin first
@@ -361,8 +322,6 @@ cd coreza-backend && npm run dev
 supabase login
 supabase link --project-ref PROJECT_ID
 supabase db push
-supabase functions deploy
-supabase secrets set KEY=value
 
 # Debugging
 npm run build

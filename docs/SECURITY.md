@@ -74,22 +74,13 @@ FOR SELECT USING (
 
 ### 4. API Security
 
-#### Edge Functions Security
-```typescript
-// Authentication verification
-const { data: { user }, error } = await supabase.auth.getUser();
-if (!user) {
-  return new Response('Unauthorized', { status: 401 });
-}
-```
+#### Backend Authentication
+Protected backend routes use the JWT middleware in
+`coreza-backend/src/middleware/jwtAuth.ts` to verify Supabase access tokens.
 
 #### CORS Configuration
-```typescript
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
-```
+The Express backend configures CORS in `coreza-backend/src/index.ts`.
+Review allowed origins for your deployment.
 
 #### Rate Limiting
 - Rate limiting can be configured at the infrastructure level (nginx, Cloudflare, etc.)
@@ -259,7 +250,7 @@ If you discover a security vulnerability:
 ### Production Security Checklist
 - [ ] All environment variables configured
 - [ ] RLS policies enabled on all tables
-- [ ] Edge functions authentication configured
+- [ ] Backend JWT authentication configured
 - [ ] HTTPS enforced
 - [ ] Security headers implemented
 - [ ] Rate limiting configured

@@ -135,7 +135,6 @@ class SetupValidator {
         "trades",
         "portfolio",
         "live_fills",
-        "cash_snapshots",
         "position_snapshots",
       ];
 

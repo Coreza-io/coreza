@@ -19,7 +19,7 @@ import {
   LiveFillRepository,
   LiveFillRow,
 } from "../repositories/LiveFillRepository";
-import { CashSnapshotRepository } from "../repositories/CashSnapshotRepository";
+import { PortfolioSnapshotRepository } from "../repositories/PortfolioSnapshotRepository";
 import { LatestSnapshotState, SnapshotCache } from "../services/SnapshotCache";
 import Redis from "ioredis";
 import { RedisKeys } from "../infra/redisKeys";
@@ -367,7 +367,7 @@ export class FillSyncWorker {
           if (cash === null || equity === null || realized === null || unrealized === null) {
             throw new Error(`Malformed portfolio snapshot retained for recovery: ${key}`);
           }
-          await CashSnapshotRepository.batchInsert([{
+          await PortfolioSnapshotRepository.batchInsert([{
             id: snapshot.id, user_id: snapshot.user_id, workflow_id: snapshot.workflow_id,
             execution_id: snapshot.execution_id, broker: snapshot.broker,
             credential_id: snapshot.credential_id || snapshot.user_id,

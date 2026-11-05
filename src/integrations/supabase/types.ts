@@ -83,63 +83,6 @@ export type Database = {
           },
         ]
       }
-      cash_snapshots: {
-        Row: {
-          balances: Json
-          base_currency: string | null
-          broker: string
-          cash: number | null
-          created_at: string
-          credential_id: string
-          equity: number | null
-          execution_id: string | null
-          id: string
-          positions_count: number | null
-          realized_pnl: number | null
-          snapshot_at: string
-          total_value_usdt: number | null
-          unrealized_pnl: number | null
-          user_id: string
-          workflow_id: string | null
-        }
-        Insert: {
-          balances?: Json
-          base_currency?: string | null
-          broker: string
-          cash?: number | null
-          created_at?: string
-          credential_id: string
-          equity?: number | null
-          execution_id?: string | null
-          id?: string
-          positions_count?: number | null
-          realized_pnl?: number | null
-          snapshot_at: string
-          total_value_usdt?: number | null
-          unrealized_pnl?: number | null
-          user_id: string
-          workflow_id?: string | null
-        }
-        Update: {
-          balances?: Json
-          base_currency?: string | null
-          broker?: string
-          cash?: number | null
-          created_at?: string
-          credential_id?: string
-          equity?: number | null
-          execution_id?: string | null
-          id?: string
-          positions_count?: number | null
-          realized_pnl?: number | null
-          snapshot_at?: string
-          total_value_usdt?: number | null
-          unrealized_pnl?: number | null
-          user_id?: string
-          workflow_id?: string | null
-        }
-        Relationships: []
-      }
       coreza_chat_history: {
         Row: {
           created_at: string

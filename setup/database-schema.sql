@@ -173,25 +173,6 @@ CREATE TABLE IF NOT EXISTS public.live_fills (
   CONSTRAINT uq_live_fills_dedup UNIQUE (user_id, broker, symbol, fill_id)
 );
 
-CREATE TABLE IF NOT EXISTS public.cash_snapshots (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL,
-  workflow_id uuid,
-  execution_id uuid,
-  broker text NOT NULL,
-  credential_id uuid NOT NULL,
-  snapshot_at timestamptz NOT NULL,
-  base_currency text,
-  balances jsonb NOT NULL DEFAULT '{}'::jsonb,
-  cash numeric,
-  equity numeric,
-  positions_count integer,
-  unrealized_pnl numeric,
-  realized_pnl numeric,
-  total_value_usdt numeric,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-
 CREATE TABLE IF NOT EXISTS public.position_snapshots (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
@@ -256,7 +237,6 @@ ALTER TABLE public.node_executions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_credentials ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.backtests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.live_fills ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.cash_snapshots ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.position_snapshots ENABLE ROW LEVEL SECURITY;
 
 -- representative idempotent policies for all OSS tables
@@ -362,8 +342,6 @@ CREATE POLICY "Service role full access" ON public.user_credentials FOR ALL USIN
 -- Live-trading state tables
 DROP POLICY IF EXISTS "Users can manage own live fills" ON public.live_fills;
 CREATE POLICY "Users can manage own live fills" ON public.live_fills FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
-DROP POLICY IF EXISTS "Users can manage own cash snapshots" ON public.cash_snapshots;
-CREATE POLICY "Users can manage own cash snapshots" ON public.cash_snapshots FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 DROP POLICY IF EXISTS "Users can manage own position snapshots" ON public.position_snapshots;
 CREATE POLICY "Users can manage own position snapshots" ON public.position_snapshots FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 

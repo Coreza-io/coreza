@@ -1,4 +1,6 @@
--- Coreza Trading Platform Database Schema
+-- Coreza Trading Platform Database Schema (fresh installs only)
+
+BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
@@ -14,6 +16,14 @@ CREATE TABLE IF NOT EXISTS public.users (
   phone text,
   location text,
   timezone text,
+  selected_markets text[],
+  CONSTRAINT users_selected_markets_allowed CHECK (
+    selected_markets IS NULL OR (
+      selected_markets <@ ARRAY['nyse', 'nasdaq', 'nse', 'bse', 'crypto']::text[]
+      AND array_position(selected_markets, NULL) IS NULL
+      AND (cardinality(selected_markets) = 0 OR array_ndims(selected_markets) = 1)
+    )
+  ),
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );
@@ -36,6 +46,7 @@ CREATE TABLE IF NOT EXISTS public.workflows (
   nodes jsonb NOT NULL,
   edges jsonb NOT NULL,
   node_clusters jsonb NOT NULL DEFAULT '[]'::jsonb CHECK (jsonb_typeof(node_clusters) = 'array'),
+  revision bigint NOT NULL DEFAULT 0,
   schedule_cron text,
   is_active boolean,
   persistent_state jsonb DEFAULT '{}'::jsonb,
@@ -87,7 +98,7 @@ CREATE TABLE IF NOT EXISTS public.workflow_runs (
   request_fingerprint text,
   cancel_requested_at timestamptz,
   cancel_acknowledged_at timestamptz,
-  CONSTRAINT idx_workflow_runs_schedule_key_unique UNIQUE NULLS NOT DISTINCT (workflow_id, schedule_key)
+  CONSTRAINT workflow_runs_scope_kind_check CHECK (scope_kind IN ('workflow', 'cluster'))
 );
 
 CREATE TABLE IF NOT EXISTS public.node_executions (
@@ -173,6 +184,8 @@ CREATE TABLE IF NOT EXISTS public.live_fills (
   CONSTRAINT uq_live_fills_dedup UNIQUE (user_id, broker, symbol, fill_id)
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_workflow_runs_schedule_key_unique
+ON public.workflow_runs (workflow_id, schedule_key) WHERE schedule_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_workflow_runs_workflow_id ON public.workflow_runs(workflow_id);
 CREATE UNIQUE INDEX IF NOT EXISTS workflow_runs_manual_idempotency ON public.workflow_runs(workflow_id, initiated_by, idempotency_key) WHERE idempotency_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS workflow_runs_active_cluster_lookup ON public.workflow_runs(workflow_id, initiated_by, scope_cluster_id, started_at DESC) WHERE scope_kind = 'cluster' AND status IN ('pending', 'queued', 'running', 'cancelling');
@@ -318,10 +331,6 @@ CREATE POLICY "Users can delete their own credentials" ON public.user_credential
 DROP POLICY IF EXISTS "Service role full access" ON public.user_credentials;
 CREATE POLICY "Service role full access" ON public.user_credentials FOR ALL USING (auth.role() = 'service_role') WITH CHECK (true);
 
--- Backtest child tables
-
-
-
 -- Live-trading state tables
 DROP POLICY IF EXISTS "Users can manage own live fills" ON public.live_fills;
 CREATE POLICY "Users can manage own live fills" ON public.live_fills FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
@@ -421,10 +430,139 @@ CREATE POLICY "Service role manages chat history"
   USING (auth.role() = 'service_role')
   WITH CHECK (auth.role() = 'service_role');
 
+-- Explicit Data API privileges; RLS policies above scope authenticated access.
+REVOKE ALL ON public.users, public.projects, public.workflows,
+  public.workflow_versions, public.workflow_runs, public.node_executions,
+  public.user_credentials, public.backtests, public.live_fills FROM PUBLIC, anon, authenticated;
+GRANT SELECT ON public.users, public.projects, public.workflows,
+  public.workflow_versions, public.workflow_runs, public.node_executions,
+  public.user_credentials, public.backtests, public.live_fills TO authenticated;
+GRANT INSERT, UPDATE, DELETE ON public.users, public.projects, public.backtests,
+  public.workflow_versions TO authenticated;
+GRANT DELETE ON public.workflows TO authenticated;
+GRANT ALL ON public.users, public.projects, public.workflows,
+  public.workflow_versions, public.workflow_runs, public.node_executions,
+  public.user_credentials, public.backtests, public.live_fills TO service_role;
+REVOKE EXECUTE ON FUNCTION public.handle_new_user() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.handle_new_user() TO service_role;
+
+-- Canonical workflow writer and hierarchy readiness (current runtime contract).
+-- Workflow documents are written only by the service-role backend. Ownership RLS
+-- remains in place for reads and deletes, but is not a semantic validation layer.
+REVOKE INSERT, UPDATE ON TABLE public.workflows FROM anon, authenticated;
+
+CREATE OR REPLACE FUNCTION public.save_workflow_document(
+  p_workflow_id uuid,
+  p_user_id uuid,
+  p_expected_revision bigint,
+  p_name text DEFAULT NULL,
+  p_nodes jsonb DEFAULT NULL,
+  p_edges jsonb DEFAULT NULL,
+  p_node_clusters jsonb DEFAULT NULL,
+  p_project_id uuid DEFAULT NULL,
+  p_cluster_format_version integer DEFAULT NULL
+) RETURNS public.workflows
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $$
+DECLARE
+  current_row public.workflows%ROWTYPE;
+  next_name text;
+  next_nodes jsonb;
+  next_edges jsonb;
+  next_clusters jsonb;
+  next_project_id uuid;
+  next_version integer;
+BEGIN
+  SELECT * INTO current_row FROM public.workflows
+    WHERE id = p_workflow_id AND user_id = p_user_id FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'workflow-not-found'; END IF;
+  IF current_row.revision <> p_expected_revision THEN
+    RAISE EXCEPTION 'workflow-revision-conflict' USING ERRCODE = '40001';
+  END IF;
+
+  IF (EXISTS (SELECT 1 FROM jsonb_array_elements(current_row.node_clusters) c WHERE c ? 'parentClusterId')
+      OR EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(p_node_clusters, '[]'::jsonb)) c WHERE c ? 'parentClusterId'))
+      AND p_cluster_format_version IS DISTINCT FROM 2 THEN
+    RAISE EXCEPTION 'cluster-writer-upgrade-required';
+  END IF;
+  PERFORM set_config('coreza.cluster_format_version', COALESCE(p_cluster_format_version::text, ''), true);
+
+  next_name := COALESCE(p_name, current_row.name);
+  next_nodes := COALESCE(p_nodes, current_row.nodes);
+  next_edges := COALESCE(p_edges, current_row.edges);
+  next_clusters := COALESCE(p_node_clusters, current_row.node_clusters);
+  next_project_id := p_project_id;
+
+  IF jsonb_array_length(current_row.nodes) > 0 AND jsonb_array_length(next_nodes) = 0 THEN
+    RAISE EXCEPTION 'empty-workflow';
+  END IF;
+
+  IF next_name = current_row.name AND next_nodes = current_row.nodes
+     AND next_edges = current_row.edges AND next_clusters = current_row.node_clusters
+     AND next_project_id IS NOT DISTINCT FROM current_row.project_id THEN
+    RETURN current_row;
+  END IF;
+
+  SELECT COALESCE(MAX(version_number), 0) + 1 INTO next_version
+    FROM public.workflow_versions WHERE workflow_id = p_workflow_id;
+  INSERT INTO public.workflow_versions
+    (workflow_id, version_number, name, nodes, edges, node_clusters, is_active,
+     node_count, edge_count, created_by)
+  VALUES
+    (current_row.id, next_version, current_row.name, current_row.nodes,
+     current_row.edges, current_row.node_clusters, current_row.is_active,
+     jsonb_array_length(current_row.nodes), jsonb_array_length(current_row.edges), p_user_id);
+
+  UPDATE public.workflows SET
+    name = next_name, nodes = next_nodes, edges = next_edges,
+    node_clusters = next_clusters, project_id = next_project_id,
+    revision = revision + 1, updated_at = now()
+  WHERE id = current_row.id
+  RETURNING * INTO current_row;
+  RETURN current_row;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.save_workflow_document(uuid, uuid, bigint, text, jsonb, jsonb, jsonb, uuid, integer)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.save_workflow_document(uuid, uuid, bigint, text, jsonb, jsonb, jsonb, uuid, integer)
+  TO service_role;
+
+-- Refuse alternate service-role graph replacements of nested documents.
+CREATE OR REPLACE FUNCTION public.guard_nested_workflow_writer() RETURNS trigger
+LANGUAGE plpgsql SET search_path = pg_catalog, public AS $$
+BEGIN
+  IF (NEW.nodes IS DISTINCT FROM OLD.nodes OR NEW.edges IS DISTINCT FROM OLD.edges OR NEW.node_clusters IS DISTINCT FROM OLD.node_clusters)
+     AND (EXISTS (SELECT 1 FROM jsonb_array_elements(OLD.node_clusters) c WHERE c ? 'parentClusterId')
+       OR EXISTS (SELECT 1 FROM jsonb_array_elements(NEW.node_clusters) c WHERE c ? 'parentClusterId'))
+     AND current_setting('coreza.cluster_format_version', true) IS DISTINCT FROM '2' THEN
+    RAISE EXCEPTION 'cluster-writer-upgrade-required';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+CREATE TRIGGER guard_nested_workflow_writer BEFORE UPDATE ON public.workflows
+FOR EACH ROW EXECUTE FUNCTION public.guard_nested_workflow_writer();
+
+-- Capability is observed from deployed schema/permissions, never a frontend flag.
+CREATE OR REPLACE FUNCTION public.cluster_hierarchy_write_ready() RETURNS boolean
+LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public AS $$
+  SELECT to_regprocedure('public.save_workflow_document(uuid,uuid,bigint,text,jsonb,jsonb,jsonb,uuid,integer)') IS NOT NULL
+    AND NOT has_table_privilege('authenticated', 'public.workflows', 'UPDATE')
+    AND NOT has_table_privilege('authenticated', 'public.workflows', 'INSERT')
+    AND NOT has_table_privilege('anon', 'public.workflows', 'UPDATE')
+    AND NOT has_table_privilege('anon', 'public.workflows', 'INSERT')
+    AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'guard_nested_workflow_writer'
+      AND tgrelid = 'public.workflows'::regclass AND tgenabled = 'O');
+$$;
+REVOKE ALL ON FUNCTION public.cluster_hierarchy_write_ready() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.cluster_hierarchy_write_ready() TO service_role;
+
 -- Shared reporting schema
 -- Shared reporting for new backtests and live activations.
 -- Deploy the schema and matching writers/readers together before resuming starts.
-BEGIN;
 CREATE TABLE public.live_strategies (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   mode text NOT NULL,
@@ -504,6 +642,11 @@ CREATE TABLE public.portfolio (
   execution_id uuid,
   date date,
   total_value numeric,
+  equity_open numeric,
+  equity_high numeric,
+  equity_low numeric,
+  equity_close numeric,
+  equity_sample_count integer,
   cash_balance numeric,
   stock_value numeric,
   daily_return numeric,
@@ -519,7 +662,19 @@ CREATE TABLE public.portfolio (
   positions_count integer,
   total_value_usdt numeric,
   created_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE(live_strategy_id,date)
+  UNIQUE(live_strategy_id,date),
+  CONSTRAINT portfolio_equity_ohlc_valid CHECK (
+    num_nonnulls(equity_open,equity_high,equity_low,equity_close,equity_sample_count)=0
+    OR (
+      num_nonnulls(equity_open,equity_high,equity_low,equity_close,equity_sample_count)=5
+      AND equity_sample_count > 0
+      AND total_value IS NOT NULL AND equity_close=total_value
+      AND equity_high >= greatest(equity_open,equity_close)
+      AND equity_low <= least(equity_open,equity_close)
+      AND equity_high >= equity_low
+      AND equity_low > '-Infinity'::numeric AND equity_high < 'Infinity'::numeric
+    )
+  )
 );
 CREATE INDEX live_strategies_owner_mode_start ON public.live_strategies(user_id,mode,started_at DESC,id DESC);
 CREATE INDEX live_strategies_owner_mode_status ON public.live_strategies(user_id,mode,status);
@@ -613,6 +768,7 @@ GRANT EXECUTE ON FUNCTION public.complete_reporting_activation(uuid,uuid,uuid,te
 ALTER TABLE public.live_strategies ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.trades ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.portfolio ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.live_strategies,public.trades,public.portfolio FROM PUBLIC,anon,authenticated;
 GRANT SELECT ON public.live_strategies,public.trades,public.portfolio TO authenticated;
 GRANT ALL ON public.live_strategies,public.trades,public.portfolio TO service_role;
 CREATE POLICY reporting_owner ON public.live_strategies FOR SELECT TO authenticated USING(user_id=(SELECT auth.uid()));
@@ -696,6 +852,11 @@ RETURNS void LANGUAGE sql SET search_path='' AS $$
 $$;
 REVOKE ALL ON FUNCTION public.record_reporting_baseline(uuid,uuid,uuid,numeric,jsonb) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.record_reporting_baseline(uuid,uuid,uuid,numeric,jsonb) TO service_role;
+
+COMMENT ON COLUMN public.users.selected_markets IS
+  'Dashboard market display IDs. NULL defaults to NYSE/NASDAQ; empty array means none. No trading subscription effects.';
+COMMENT ON COLUMN public.portfolio.equity_open IS 'First observed portfolio equity in the UTC reporting day; not a security price.';
+COMMENT ON COLUMN public.portfolio.equity_sample_count IS 'Distinct observed valuation timestamps in the UTC day. One observation produces a sparse doji.';
 
 NOTIFY pgrst,'reload schema';
 COMMIT;

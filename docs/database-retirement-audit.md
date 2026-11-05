@@ -48,6 +48,14 @@ existing-project migration history. The fresh setup schema already excludes the
 old billing, SQL-variable and reporting tables; position snapshots were its only
 additional obsolete table definition.
 
+## Installation
+
+Fresh installs use only the current `setup/database-schema.sql` bootstrap staged
+in a temporary directory. Setup does not replay historical migrations, recreate
+retired objects, deploy Edge Functions or load an unused seed file. Existing
+projects receive a read-only contract check; upgrades and retirement remain
+explicit. See the [installation guide](SETUP.md).
+
 ## Catalog findings and rollout
 
 Read-only catalog inspection found no incoming foreign keys from retained tables,

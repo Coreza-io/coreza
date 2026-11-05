@@ -16,3 +16,10 @@ enable_signup = true
 
 [auth.email]
 enable_confirmations = false
+
+[db.seed]
+enabled = false
+sql_paths = []
+
+[edge_runtime]
+enabled = false

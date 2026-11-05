@@ -110,7 +110,7 @@ class SetupValidator {
     console.log("🗄️ Checking database schema...");
 
     if (!fs.existsSync("setup/database-schema.sql")) {
-      this.warnings.push(
+      this.errors.push(
         "Database schema file missing (setup/database-schema.sql)",
       );
     } else {
@@ -128,21 +128,21 @@ class SetupValidator {
         "trades",
         "portfolio",
         "live_fills",
+        "coreza_chat_history",
       ];
 
       for (const table of requiredTables) {
-        const escaped = table.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
         const createTableRegex = new RegExp(
-          `CREATE\\s+TABLE\\s+IF\\s+NOT\\s+EXISTS\\s+public\\.${escaped}\\s*\\(`,
+          String.raw`CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?public\.${table}\s*\(`,
           "i",
         );
         if (!createTableRegex.test(schema)) {
-          this.warnings.push(`Table ${table} not found in schema`);
+          this.errors.push(`Table ${table} not found in schema`);
         }
       }
     }
 
-    if (this.warnings.length === 0) {
+    if (this.errors.length === 0 && this.warnings.length === 0) {
       console.log("✅ Database schema is complete");
     }
   }
@@ -195,7 +195,7 @@ class SetupValidator {
     if (this.errors.length > 0) {
       console.log("\n🔧 To fix these issues:");
       console.log("1. Run the setup script again: node setup/setup.js");
-      console.log("2. Or follow the manual setup guide: docs/SETUP.md");
+      console.log("2. Or follow the setup guide: docs/SETUP.md");
     }
   }
 }

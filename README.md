@@ -184,7 +184,15 @@ cd ..
 
 ### 3. Database Setup
 
-The database schema is already configured through migrations (including `public.coreza_chat_history` for AI Agent memory). If needed, you can apply it manually using the Supabase dashboard or CLI.
+Run `node setup/setup.js` for a fresh Supabase project. Setup stages only the
+current bootstrap schema, including AI Agent chat memory, workflow hierarchy,
+reporting OHLC and selected-market preferences. It does not create retired tables
+or deploy Edge Functions, and it leaves repository migrations intact.
+
+For an existing project, setup checks compatibility without changing its schema
+or migration history. Apply selected forward upgrades explicitly using the
+[installation and upgrade guide](docs/SETUP.md); rerunning setup does not replay
+historical migrations or automatically apply retirement migrations.
 
 ### 4. Start Development Servers
 

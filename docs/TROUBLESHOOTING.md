@@ -15,10 +15,8 @@ This guide helps you resolve common issues when setting up and running the Corez
 4. Run manual setup steps from [SETUP.md](SETUP.md)
 
 ```bash
-# If setup fails, try manual approach
-npm install -g supabase
-supabase link --project-ref YOUR_PROJECT_ID
-supabase db push
+# Setup selects a current bootstrap only for an empty project.
+node setup/setup.js
 ```
 
 ### Environment Variables Not Loading
@@ -137,31 +135,20 @@ WHERE schemaname = 'public';
 **Problem**: Database migrations fail to apply.
 
 **Solutions**:
-1. Check migration syntax for errors
-2. Ensure proper permissions
-3. Run migrations manually:
-```bash
-supabase db reset
-supabase db push
-```
-
-4. Check Supabase logs for specific errors
+1. Inspect the error and selected project's actual schema and migration history.
+2. Follow the [existing-project upgrade guide](SETUP.md#existing-project-or-repeat-installation).
+3. Stage only the needed forward migrations and preview with CLI 3.0.0's
+   `db push --remote --dry-run` before applying them.
+4. Resolve history mismatches manually after verifying schema effects. Setup does
+   not reset databases, revert ledger entries or retry failed DDL automatically.
 
 ### Missing Tables
 
-**Problem**: Application reports missing database tables.
+**Problem**: Setup or the application reports missing database objects.
 
-**Solutions**:
-1. Run the setup script again
-2. Apply database schema manually:
-```bash
-supabase db push --include-all
-```
-
-3. Check if migrations were applied:
-```bash
-supabase migration list
-```
+Use the missing-object list from setup to select an existing-project upgrade.
+Fresh projects receive only the current bootstrap. Do not run `db reset` or replay
+all repository migrations to fix an existing installation. See [SETUP.md](SETUP.md).
 
 ## Authentication Issues
 
@@ -321,7 +308,7 @@ cd coreza-backend && npm run dev
 # Supabase operations
 supabase login
 supabase link --project-ref PROJECT_ID
-supabase db push
+# For upgrades, stage selected migrations as described in docs/SETUP.md
 
 # Debugging
 npm run build

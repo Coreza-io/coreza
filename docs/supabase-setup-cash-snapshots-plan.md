@@ -2,7 +2,13 @@
 
 5 November 2026 · Implementation plan for `dev`
 
-## Current state
+Implementation is tracked by the [installation guide](SETUP.md) and
+[database retirement audit](database-retirement-audit.md). The observations and
+proposal below describe the original review; the implementation now omits all
+retired tables and Edge Functions, and does not automatically upgrade existing
+projects or repair their migration history.
+
+## Original review
 
 - The setup wizard in `setup/setup.js` deletes timestamped SQL files in the checkout, copies `setup/database-schema.sql` to `00000000000000_coreza_initial_schema.sql`, and runs `supabase db push`. On a history mismatch it can take a version from CLI output and mark it reverted. That changes migration bookkeeping without undoing the corresponding SQL, and can cause a later push to replay DDL.
 - The bootstrap SQL already contains the shared reporting migration, including `live_strategies`, `portfolio`, and `trades`. It omits the portfolio equity OHLC columns and constraint from `20261028083211_portfolio_equity_ohlc.sql`, `users.selected_markets` and its constraint from `20261030064352_selected_markets.sql`, and the hierarchy writer guard and readiness RPC from `20261009090000_cluster_hierarchy_writer_guard.sql`. `setup/validate.js` requires the literal `CREATE TABLE IF NOT EXISTS`, so it reports valid reporting tables declared with plain `CREATE TABLE` as missing.
@@ -13,7 +19,7 @@
 
 | Area | Implementation |
 | --- | --- |
-| `setup/setup.js` | Replace the destructive preparation and automatic history repair with explicit fresh and existing-project paths. Stage the selected migration set and Supabase config in an isolated work directory if the wizard needs to generate files. Verify the target project and migration state before writes. Surface a history mismatch with the versions and manual reconciliation steps. Continue to Edge Functions and secrets only after the schema step succeeds. |
+| `setup/setup.js` | Replace the destructive preparation and automatic history repair with explicit fresh and existing-project paths. Stage the selected migration set and Supabase config in an isolated work directory if the wizard needs to generate files. Verify the target project and migration state before writes. Surface a history mismatch with the versions and manual reconciliation steps. Do not deploy unused Edge Functions or upload their obsolete secrets. |
 | `setup/database-schema.sql` | Make the fresh-install schema match the reviewed `dev` runtime contract. Reuse the existing reporting DDL and fold in the OHLC and selected-markets changes exactly once. Port the canonical workflow document writer and hierarchy guard/readiness contract as a unit, including the current run columns, constraints, trigger, and RPC grants. Compare baseline against the ordered migrations for required extensions, RPC signatures, indexes, policies, grants, and publications. Preserve `backtests` and `live_fills`, and keep legacy data and retired SQL variable objects on existing projects outside this cleanup. |
 | `setup/validate.js` and setup completion checks | Accept both forms of `CREATE TABLE` in static validation. Check the actual target contract after migration for the reporting tables, OHLC constraint, selected-markets constraint, hierarchy readiness, and Realtime membership. Validate least-privilege grants and owner RLS. A catalog or service-role check alone cannot confirm that an authenticated user can read their own rows. |
 | `README.md` and database types | Document the fresh-install and upgrade commands where users already start setup, and replace the dead setup-guide link. Compare generated types from a verified schema with `src/integrations/supabase/types.ts`, `coreza-backend/src/types/supabase.ts`, and the shared reporting types in `coreza-backend/src/reporting/database.ts`. Update only the affected definitions and retain the legacy table type through the compatibility window. |

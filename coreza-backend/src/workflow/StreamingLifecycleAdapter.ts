@@ -307,33 +307,34 @@ export class StreamingLifecycleAdapter {
       );
     }
 
-    // Create listener
-    const listenerKey = await RegistrationService.createListener({
-      userId,
-      workflowId,
-      nodeId: triggerNode.id,
-      source: sourceId,
-      mode: nodeValues.mode,
-      scope: nodeValues.scope || "workflow",
-      environment,
-      symbols: symbols,
-      streamTypes: streamType,
-      assetType: nodeValues.assetType,
-      marketType: nodeValues.marketType,
-      contractType: nodeValues.contractType as
-        | "perpetual"
-        | "current_quarter"
-        | "next_quarter"
-        | undefined,
-      interval: nodeValues.interval,
-      depth_levels:
-        nodeValues.depth_levels !== undefined
-          ? String(nodeValues.depth_levels)
-          : undefined,
-    });
-
-    // 3. NOW register the workflow (subscriptions are materialized)
+    let listenerKey: string | undefined;
     try {
+      // Create listener
+      listenerKey = await RegistrationService.createListener({
+        userId,
+        workflowId,
+        nodeId: triggerNode.id,
+        source: sourceId,
+        mode: nodeValues.mode,
+        scope: nodeValues.scope || "workflow",
+        environment,
+        symbols: symbols,
+        streamTypes: streamType,
+        assetType: nodeValues.assetType,
+        marketType: nodeValues.marketType,
+        contractType: nodeValues.contractType as
+          | "perpetual"
+          | "current_quarter"
+          | "next_quarter"
+          | undefined,
+        interval: nodeValues.interval,
+        depth_levels:
+          nodeValues.depth_levels !== undefined
+            ? String(nodeValues.depth_levels)
+            : undefined,
+      });
+
+      // 3. NOW register the workflow (subscriptions are materialized)
       await RegistrationService.publishRegisterWorkflow({
         readinessChecks: [
           ...(marketstreamType.length ? [{ source: sourceId, symbols, streamType: marketstreamType,
@@ -357,7 +358,12 @@ export class StreamingLifecycleAdapter {
         streamTypes: streamType,
       });
     } catch (error) {
-      await RegistrationService.deleteListener(userId, workflowId, triggerNode.id);
+      try {
+        if (listenerKey) await RegistrationService.deleteListener(userId, workflowId, triggerNode.id);
+        else await RegistrationService.decrementListenerCount(userId);
+      } catch {
+        logger.warn({ workflowId }, "Failed to release listener reservation after startup failure");
+      }
       throw error;
     }
 

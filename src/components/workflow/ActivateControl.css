@@ -1,0 +1,76 @@
+/* Coreza emerald mechanical activation: keep the 44px editor-toolbar footprint. */
+.coreza-activate-control {
+  position: relative;
+  isolation: isolate;
+  box-sizing: border-box;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-width: 128px;
+  height: 44px;
+  padding: 0 19px;
+  border: 1px solid #62f6aa66;
+  border-radius: 9999px;
+  color: #effff6;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  background: linear-gradient(165deg, #21c778 0%, #0b9658 55%, #08764d 100%);
+  box-shadow: inset 0 1px 1px #c9ffe566, inset 0 -3px 5px #05492f90, 0 3px 0 #063b2d, 0 7px 12px #0005, 0 0 13px #00dd8635;
+  transition: transform 170ms ease, box-shadow 220ms ease, background 220ms ease, border-color 220ms ease;
+}
+
+.coreza-activate-control::before {
+  content: "";
+  position: absolute;
+  inset: 2px 7px auto;
+  height: 46%;
+  border-radius: 100%;
+  background: linear-gradient(#e6fff62e, transparent);
+  pointer-events: none;
+}
+
+.coreza-activate-control__icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+}
+
+.coreza-activate-control:hover:not(:disabled) {
+  box-shadow: inset 0 1px 1px #c9ffe580, inset 0 -3px 5px #05492f90, 0 3px 0 #063b2d, 0 8px 15px #0006, 0 0 20px #00dd8660;
+}
+
+.coreza-activate-control:active:not(:disabled) {
+  transform: translateY(3px);
+  box-shadow: inset 0 2px 5px #063c2d80, 0 0 0 #063b2d, 0 3px 6px #0006;
+}
+
+.coreza-activate-control--active {
+  color: #b5f8d6;
+  border-color: #6ee7b788;
+  background: linear-gradient(165deg, #303c46, #1c2831 60%, #17222b);
+  box-shadow: inset 0 1px 2px #a9baca33, inset 0 -3px 5px #0007, 0 3px 0 #0b1016, 0 7px 12px #0006, 0 0 13px #2fbb7e24;
+}
+
+.coreza-activate-control--active:hover:not(:disabled) {
+  border-color: #a2b3c7;
+  box-shadow: inset 0 1px 2px #a9baca33, inset 0 -3px 5px #0007, 0 3px 0 #0b1016, 0 8px 15px #0008, 0 0 15px #2fbb7e35;
+}
+
+.coreza-activate-control:focus-visible {
+  outline: 2px solid #b6ffe1;
+  outline-offset: 4px;
+}
+
+.coreza-activate-control:disabled {
+  cursor: progress;
+  opacity: 0.65;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .coreza-activate-control { transition: none; }
+}

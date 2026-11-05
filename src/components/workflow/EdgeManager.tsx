@@ -884,7 +884,8 @@ const getMalePlugRotation = (position?: Position | null): number => {
     case Position.Right:
       return 45; // face right
     case Position.Bottom:
-      return 135; // face down
+      // Match bottom output handles: the plug prongs must point downward.
+      return -45;
     case Position.Left:
       return -135; // face left
     default:

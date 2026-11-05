@@ -85,8 +85,8 @@ export class WorkflowRun {
         if (this.plan.executionMode === "live") {
           // Do not admit over a legacy fenced scope, even with its writer flag off.
           const { liveRPC } = await import("../variables/LiveVariableProtocol");
-          const legacy = await liveRPC("source", this.options.userId, this.options.workflowId);
-          if (legacy.active) throw new Error("Legacy live variable ownership requires stop/handoff or recovery before activation");
+          const legacy = await liveRPC("eligible", this.options.userId, this.options.workflowId);
+          if (legacy.owned) throw new Error("Legacy live variable ownership requires stop/handoff or recovery before activation");
         }
         if (this.disposed || this.options.abortSignal?.aborted) throw new Error("Workflow initialization cancelled");
         this.variables = emptyVariableSnapshot(this.options.userId, this.options.workflowId);

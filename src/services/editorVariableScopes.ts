@@ -15,13 +15,19 @@ interface ScopeState {
   clear: Map<object, () => void>;
 }
 const sessions = new Map<string, ScopeState>();
+const scopeStates = new WeakMap<EditorVariableScope, ScopeState>();
+function createScopeState(scope: EditorVariableScope): ScopeState {
+  const state: ScopeState = { scope, closed: false, clear: new Map() };
+  scopeStates.set(scope, state);
+  return state;
+}
 const locks = new Map<symbol, ScopeState>();
 const sessionGenerations = new Map<string, number>();
 export function activateEditorSessionVariables(sessionId: string): void {
   sessionGenerations.set(sessionId, (sessionGenerations.get(sessionId) ?? 0) + 1);
 }
 const stateFor = (scope: EditorVariableScope) => {
-  const state = [...sessions.values(), ...locks.values()].find(state => state.scope === scope);
+  const state = scopeStates.get(scope);
   if (!state || state.closed) throw new Error("Variable scope closed; reload the editor");
   if (state.error) throw state.error;
   return state;
@@ -29,7 +35,7 @@ const stateFor = (scope: EditorVariableScope) => {
 export function editorVariableScope(sessionId: string): EditorVariableScope {
   let state = sessions.get(sessionId);
   if (!state) {
-    state = { scope: { sessionId, mode: "manual", createdAt: Date.now() }, closed: false, clear: new Map() };
+    state = createScopeState({ sessionId, mode: "manual", createdAt: Date.now() });
     sessions.set(sessionId, state);
   }
   return state.scope;
@@ -48,7 +54,7 @@ export function selectEditorBatchVariables(token: symbol, sessionId: string): vo
   if (!previous) throw new Error("Execution lock is no longer active");
   if (previous.renewal) clearInterval(previous.renewal);
   previous.renewal = undefined;
-  locks.set(token, { scope: { sessionId, mode: "batch", batchId: crypto.randomUUID(), createdAt: Date.now() }, closed: false, clear: new Map() });
+  locks.set(token, createScopeState({ sessionId, mode: "batch", batchId: crypto.randomUUID(), createdAt: Date.now() }));
 }
 export function selectedEditorVariableScope(sessionId: string, token?: symbol): EditorVariableScope {
   return (token ? locks.get(token)?.scope : undefined) ?? editorVariableScope(sessionId);
@@ -131,6 +137,8 @@ export function closeEditorSessionVariables(sessionId: string): void {
 }
 function disposeEditorSessionVariables(sessionId: string): void {
   const state = sessions.get(sessionId);
+  sessions.delete(sessionId);
+  sessionGenerations.delete(sessionId);
   if (state) void close(state).catch(() => { /* TTL covers missed teardown. */ });
   for (const [token, active] of locks) if (active.scope.sessionId === sessionId) {
     locks.delete(token);

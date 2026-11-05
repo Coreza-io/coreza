@@ -207,15 +207,15 @@ router.post("/field", async (req, res) => {
     let variableSnapshot;
     let persistentVariableKeys: string[] | undefined;
     if (persistent === true && fields.some(isTypedEditFieldRow)) {
-      const staged = stagePersistentFields(fields, options);
       if (!res.locals.variableSnapshot || !req.user?.id) throw new Error("Persistent variable snapshot unavailable");
       if (typeof req.body.variableInvocationId !== "string" || !/^[0-9a-f-]{36}$/i.test(req.body.variableInvocationId))
         return res.status(400).json(resultFailure("Persistent Edit execution requires an invocation ID", { data: null }));
-      if (req.body.variableRevision !== res.locals.variableSnapshot.revision) {
-        // Preserve the submitted revision for the atomic compare/replay check.
-        res.locals.variableSnapshot = { ...res.locals.variableSnapshot, revision: req.body.variableRevision };
-      }
-      variableSnapshot = await editorVariables.commit(res.locals.variableScope, res.locals.variableSnapshot, staged.changes, req.body.variableInvocationId);
+      const requestHash = editorVariables.requestHash(req.body);
+      const base = await editorVariables.prepare(res.locals.variableScope, res.locals.variableSnapshot,
+        req.body.variableRevision, req.body.variableInvocationId, requestHash);
+      options.context.$vars = base.values;
+      const staged = stagePersistentFields(fields, options);
+      variableSnapshot = await editorVariables.commit(res.locals.variableScope, base, staged.changes, req.body.variableInvocationId, requestHash);
       result = staged.result;
       persistentVariableKeys = staged.changes.map(change => change.key);
     } else result = applyFieldRows(fields, options);

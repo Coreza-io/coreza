@@ -884,8 +884,8 @@ const getMalePlugRotation = (position?: Position | null): number => {
     case Position.Right:
       return 45; // face right
     case Position.Bottom:
-      // Match bottom output handles: the plug prongs must point downward.
-      return -45;
+      // SVG male plug points up-right at 0deg; +135deg faces its prongs down.
+      return 135;
     case Position.Left:
       return -135; // face left
     default:

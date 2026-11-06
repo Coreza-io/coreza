@@ -7,6 +7,15 @@ publishable and secret keys, personal access token, and database password when
 prompted. Existing environment-file values are reused, including the backend
 encryption key.
 
+Backend environment defaults come from `coreza-backend/.env.example`, including
+Redis/BullMQ, ports, workflow attempts, listener/polling limits, backtest mode,
+logging and live timing. Setup preserves existing values for those template keys
+and fills missing values from the example. A legacy `REDIS_URL` is carried into
+`REDIS_QUEUE_URL` and `REDIS_CACHE_URL` unless dedicated URLs already exist.
+Broker OAuth callback URL variables are no longer generated. New installs keep
+logs silent and clock verification disabled; enable `LOG_LEVEL=debug` for logs
+and set `LIVE_TIMING_CLOCKS_VERIFIED=true` only after checking service clocks.
+
 ## Fresh Supabase project
 
 Setup inspects the selected project through the Supabase Management API's

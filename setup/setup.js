@@ -351,33 +351,29 @@ VITE_BACKEND_WS_URL=ws://localhost:8081
 VITE_INACTIVITY_TIMEOUT=600000
 `;
 
-    const backendEnv = `# Supabase Configuration (runtime — backend only)
-SUPABASE_URL=${this.config.supabaseUrl}
-SUPABASE_PROJECT_ID=${this.config.projectId}
-SUPABASE_PUBLISHABLE_KEY=${this.config.supabasePublishableKey}
-SUPABASE_SECRET_KEY=${this.config.supabaseSecretKey}
-
-# Encryption
-COREZA_ENCRYPTION_KEY=${this.config.encryptionKey}
-
-# Redis
-REDIS_QUEUE_URL=redis://localhost:6379
-REDIS_CACHE_URL=redis://localhost:6379
-
-# Runtime ports
-PORT=8000
-WEBSOCKET_PORT=8081
-MARKET_STREAM_PORT=8090
-
-# Workflow
-WORKFLOW_JOB_ATTEMPTS=0
-BACKTEST_EXECUTION_MODE=auto
-
-# Broker OAuth callback URLs
-ALPACA_REDIRECT_URI=http://localhost:8000/api/oauth/alpaca/callback
-BINANCE_REDIRECT_URI=http://localhost:8000/api/oauth/binance/callback
-SCHWAB_REDIRECT_URI=http://localhost:8000/api/oauth/schwab/callback
-`;
+    // Keep backend defaults in one place so setup and manual installs agree.
+    const existingBackendEnv = this.parseEnvFile(
+      path.join(this.projectRoot, "coreza-backend", ".env"),
+    );
+    const backendValues = {
+      ...existingBackendEnv,
+      SUPABASE_URL: this.config.supabaseUrl,
+      SUPABASE_PROJECT_ID: this.config.projectId,
+      SUPABASE_PUBLISHABLE_KEY: this.config.supabasePublishableKey,
+      SUPABASE_SECRET_KEY: this.config.supabaseSecretKey,
+      COREZA_ENCRYPTION_KEY: this.config.encryptionKey,
+      // Retain installations using the legacy shared Redis URL.
+      REDIS_QUEUE_URL: existingBackendEnv.REDIS_QUEUE_URL || existingBackendEnv.REDIS_URL,
+      REDIS_CACHE_URL: existingBackendEnv.REDIS_CACHE_URL || existingBackendEnv.REDIS_URL,
+    };
+    const backendTemplate = fs.readFileSync(
+      path.join(this.projectRoot, "coreza-backend", ".env.example"),
+      "utf8",
+    );
+    const backendEnv = backendTemplate.replace(
+      /^([A-Z][A-Z0-9_]*)=(.*)$/gm,
+      (_, key, defaultValue) => `${key}=${backendValues[key] || defaultValue}`,
+    );
 
     const streamEnv = `SUPABASE_URL=${this.config.supabaseUrl}
 SUPABASE_SECRET_KEY=${this.config.supabaseSecretKey}

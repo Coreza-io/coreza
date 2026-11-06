@@ -121,7 +121,6 @@ class SetupValidator {
         "workflows",
         "workflow_versions",
         "workflow_runs",
-        "node_executions",
         "user_credentials",
         "backtests",
         "live_strategies",

@@ -168,33 +168,15 @@ export class WorkflowRunRepository {
     return data;
   }
 
+  // Per-node SQL history is retired. Keep the existing response shape for
+  // callers while preserving the workflow/run access checks above this layer.
   async getNodeExecutions(workflowId: string, runId: string) {
     await this.getRunStatus(workflowId, runId);
-
-    const { data, error } = await supabase
-      .from("node_executions")
-      .select("*")
-      .eq("run_id", runId)
-      .order("started_at", { ascending: true });
-
-    if (error) {
-      throw createError("Failed to fetch node executions", 500);
-    }
-
-    return data;
+    return [];
   }
 
-  async getNodeExecutionCount(runId: string): Promise<number> {
-    const { count, error } = await supabase
-      .from("node_executions")
-      .select("*", { count: "exact", head: true })
-      .eq("run_id", runId);
-
-    if (error) {
-      return 0;
-    }
-
-    return count || 0;
+  async getNodeExecutionCount(_runId: string): Promise<number> {
+    return 0;
   }
 
   async cancelActiveRuns(workflowId: string) {

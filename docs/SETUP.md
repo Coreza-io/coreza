@@ -84,34 +84,3 @@ Upgrade existing projects explicitly before rerunning setup:
 
 Already-deployed legacy Edge Functions are not deleted by this installer. Their
 source and deployment steps have been removed from the repository.
-
-## Trades appear but Orders is empty after a fresh install
-
-The Orders tab reads `live_fills`, while closed trades are written separately to
-`trades`. Earlier fresh-install bootstraps created an unquoted `timeInForce`
-column, which PostgreSQL folded to `timeinforce`. The fill worker sends the
-case-sensitive `timeInForce` field, so those installs reject fill inserts even
-while closed trades and equity snapshots continue to persist.
-
-Inspect the actual column names in the selected project:
-
-```sql
-SELECT column_name
-FROM information_schema.columns
-WHERE table_schema = 'public' AND table_name = 'live_fills'
-  AND lower(column_name) = 'timeinforce';
-```
-
-If the result is only `timeinforce`, apply the reviewed forward migration
-`supabase/migrations/20261106093056_fix_live_fills_time_in_force_case.sql` to that
-project using the selected-migration upgrade procedure above. It renames the
-column in place, preserves rows and access controls, and reloads the Data API
-schema cache. It is a no-op when the correctly named column already exists;
-ambiguous or missing columns stop the repair for manual inspection. Setup itself
-does not apply this repair to existing projects.
-
-Afterward, verify that a new fill reaches `live_fills` and the Orders tab.
-Previously failed events may remain pending in the workflow's Redis fill stream;
-the schema repair alone does not replay or reconstruct them. Keep those streams
-intact and inspect pending events before attempting recovery. Enable
-`LOG_LEVEL=debug` when diagnosing `LiveFillRepository` / `FillSyncWorker` errors.

@@ -280,6 +280,7 @@ export class WebSocketManager {
         issuer: process.env.SUPABASE_URL
           ? `${process.env.SUPABASE_URL}/auth/v1`
           : undefined,
+        audience: process.env.SUPABASE_JWT_AUD || "authenticated",
       });
 
       const userId = payload.sub;

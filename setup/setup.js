@@ -240,26 +240,24 @@ class CorezaSetup {
 
     this.loadExistingCredentials();
 
-    // 1. Project URL
-    if (this.config.supabaseUrl) {
-      console.log(
-        `Using existing Supabase Project URL: ${this.config.supabaseUrl}`,
-      );
-    } else {
-      this.config.supabaseUrl = (
-        await question("Supabase Project URL: ")
-      ).trim();
-    }
-    const urlMatch = this.config.supabaseUrl.match(
+    // 1. Project ID (also accept a full project URL for compatibility)
+    const existingProject = this.config.supabaseUrl || this.config.projectId;
+    const projectInput = existingProject
+      ? existingProject.trim()
+      : (await question("Supabase Project ID: ")).trim();
+    const urlMatch = projectInput.match(
       /^https:\/\/([a-z0-9]+)\.supabase\.co\/?$/,
     );
-    if (!urlMatch) {
+    const projectId = urlMatch ? urlMatch[1] : projectInput;
+    if (!/^[a-z0-9]{20}$/.test(projectId)) {
       throw new Error(
-        "Invalid Supabase URL. Expected format: https://<project-ref>.supabase.co",
+        "Invalid Supabase Project ID. Enter the 20-character project ref or https://<project-ref>.supabase.co",
       );
     }
-    this.config.projectId = urlMatch[1];
+    this.config.projectId = projectId;
+    this.config.supabaseUrl = `https://${projectId}.supabase.co`;
     console.log(`✅ Project ID: ${this.config.projectId}`);
+    console.log(`✅ Project URL: ${this.config.supabaseUrl}`);
 
     // 2. Publishable key
     if (this.config.supabasePublishableKey) {

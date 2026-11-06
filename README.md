@@ -164,50 +164,6 @@ project reference, or select your project in the Supabase dashboard.
 
 > `SUPABASE_ACCESS_TOKEN` is an **account access token**, not a publishable/anon/service-role/secret key.
 
-### 1. Environment Setup
-
-```bash
-# Copy and configure environment files
-node setup/setup.js
-
-# setup writes .env files for frontend/backend/market-stream-service
-```
-
-### 2. Install Dependencies
-
-```bash
-# Frontend dependencies
-npm install
-
-# Backend dependencies
-cd coreza-backend
-npm install
-cd ..
-```
-
-### 3. Database Setup
-
-Run `node setup/setup.js` for a fresh Supabase project. Setup stages only the
-current bootstrap schema, including AI Agent chat memory, workflow hierarchy,
-reporting OHLC and selected-market preferences. It does not create retired tables
-or deploy Edge Functions, and it leaves repository migrations intact.
-
-For an existing project, setup checks compatibility without changing its schema
-or migration history. Apply selected forward upgrades explicitly using the
-[installation and upgrade guide](docs/SETUP.md); rerunning setup does not replay
-historical migrations or automatically apply retirement migrations.
-
-### 4. Start Development Servers
-
-```bash
-# Terminal 1: Frontend
-npm run dev
-
-# Terminal 2: Backend
-cd coreza-backend
-npm run dev
-```
-
 ## 📁 Project Structure
 
 ```

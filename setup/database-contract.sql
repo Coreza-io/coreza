@@ -108,6 +108,10 @@ SELECT (
       AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_depend d WHERE d.classid='pg_catalog.pg_class'::regclass AND d.objid=c.oid AND d.deptype='e'))
   + (SELECT count(*) FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
     WHERE n.nspname='public'
+      -- This Supabase RLS helper can pre-exist on an otherwise fresh project.
+      -- Ignore only its zero-argument form for fresh-install classification;
+      -- all other public functions and every public relation still count.
+      AND NOT (p.proname='rls_auto_enable' AND p.pronargs=0)
       AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_depend d WHERE d.classid='pg_catalog.pg_proc'::regclass AND d.objid=p.oid AND d.deptype='e'))
 )::integer AS public_objects,
   pg_catalog.to_regclass('supabase_migrations.schema_migrations') IS NOT NULL AS history_present,

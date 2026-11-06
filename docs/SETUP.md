@@ -11,8 +11,12 @@ encryption key.
 
 Setup inspects the selected project through the Supabase Management API's
 read-only SQL endpoint. A fresh project must have no application objects in
-`public` and no existing migration history table. If the inspection fails or
-returns an unknown format, setup stops before attempting schema changes.
+`public` and no existing migration history table. The preflight ignores the
+zero-argument `public.rls_auto_enable()` helper when counting public objects,
+as it can be present on an otherwise unused Supabase project. This exception
+does not drop or modify the helper, permit other public objects, or bypass
+the migration-history check. If the inspection fails or returns an unknown
+format, setup stops before attempting schema changes.
 
 For an empty project, setup stages only `setup/database-schema.sql` as
 `00000000000000_coreza_initial_schema.sql` in a temporary workspace with the

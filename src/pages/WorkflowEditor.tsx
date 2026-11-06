@@ -109,6 +109,7 @@ import { getTemplate, isValidTemplate } from "@/templates/workflows";
 import { reconcileNodeValues } from "@/utils/reconcileNodeValues";
 import { WorkflowExecutor } from "@/utils/workflowExecutor";
 import { useWorkflowPersistence } from "@/hooks/useWorkflowPersistence";
+import { useWorkflowVisibilitySave } from "@/hooks/useWorkflowVisibilitySave";
 import {
   ExecutionStoreProvider,
   useExecutionStore,
@@ -2615,18 +2616,16 @@ const WorkflowEditorContent = () => {
     workflowSessionId,
   ]);
 
-  // Add visibility change handler to prevent state loss on tab switching
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "hidden") {
-        // Auto-save when tab becomes hidden to preserve unsaved changes
-        if (nodes.length > 0 && authUser && hasPersistedRef.current) {
-          console.log("🔄 Tab hidden - preserving workflow state");
-          handleSaveWorkflow(); // Autosave
-        }
-      }
-    };
+  useWorkflowVisibilitySave({
+    canSave: () => Boolean(
+      authUser && workflowId && hasPersistedRef.current && nodes.length > 0 &&
+      !persistSaving && !showSaveConfirmDialog && canMutateDocument()
+    ),
+    hasUnsavedChanges: () => hasUnsavedChanges(nodes, edges, workflowName, clusters),
+    onSave: () => handleSaveWorkflow(),
+  });
 
+  useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       // Warn user if they have unsaved changes in a new workflow
       if (isNewWorkflow && nodes.length > 1) {
@@ -2636,14 +2635,12 @@ const WorkflowEditorContent = () => {
       }
     };
 
-    document.addEventListener("visibilitychange", handleVisibilityChange);
     window.addEventListener("beforeunload", handleBeforeUnload);
 
     return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("beforeunload", handleBeforeUnload);
     };
-  }, [nodes, authUser?.id, isNewWorkflow, handleSaveWorkflow]);
+  }, [nodes.length, isNewWorkflow]);
 
   return (
     <div className="flex flex-col h-[calc(100vh)] w-full">

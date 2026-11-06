@@ -170,7 +170,7 @@ CREATE TABLE IF NOT EXISTS public.live_fills (
   quote_qty numeric,
   order_id text,
   order_type text,
-  timeInForce text,
+  "timeInForce" text,
   limit_price numeric,
   stop_price numeric,
   trail_price numeric,

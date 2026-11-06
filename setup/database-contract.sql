@@ -11,7 +11,7 @@ WITH required_tables(name) AS (
     ('workflow_runs','scope_cluster_id'), ('workflow_runs','scope_snapshot'),
     ('workflow_runs','idempotency_key'), ('workflow_runs','request_fingerprint'),
     ('workflow_runs','cancel_requested_at'), ('workflow_runs','cancel_acknowledged_at'),
-    ('live_fills','algo_id'), ('portfolio','equity_open'), ('portfolio','equity_high'),
+    ('live_fills','algo_id'), ('live_fills','timeInForce'), ('portfolio','equity_open'), ('portfolio','equity_high'),
     ('portfolio','equity_low'), ('portfolio','equity_close'), ('portfolio','equity_sample_count')
 ), required_functions(signature) AS (
   VALUES ('update_updated_at_column()'), ('user_credentials_set_updated_at()'),

@@ -282,11 +282,11 @@ class CorezaSetup {
       );
     } else {
       this.config.supabaseSecretKey = (
-        await question("Supabase Secret Key or legacy service_role key [backend only]: ")
+        await question("Supabase Secret Key [backend only]: ")
       ).trim();
     }
     if (!this.config.supabaseSecretKey?.trim()) {
-      throw new Error("Missing Supabase secret or service_role key.");
+      throw new Error("Missing Supabase secret key.");
     }
     console.warn(
       "⚠️  SUPABASE_SECRET_KEY is backend-only. Never expose it in frontend files.",

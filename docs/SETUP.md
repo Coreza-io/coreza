@@ -3,7 +3,7 @@
 Run `node setup/setup.js` from the repository root. The Windows launcher runs this
 same installer before starting the services. Setup uses Supabase CLI **3.0.0**,
 with an explicit remote target for database changes. Supply the project URL,
-publishable key, secret key (or legacy `service_role` key), personal access token, and database password when
+publishable key, secret key, personal access token, and database password when
 prompted. Existing environment-file values are reused, including the backend
 encryption key.
 

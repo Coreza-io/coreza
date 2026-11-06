@@ -46,7 +46,7 @@ and scoped Live snapshots are persisted and read through `portfolio`. Live snaps
 IDs remain the upsert conflict target and successful writes mark live metrics dirty.
 The legacy `cash_snapshots` table is retired by a separate forward migration.
 Its historical rows are intentionally discarded without archiving or importing
-into `portfolio`. See the [retirement rollout](cash-snapshots-removal-plan.md#rollout).
+into `portfolio`.
 
 Statement triggers mark changed live summaries durably. The worker discovers dirty
 headers on its existing cadence; a data revision prevents stale calculations from

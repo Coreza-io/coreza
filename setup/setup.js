@@ -342,12 +342,19 @@ class CorezaSetup {
     console.log("\n📝 Setting up environment files...");
 
     const frontendEnv = `# === React App Config ===
+# Format: http://host:port or https://host; backend HTTP base URL.
 VITE_BACKEND_URL=http://localhost:8000
+# Format: https://<project-ref>.supabase.co; your public Supabase project URL.
 VITE_SUPABASE_URL=${this.config.supabaseUrl}
+# Format: Supabase project reference from its URL/dashboard; public project identifier.
 VITE_SUPABASE_PROJECT_ID=${this.config.projectId}
+# Format: sb_publishable_... (or a legacy anon JWT); public key only, never a secret/service_role key.
 VITE_SUPABASE_PUBLISHABLE_KEY=${this.config.supabasePublishableKey}
+# Values: integer 1-65535; legacy frontend entry, current frontend uses VITE_BACKEND_WS_URL.
 WEBSOCKET_PORT=8081
+# Format: ws://host:port or wss://host; backend WebSocket URL.
 VITE_BACKEND_WS_URL=ws://localhost:8081
+# Format: positive integer in milliseconds (600000 = 10 minutes); legacy setting, current frontend does not read it.
 VITE_INACTIVITY_TIMEOUT=600000
 `;
 
@@ -393,8 +400,11 @@ VITE_INACTIVITY_TIMEOUT=600000
 
     const setupLocalEnv = `# Setup/CI-only — never commit
 # Used by Supabase CLI for non-interactive login, link, and db push.
+# Format: your Supabase project reference from its URL/dashboard; required, no default.
 SUPABASE_PROJECT_ID=${this.config.projectId}
+# Format: sbp_... personal access token; setup/CLI only, not a project API key.
 SUPABASE_ACCESS_TOKEN=${this.config.supabaseAccessToken}
+# Format: the project postgres role password; required for CLI database changes, no default.
 SUPABASE_DB_PASSWORD=${this.config.supabaseDbPassword}
 `;
 

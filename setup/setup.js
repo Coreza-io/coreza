@@ -375,13 +375,21 @@ VITE_INACTIVITY_TIMEOUT=600000
       (_, key, defaultValue) => `${key}=${backendValues[key] || defaultValue}`,
     );
 
-    const streamEnv = `SUPABASE_URL=${this.config.supabaseUrl}
-SUPABASE_SECRET_KEY=${this.config.supabaseSecretKey}
-COREZA_ENCRYPTION_KEY=${this.config.encryptionKey}
-REDIS_QUEUE_URL=redis://localhost:6379
-REDIS_CACHE_URL=redis://localhost:6379
-MARKET_STREAM_PORT=8090
-`;
+    const streamRoot = path.join(this.projectRoot, "coreza-backend", "market-stream-service");
+    const existingStreamEnv = this.parseEnvFile(path.join(streamRoot, ".env"));
+    const streamValues = {
+      ...existingStreamEnv,
+      SUPABASE_URL: this.config.supabaseUrl,
+      SUPABASE_SECRET_KEY: this.config.supabaseSecretKey,
+      COREZA_ENCRYPTION_KEY: this.config.encryptionKey,
+      REDIS_QUEUE_URL: existingStreamEnv.REDIS_QUEUE_URL || existingStreamEnv.REDIS_URL,
+      REDIS_CACHE_URL: existingStreamEnv.REDIS_CACHE_URL || existingStreamEnv.REDIS_URL,
+    };
+    const streamTemplate = fs.readFileSync(path.join(streamRoot, ".env.example"), "utf8");
+    const streamEnv = streamTemplate.replace(
+      /^([A-Z][A-Z0-9_]*)=(.*)$/gm,
+      (_, key, defaultValue) => `${key}=${streamValues[key] || defaultValue}`,
+    );
 
     const setupLocalEnv = `# Setup/CI-only — never commit
 # Used by Supabase CLI for non-interactive login, link, and db push.

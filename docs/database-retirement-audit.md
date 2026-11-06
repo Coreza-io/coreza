@@ -8,6 +8,7 @@ migration, not a live database deletion.
 
 | Group | Tables | Evidence and replacement |
 | --- | --- | --- |
+| Per-node SQL execution history | `node_executions` | No current writers. Compatibility endpoints return an empty list/count after workflow/run access checks; fresh setup and generated types no longer require this table. Existing tables are left in place. |
 | SQL variable persistence | `workflow_variables`, `workflow_variable_revisions`, `workflow_live_variable_state` | No application table or RPC callers remain. Editor variable scopes use `EditorVariableService` and Redis; activation markers use `ActivationRegistry`. |
 | Legacy strategy reporting | `live_trades`, `backtest_results`, `backtest_trades`, `backtest_portfolio_snapshots` | No application callers remain. Current Live and Backtest reporting use `live_strategies`, `trades` and `portfolio`. Historical rows are not automatically copied or reassigned. |
 | Legacy position history | `position_snapshots` | No application callers remain. Remove its fresh-setup definition, policies, validation requirement and generated type. |
@@ -34,7 +35,7 @@ source files are part of the same PR.
 ## Objects retained
 
 Keep the application tables: `users`, `projects`, `workflows`, `workflow_versions`,
-`workflow_runs`, `node_executions`, `user_credentials`, `backtests`, `live_fills`,
+`workflow_runs`, `user_credentials`, `backtests`, `live_fills`,
 `coreza_chat_history`, `live_strategies`, `trades` and `portfolio`.
 
 Keep workflow save/readiness RPCs and all current trigger functions, even when

@@ -136,41 +136,6 @@ export interface Database {
           edge_count?: number | null;
         };
       };
-      node_executions: {
-        Row: {
-          id: string;
-          run_id: string;
-          node_id: string;
-          status: string;
-          input_payload: any;
-          output_payload: any | null;
-          error_message: string | null;
-          started_at: string;
-          finished_at: string | null;
-        };
-        Insert: {
-          id?: string;
-          run_id: string;
-          node_id: string;
-          status: string;
-          input_payload: any;
-          output_payload?: any | null;
-          error_message?: string | null;
-          started_at?: string;
-          finished_at?: string | null;
-        };
-        Update: {
-          id?: string;
-          run_id?: string;
-          node_id?: string;
-          status?: string;
-          input_payload?: any;
-          output_payload?: any | null;
-          error_message?: string | null;
-          started_at?: string;
-          finished_at?: string | null;
-        };
-      };
       user_credentials: {
         Row: {
           id: string;

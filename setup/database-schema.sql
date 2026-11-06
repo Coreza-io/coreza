@@ -101,18 +101,6 @@ CREATE TABLE IF NOT EXISTS public.workflow_runs (
   CONSTRAINT workflow_runs_scope_kind_check CHECK (scope_kind IN ('workflow', 'cluster'))
 );
 
-CREATE TABLE IF NOT EXISTS public.node_executions (
-  id uuid NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
-  run_id uuid NOT NULL REFERENCES public.workflow_runs(id) ON DELETE CASCADE,
-  node_id text NOT NULL,
-  status text NOT NULL,
-  input_payload jsonb NOT NULL,
-  output_payload jsonb,
-  started_at timestamptz NOT NULL DEFAULT now(),
-  finished_at timestamptz,
-  error_message text
-);
-
 CREATE TABLE IF NOT EXISTS public.user_credentials (
   id uuid NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id uuid NOT NULL REFERENCES public.users(user_id) ON DELETE CASCADE,
@@ -230,7 +218,6 @@ ALTER TABLE public.projects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.workflows ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.workflow_versions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.workflow_runs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.node_executions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_credentials ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.backtests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.live_fills ENABLE ROW LEVEL SECURITY;
@@ -279,7 +266,7 @@ CREATE POLICY "Users can delete versions of their own workflows" ON public.workf
     EXISTS (SELECT 1 FROM public.workflows WHERE workflows.id = workflow_versions.workflow_id AND workflows.user_id = auth.uid())
   );
 
--- Workflow runs and node executions
+-- Workflow runs
 DROP POLICY IF EXISTS "Users can view runs of their own workflows" ON public.workflow_runs;
 CREATE POLICY "Users can view runs of their own workflows" ON public.workflow_runs
   FOR SELECT USING (
@@ -300,25 +287,6 @@ CREATE POLICY "Users can update runs of their own workflows" ON public.workflow_
     auth.uid() IN (SELECT w.user_id FROM public.workflows w WHERE w.id = workflow_runs.workflow_id)
   );
 
-DROP POLICY IF EXISTS "Users can view executions of their own workflow runs" ON public.node_executions;
-CREATE POLICY "Users can view executions of their own workflow runs" ON public.node_executions
-  FOR SELECT USING (
-    auth.uid() IN (
-      SELECT w.user_id FROM public.workflows w
-      JOIN public.workflow_runs wr ON w.id = wr.workflow_id
-      WHERE wr.id = node_executions.run_id
-    )
-  );
-DROP POLICY IF EXISTS "Users can create executions for their own workflow runs" ON public.node_executions;
-CREATE POLICY "Users can create executions for their own workflow runs" ON public.node_executions
-  FOR INSERT WITH CHECK (
-    auth.uid() IN (
-      SELECT w.user_id FROM public.workflows w
-      JOIN public.workflow_runs wr ON w.id = wr.workflow_id
-      WHERE wr.id = node_executions.run_id
-    )
-  );
-
 -- User credentials
 DROP POLICY IF EXISTS "Users can view their own credentials" ON public.user_credentials;
 CREATE POLICY "Users can view their own credentials" ON public.user_credentials FOR SELECT USING (auth.uid() = user_id);
@@ -335,7 +303,7 @@ CREATE POLICY "Service role full access" ON public.user_credentials FOR ALL USIN
 DROP POLICY IF EXISTS "Users can manage own live fills" ON public.live_fills;
 CREATE POLICY "Users can manage own live fills" ON public.live_fills FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
--- (existing workflow/workflow_runs/node_executions/user_credentials policies retained)
+-- (existing workflow/workflow_runs/user_credentials policies retained)
 DROP POLICY IF EXISTS "Users can view their own workflows" ON public.workflows;
 CREATE POLICY "Users can view their own workflows" ON public.workflows FOR SELECT USING (auth.uid() = user_id);
 DROP POLICY IF EXISTS "Users can create their own workflows" ON public.workflows;
@@ -432,16 +400,16 @@ CREATE POLICY "Service role manages chat history"
 
 -- Explicit Data API privileges; RLS policies above scope authenticated access.
 REVOKE ALL ON public.users, public.projects, public.workflows,
-  public.workflow_versions, public.workflow_runs, public.node_executions,
+  public.workflow_versions, public.workflow_runs,
   public.user_credentials, public.backtests, public.live_fills FROM PUBLIC, anon, authenticated;
 GRANT SELECT ON public.users, public.projects, public.workflows,
-  public.workflow_versions, public.workflow_runs, public.node_executions,
+  public.workflow_versions, public.workflow_runs,
   public.user_credentials, public.backtests, public.live_fills TO authenticated;
 GRANT INSERT, UPDATE, DELETE ON public.users, public.projects, public.backtests,
   public.workflow_versions TO authenticated;
 GRANT DELETE ON public.workflows TO authenticated;
 GRANT ALL ON public.users, public.projects, public.workflows,
-  public.workflow_versions, public.workflow_runs, public.node_executions,
+  public.workflow_versions, public.workflow_runs,
   public.user_credentials, public.backtests, public.live_fills TO service_role;
 REVOKE EXECUTE ON FUNCTION public.handle_new_user() FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.handle_new_user() TO service_role;

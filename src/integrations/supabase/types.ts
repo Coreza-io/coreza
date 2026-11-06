@@ -195,50 +195,6 @@ export type Database = {
         Relationships: []
       }
 
-      node_executions: {
-        Row: {
-          error_message: string | null
-          finished_at: string | null
-          id: string
-          input_payload: Json
-          node_id: string
-          output_payload: Json | null
-          run_id: string
-          started_at: string
-          status: string
-        }
-        Insert: {
-          error_message?: string | null
-          finished_at?: string | null
-          id?: string
-          input_payload: Json
-          node_id: string
-          output_payload?: Json | null
-          run_id: string
-          started_at?: string
-          status: string
-        }
-        Update: {
-          error_message?: string | null
-          finished_at?: string | null
-          id?: string
-          input_payload?: Json
-          node_id?: string
-          output_payload?: Json | null
-          run_id?: string
-          started_at?: string
-          status?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "node_executions_run_id_fkey"
-            columns: ["run_id"]
-            isOneToOne: false
-            referencedRelation: "workflow_runs"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       projects: {
         Row: {
           created_at: string

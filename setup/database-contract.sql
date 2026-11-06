@@ -1,7 +1,7 @@
 -- Read-only installer preflight and post-install contract inventory.
 WITH required_tables(name) AS (
   VALUES ('users'), ('projects'), ('workflows'), ('workflow_versions'),
-    ('workflow_runs'), ('node_executions'), ('user_credentials'), ('backtests'),
+    ('workflow_runs'), ('user_credentials'), ('backtests'),
     ('live_fills'), ('coreza_chat_history'), ('live_strategies'), ('trades'), ('portfolio')
 ), required_columns(table_name, column_name) AS (
   VALUES ('users','selected_markets'), ('workflows','revision'),

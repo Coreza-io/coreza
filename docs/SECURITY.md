@@ -55,15 +55,6 @@ All tables implement comprehensive RLS policies:
 CREATE POLICY "workflow_access" ON workflows
 FOR ALL USING (auth.uid() = user_id);
 
--- Execution logs are user-scoped
-CREATE POLICY "execution_access" ON node_executions
-FOR SELECT USING (
-  auth.uid() IN (
-    SELECT w.user_id FROM workflows w
-    JOIN workflow_runs wr ON w.id = wr.workflow_id
-    WHERE wr.id = node_executions.run_id
-  )
-);
 ```
 
 #### Data Protection

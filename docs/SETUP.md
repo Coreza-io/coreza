@@ -39,6 +39,9 @@ before pushing that single bootstrap, then checks the database contract in
 `setup/database-contract.sql`. The temporary workspace is removed afterward;
 repository migration files are never deleted, regenerated or replayed.
 
+`node_executions` is no longer created or required by setup; existing copies are
+left in place. Per-node SQL history endpoints retain their empty response shape.
+
 The bootstrap includes the active workflow tables and revision/save RPC,
 hierarchy writer guard/readiness, run validation and partial schedule-key index,
 shared Live/Backtest reporting, equity OHLC fields, selected-market preferences,

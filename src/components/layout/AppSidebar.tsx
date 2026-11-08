@@ -201,7 +201,7 @@ export function AppSidebar() {
             >
               <h2 className="text-xl font-bold">Coreza</h2>
               <p className="text-xs text-sidebar-foreground/70">
-                Trading Platform
+                Trading Automation Platform
               </p>
             </motion.div>
           )}

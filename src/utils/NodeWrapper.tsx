@@ -13,7 +13,7 @@ import { ConnectionDragContext } from "@/contexts/ConnectionDragContext";
 import { NodePortalContainerContext } from "@/contexts/NodePortalContainerContext";
 import InputPanel from "@/utils/InputPanel";
 import OutputPanel from "@/utils/OutputPanel";
-import { Handle, Position, useReactFlow, useStore } from "@xyflow/react";
+import { Handle, Position, useReactFlow, useStore, useUpdateNodeInternals } from "@xyflow/react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -182,6 +182,12 @@ const NodeWrapper: React.FC<NodeWrapperProps> = ({
   useEffect(() => setIsExpanded(false), [scopeKey, nodeId]); // Start collapsed by default
   const runtimeHost = useStore(useCallback(state => !!nodeId && state.nodeLookup.get(nodeId)?.style?.visibility === "hidden", [nodeId]));
   const presentationExpanded = isExpanded && !runtimeHost;
+  const updateNodeInternals = useUpdateNodeInternals();
+  const handleLayoutKey = JSON.stringify(handles.map(({ id, type, position }) => [id, type, position]));
+  // Tool mode swaps handles without resizing the card, so refresh cached bounds.
+  useEffect(() => {
+    if (nodeId) updateNodeInternals(nodeId);
+  }, [nodeId, handleLayoutKey, updateNodeInternals]);
   useNodeExpansion(nodeId, presentationExpanded);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isFlashing, setIsFlashing] = useState(false);

@@ -105,7 +105,7 @@ const mapNormalizedSnapshots = (raw: any[], strategyId: string, normalized: Retu
   return rows;
 };
 
-/** Historical selection always wins; all children use the validated header ID. */
+/** Historical selection always wins; children use the validated strategy/execution IDs. */
 export const useLiveStrategyDetail = (workflowId?: string, enabled = true, executionId?: string | null) => {
   const { user } = useAuth();
   const instanceId = useId();
@@ -119,6 +119,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true, execu
   const [rawFills, setRawFills] = useState<any[]>([]);
   const [snapshots, setSnapshots] = useState<PortfolioSnapshot[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedFillExecutionId, setSelectedFillExecutionId] = useState<string | null>(null);
   const [chartSourceKey, setChartSourceKey] = useState("");
   const [chartDiagnostics, setChartDiagnostics] = useState({ invalidRows: 0, duplicateRows: 0 });
   const [loading, setLoading] = useState(false);
@@ -195,6 +196,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true, execu
       setChartSourceKey(JSON.stringify([series[0]?.broker, series[0]?.credential_id, series[0]?.base_currency]));
       setBacktest(nextBacktest); setRawFills(fills); setTrades(nextTrades);
       setSnapshots(nextSnapshots); setMetrics(nextMetrics); setSelectedId(header.id);
+      setSelectedFillExecutionId(header.execution_id);
       loadedScope.current = scopeKey;
       setLastCheckedAt(Date.now());
     } catch (err: any) {
@@ -204,7 +206,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true, execu
         // A transient background failure must not destroy a loaded chart/viewport.
         const unavailable = ["PGRST116", "42501", "PGRST301", "PGRST302", "PGRST303"].includes(err?.code) || [401, 403, 404].includes(err?.status);
         if (loadedScope.current !== scopeKey || unavailable) {
-          loadedScope.current = null; setLastCheckedAt(null); setSelectedId(null);
+          loadedScope.current = null; setLastCheckedAt(null); setSelectedId(null); setSelectedFillExecutionId(null);
           setBacktest(null); setMetrics(null); setTrades([]); setRawFills([]); setSnapshots([]);
           setChartSourceKey(""); setChartDiagnostics({ invalidRows: 0, duplicateRows: 0 });
         }
@@ -214,7 +216,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true, execu
   const loadData = useScopedLoader(scopeKey, performLoad);
   useEffect(() => {
     loadedScope.current = null; setLastCheckedAt(null);
-    setSelectedId(null); setChartSourceKey(""); setChartDiagnostics({ invalidRows: 0, duplicateRows: 0 }); setBacktest(null); setMetrics(null); setTrades([]); setSnapshots([]); setRawFills([]); setError(null); setLoading(false);
+    setSelectedId(null); setSelectedFillExecutionId(null); setChartSourceKey(""); setChartDiagnostics({ invalidRows: 0, duplicateRows: 0 }); setBacktest(null); setMetrics(null); setTrades([]); setSnapshots([]); setRawFills([]); setError(null); setLoading(false);
     if (enabled && user && workflowId) void loadData();
   }, [enabled, user?.id, workflowId, executionId, loadData]);
   useEffect(() => {
@@ -233,11 +235,13 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true, execu
     // Supabase reuses an existing channel with the same topic. Async teardown
     // must not let Strict Mode/remounts reuse or unsubscribe a new subscription.
     const channel = supabase.channel(`strategy-detail-${user.id}-${workflowId}-${selectedId ?? "current"}-${instanceId}-${++channelGeneration.current}`);
-    if (selectedId) {
+    if (selectedId && loadedScope.current === scopeKey) {
       channel.on("postgres_changes", { event: "*", schema: "public", table: "live_strategies", filter: `id=eq.${selectedId}` }, refresh)
         .on("postgres_changes", { event: "*", schema: "public", table: "trades", filter: `live_strategy_id=eq.${selectedId}` }, refresh)
-        .on("postgres_changes", { event: "*", schema: "public", table: "portfolio", filter: `live_strategy_id=eq.${selectedId}` }, refresh)
-        .on("postgres_changes", { event: "*", schema: "public", table: "live_fills", filter: `execution_id=eq.${selectedId}` }, refresh);
+        .on("postgres_changes", { event: "*", schema: "public", table: "portfolio", filter: `live_strategy_id=eq.${selectedId}` }, refresh);
+      if (selectedFillExecutionId) {
+        channel.on("postgres_changes", { event: "*", schema: "public", table: "live_fills", filter: `execution_id=eq.${selectedFillExecutionId}` }, refresh);
+      }
     }
     if (!executionId) channel.on("postgres_changes", { event: "UPDATE", schema: "public", table: "workflows", filter: `id=eq.${workflowId}` }, refresh);
     channel.subscribe(status => { if (status === "SUBSCRIBED") refresh(); });
@@ -261,7 +265,7 @@ export const useLiveStrategyDetail = (workflowId?: string, enabled = true, execu
       window.removeEventListener("online", refresh);
       window.removeEventListener("coreza-live-session-updated", sessionUpdate);
     };
-  }, [enabled, user?.id, workflowId, executionId, selectedId, loadData, instanceId]);
+  }, [enabled, user?.id, workflowId, executionId, selectedId, selectedFillExecutionId, scopeKey, loadData, instanceId]);
   // Hide prior-owner state immediately, before scope-reset effects run.
   const current = loadedScope.current === scopeKey;
   return { backtest: current ? backtest : null, metrics: current ? metrics : null,

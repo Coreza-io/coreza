@@ -25,10 +25,6 @@ import { RedisKeys } from "../infra/redisKeys";
 import {
   StreamExecutionRequest,
 } from "../types/streaming";
-import {
-  buildCryptoSymbols,
-  normalizeSymbolList,
-} from "../utils/symbolHelpers";
 import { resolveStreamSourceId } from "./helpers/streamSource";
 
 const router = express.Router();
@@ -389,16 +385,9 @@ router.post("/:source/subscribe", async (req, res) => {
         },
       );
 
-    const resolvedSymbols = resolveSymbols(source, assetType, crypto_base ?? symbols, () => {
-      const cryptoSymbols = buildCryptoSymbols(assetType, crypto_base, crypto_quote);
-      return cryptoSymbols.length > 0 ? cryptoSymbols : symbols;
+    const resolvedSymbols = resolveSymbols(source, {
+      assetType, symbols, cryptoBase: crypto_base, cryptoQuote: crypto_quote,
     });
-    // const parsedMarketSymbols = normalizeSymbolList(resolvedSymbols);
-    // if (marketstreamType.length > 0 && parsedMarketSymbols.length === 0) {
-    //   return res.status(400).json({
-    //     error: "At least one symbol is required for market streams",
-    //   });
-    // }
     // if (tradingstreamType.includes("account_activity") && !account_id && !accountHash) {
     //   return res.status(400).json({ error: "account_id is required for account_activity" });
     // }
@@ -558,9 +547,8 @@ router.post("/:source/unsubscribe", async (req, res) => {
           newsStreamType: [] as string[],
         },
       );
-    const resolvedSymbols = resolveSymbols(source, assetType, crypto_base ?? symbols, () => {
-      const cryptoSymbols = buildCryptoSymbols(assetType, crypto_base, crypto_quote);
-      return cryptoSymbols.length > 0 ? cryptoSymbols : symbols;
+    const resolvedSymbols = resolveSymbols(source, {
+      assetType, symbols, cryptoBase: crypto_base, cryptoQuote: crypto_quote,
     });
 
     let result;
@@ -771,9 +759,8 @@ router.post("/:source/register", async (req, res) => {
     }
 
     // Parse symbols (crypto-aware)
-    const parsedSymbols: string[] = resolveSymbols(source, assetType, crypto_base ?? symbols, () => {
-      const cryptoSymbols = buildCryptoSymbols(assetType, crypto_base, crypto_quote);
-      return cryptoSymbols.length > 0 ? cryptoSymbols : normalizeSymbolList(symbols);
+    const parsedSymbols: string[] = resolveSymbols(source, {
+      assetType, symbols, cryptoBase: crypto_base, cryptoQuote: crypto_quote,
     });
 
     // Dhan nodes historically send `stream_types`; most broker nodes send `stream_type`.

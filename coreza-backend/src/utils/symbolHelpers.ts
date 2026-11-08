@@ -31,6 +31,13 @@ export function buildCryptoSymbols(
  * Normalize a symbol input (string or array) into a clean array.
  */
 export function normalizeSymbolList(symbols: unknown): string[] {
+  // Subscription inputs may arrive as JSON-encoded arrays as well as CSV.
+  if (typeof symbols === "string") {
+    try {
+      const parsed: unknown = JSON.parse(symbols);
+      if (Array.isArray(parsed)) symbols = parsed;
+    } catch { /* Plain symbols/CSV are handled below. */ }
+  }
   if (Array.isArray(symbols)) {
     return symbols.map((s) => String(s).trim().toUpperCase()).filter(Boolean);
   }

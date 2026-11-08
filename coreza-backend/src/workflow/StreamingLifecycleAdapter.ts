@@ -13,10 +13,9 @@ import { WorkflowEdge, WorkflowNode } from "../nodes/types";
 import { RegistrationService } from "../services/RegistrationService";
 import { bullMqJobQueue as jobQueue } from "../infra/jobQueue/jobQueueManager";
 import { SubscriptionService } from "../services/SubscriptionService";
-import { parseSymbols, resolveStreamSourceId } from "./subscriptionPolicy";
+import { resolveStreamSourceId } from "./subscriptionPolicy";
 import { classifyTrigger, findStreamingDataNodes } from "./triggerClassifier";
 import { RedisKeys } from "../infra/redisKeys";
-import { buildCryptoSymbols } from "../utils/symbolHelpers";
 import logger from "../utils/logger";
 import { MAX_LISTENERS_PER_USER } from "../config/streaming";
 import { OrderOwnerRegistry } from "../services/OrderOwnerRegistry";
@@ -157,11 +156,10 @@ export class StreamingLifecycleAdapter {
     }
 
     // --- Resolve symbols (standard + crypto fallback) ---
-    const symbols = resolveSymbols(sourceId, nodeValues.assetType, nodeValues.crypto_base ?? nodeValues.symbols, () => {
-      const parsed = parseSymbols(nodeValues.symbols);
-      return parsed.length === 0 && nodeValues.assetType === "crypto"
-        ? buildCryptoSymbols(nodeValues.assetType, nodeValues.crypto_base, nodeValues.crypto_quote)
-        : parsed;
+    const symbols = resolveSymbols(sourceId, {
+      assetType: nodeValues.assetType, symbols: nodeValues.symbols,
+      cryptoBase: nodeValues.crypto_base, cryptoQuote: nodeValues.crypto_quote,
+      preferSymbols: true,
     });
 
     const streamType = normalizeStreamTypeList(
@@ -414,8 +412,11 @@ export class StreamingLifecycleAdapter {
       if (!sourceId) {
         continue;
       }
-      const symbolArray = resolveSymbols(sourceId, nodeValues.assetType,
-        nodeValues.crypto_base ?? nodeValues.symbols, () => parseSymbols(nodeValues.symbols));
+      const symbolArray = resolveSymbols(sourceId, {
+        assetType: nodeValues.assetType, symbols: nodeValues.symbols,
+        cryptoBase: nodeValues.crypto_base, cryptoQuote: nodeValues.crypto_quote,
+        preferSymbols: true,
+      });
 
       const streamTypes = normalizeStreamTypeList(
         nodeValues.stream_type ?? nodeValues.stream_types,

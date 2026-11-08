@@ -100,10 +100,14 @@ Before a production build, set these public frontend values in the build environ
 - `VITE_BACKEND_URL`: a complete public URL without a trailing slash. For the
   same-origin Nginx path, use `https://app.example.com/api`.
 - `VITE_WS_URL`: the public WebSocket URL, such as `wss://app.example.com/ws`.
-  All frontend socket consumers honor this setting, including the consumer with
-  the legacy `VITE_BACKEND_WS_URL` fallback.
+  All frontend socket consumers honor this setting. For local development, setup
+  generates `VITE_WS_URL=ws://localhost:8081`.
 - `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`: the public Supabase
   configuration. Never supply a secret/service-role key to a frontend build.
+
+For existing frontend `.env` files, rename `VITE_BACKEND_WS_URL` to `VITE_WS_URL`
+and remove the unused frontend `WEBSOCKET_PORT` entry. The backend's
+`WEBSOCKET_PORT` remains its listener setting; the frontend uses the public URL.
 
 Vite embeds these settings at build time; changing container runtime variables
 requires rebuilding the frontend. Local development keeps its existing localhost

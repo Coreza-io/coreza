@@ -59,7 +59,7 @@ export async function startManualAgentActivity(payload: Record<string, any>, tok
     signal?.addEventListener("abort", cancel, { once: true });
     const api = new URL(import.meta.env.VITE_BACKEND_URL || "http://localhost:8000");
     // Use the backend's dedicated WebSocket port, not the editor/HTTP port.
-    const wsUrl = import.meta.env.VITE_WS_URL || import.meta.env.VITE_BACKEND_WS_URL
+    const wsUrl = import.meta.env.VITE_WS_URL
       || `${api.protocol === "https:" ? "wss:" : "ws:"}//${api.hostname}:${import.meta.env.VITE_WS_PORT || "8081"}`;
     socket = new WebSocket(`${wsUrl}?token=${encodeURIComponent(token)}`);
     await new Promise<void>(resolve => {

@@ -34,7 +34,7 @@ const ExecutionStoreAccessContext = createContext<{
 const EMPTY_NODE_DATA: NodeExecutionData = Object.freeze({});
 const emptySubscribe = () => () => {};
 
-const BACKEND_WS_URL = import.meta.env.VITE_WS_URL || import.meta.env.VITE_BACKEND_WS_URL || 'ws://localhost:8081';
+const BACKEND_WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8081';
 const debugLog = (...args: unknown[]) => {
   if (import.meta.env.DEV && import.meta.env.VITE_DEBUG_EXECUTION === 'true') console.debug(...args);
 };

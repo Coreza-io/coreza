@@ -373,15 +373,13 @@ export function applyFieldRows(
   if (options.abortSignal?.aborted) throw new Error("Workflow cancelled by user");
   validateRows(rows, options.nodeId);
   const hasV2Rows = rows.some(isV2);
-  // Carry payload fields forward without nesting the upstream output envelope.
-  // Keep options.input intact for expression evaluation.
-  const inputData = extractFieldInputData(options.input);
-  const inputRecord = isPlainObject(inputData) ? inputData : {};
+  // Typed rows emit only their configured fields. Keep the complete input
+  // available for expression evaluation, without copying it into the output.
   const legacyData = extractFieldInputData(options.legacyResultSeed);
   const legacyResultSeed = isPlainObject(legacyData) ? legacyData : {};
   const result: Record<string, unknown> = Object.create(null);
   const legacyResult: Record<string, unknown> = Object.create(null);
-  Object.entries(hasV2Rows ? inputRecord : legacyResultSeed).forEach(
+  if (!hasV2Rows) Object.entries(legacyResultSeed).forEach(
     ([key, value]) => defineResultValue(result, key, value),
   );
   Object.entries(legacyResultSeed).forEach(([key, value]) =>

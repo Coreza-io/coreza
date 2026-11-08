@@ -1,5 +1,3 @@
-import { resolveAlpacaStreamSymbols } from "../brokers/alpaca/cryptoOrderSymbol";
-
 /**
  * Shared symbol resolution helpers.
  * Used by both stream routes (manual test) and StreamingLifecycleAdapter (live activation).
@@ -45,17 +43,4 @@ export function normalizeSymbolList(symbols: unknown): string[] {
   }
 
   return [];
-}
-
-/** Delegate broker-specific symbol rules before applying the caller's standard policy. */
-export function resolveStreamSymbols<T>(
-  source: string,
-  assetType: unknown,
-  cryptoInput: unknown,
-  fallback: () => T,
-): string[] | T {
-  const brokerSymbols = source.split("_")[0] === "alpaca"
-    ? resolveAlpacaStreamSymbols(assetType, cryptoInput)
-    : undefined;
-  return brokerSymbols ?? fallback();
 }

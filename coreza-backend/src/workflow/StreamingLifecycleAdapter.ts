@@ -1,3 +1,4 @@
+import { resolveSymbols } from "../brokers/helpers";
 import { FillSyncWorker } from "../workers/FillSyncWorker";
 import { getRedisCache } from "../config/redis";
 import { REDIS_CHANNELS } from "../config/redisChannels";
@@ -15,7 +16,7 @@ import { SubscriptionService } from "../services/SubscriptionService";
 import { parseSymbols, resolveStreamSourceId } from "./subscriptionPolicy";
 import { classifyTrigger, findStreamingDataNodes } from "./triggerClassifier";
 import { RedisKeys } from "../infra/redisKeys";
-import { buildCryptoSymbols, resolveStreamSymbols } from "../utils/symbolHelpers";
+import { buildCryptoSymbols } from "../utils/symbolHelpers";
 import logger from "../utils/logger";
 import { MAX_LISTENERS_PER_USER } from "../config/streaming";
 import { OrderOwnerRegistry } from "../services/OrderOwnerRegistry";
@@ -156,7 +157,7 @@ export class StreamingLifecycleAdapter {
     }
 
     // --- Resolve symbols (standard + crypto fallback) ---
-    const symbols = resolveStreamSymbols(sourceId, nodeValues.assetType, nodeValues.crypto_base ?? nodeValues.symbols, () => {
+    const symbols = resolveSymbols(sourceId, nodeValues.assetType, nodeValues.crypto_base ?? nodeValues.symbols, () => {
       const parsed = parseSymbols(nodeValues.symbols);
       return parsed.length === 0 && nodeValues.assetType === "crypto"
         ? buildCryptoSymbols(nodeValues.assetType, nodeValues.crypto_base, nodeValues.crypto_quote)
@@ -413,7 +414,7 @@ export class StreamingLifecycleAdapter {
       if (!sourceId) {
         continue;
       }
-      const symbolArray = resolveStreamSymbols(sourceId, nodeValues.assetType,
+      const symbolArray = resolveSymbols(sourceId, nodeValues.assetType,
         nodeValues.crypto_base ?? nodeValues.symbols, () => parseSymbols(nodeValues.symbols));
 
       const streamTypes = normalizeStreamTypeList(

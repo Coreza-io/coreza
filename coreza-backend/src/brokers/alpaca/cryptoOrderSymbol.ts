@@ -8,8 +8,8 @@ export function validateAlpacaCryptoSymbol(value: unknown): string {
   return value.trim().toUpperCase();
 }
 
-/** Alpaca streams use full pairs directly, never base/quote construction. */
-export function resolveAlpacaStreamSymbols(assetType: unknown, input: unknown): string[] | undefined {
+/** Resolve full Alpaca crypto pairs directly, without base/quote construction. */
+export function resolveAlpacaSymbols(assetType: unknown, input: unknown): string[] | undefined {
   if (assetType !== "crypto") return undefined;
   if (input == null || (typeof input === "string" && input.trim() === "")) return [];
   const symbols = Array.isArray(input) ? input : typeof input === "string" ? input.split(",") : [input];

@@ -100,6 +100,9 @@ export interface BrokerCapabilities {
   /** Symbol normalization (e.g., Alpaca crypto slash formatting) */
   normalizeSymbol?: (symbol: string, assetType?: string) => string;
 
+  /** Resolve/validate a symbol list; undefined delegates to the caller's default policy. */
+  resolveSymbols?: (assetType: unknown, input: unknown) => string[] | undefined;
+
   /** Optional preparation for new market subscriptions; never used for unsubscribe. */
   prepareSubscriptionSymbols?: (symbols: string[], options: { exchange?: string }) => Promise<string[]>;
 

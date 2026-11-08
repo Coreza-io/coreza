@@ -1,3 +1,4 @@
+import { resolveSymbols } from "../brokers/helpers";
 import { resultSuccess, resultFailure, resultState } from "../contracts/nodeResult";
 
 /**
@@ -27,7 +28,6 @@ import {
 import {
   buildCryptoSymbols,
   normalizeSymbolList,
-  resolveStreamSymbols,
 } from "../utils/symbolHelpers";
 import { resolveStreamSourceId } from "./helpers/streamSource";
 
@@ -389,7 +389,7 @@ router.post("/:source/subscribe", async (req, res) => {
         },
       );
 
-    const resolvedSymbols = resolveStreamSymbols(source, assetType, crypto_base ?? symbols, () => {
+    const resolvedSymbols = resolveSymbols(source, assetType, crypto_base ?? symbols, () => {
       const cryptoSymbols = buildCryptoSymbols(assetType, crypto_base, crypto_quote);
       return cryptoSymbols.length > 0 ? cryptoSymbols : symbols;
     });
@@ -558,7 +558,7 @@ router.post("/:source/unsubscribe", async (req, res) => {
           newsStreamType: [] as string[],
         },
       );
-    const resolvedSymbols = resolveStreamSymbols(source, assetType, crypto_base ?? symbols, () => {
+    const resolvedSymbols = resolveSymbols(source, assetType, crypto_base ?? symbols, () => {
       const cryptoSymbols = buildCryptoSymbols(assetType, crypto_base, crypto_quote);
       return cryptoSymbols.length > 0 ? cryptoSymbols : symbols;
     });
@@ -771,7 +771,7 @@ router.post("/:source/register", async (req, res) => {
     }
 
     // Parse symbols (crypto-aware)
-    const parsedSymbols: string[] = resolveStreamSymbols(source, assetType, crypto_base ?? symbols, () => {
+    const parsedSymbols: string[] = resolveSymbols(source, assetType, crypto_base ?? symbols, () => {
       const cryptoSymbols = buildCryptoSymbols(assetType, crypto_base, crypto_quote);
       return cryptoSymbols.length > 0 ? cryptoSymbols : normalizeSymbolList(symbols);
     });

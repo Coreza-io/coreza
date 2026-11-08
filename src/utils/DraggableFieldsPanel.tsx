@@ -92,7 +92,7 @@ const DraggableFieldsPanel: React.FC<Props> = ({ data, onDragStart, parentKey = 
               }} onDragEnd={() => document.body.classList.remove("cursor-grabbing", "select-none")}>{label}</div>
             <span className="text-xs text-muted-foreground break-all">{nested ? Array.isArray(value) ? `[${value.length} items]` : "{…}" : text(value)}</span>
           </div>
-          {nested && isExpanded && budget.entries > 0 && budget.characters > 0 && <div className="ml-4">{renderBranch(value, fullSegments, depth + 1)}</div>}
+          {nested && isExpanded && budget.entries > 0 && budget.characters > 0 && <div className="mt-2 ml-4">{renderBranch(value, fullSegments, depth + 1)}</div>}
         </div>;
       })}
       {length > pageSize && <div className="ml-2 flex items-center gap-2 text-xs">

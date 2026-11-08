@@ -171,5 +171,17 @@ export function buildEquityChartData(
     candle.returnSpansGap = index > 0 && candles[index - 1].endMs < candle.startMs;
     candle.isProvisional = context.mode === "live" && context.active && index === candles.length - 1 && now >= candle.startMs && now < candle.endMs;
   }
-  return { candles, interval, candleAvailable: !closeOnly, unavailableReason, diagnostics };
+  // Filter only after computing returns from the complete observation history.
+  // Flat live buckets must not enter the chart, histogram, tooltip lookup or table.
+  const visibleCandles: EquityCandle[] = [];
+  let spansGap = false;
+  for (const candle of candles) {
+    spansGap ||= candle.returnSpansGap;
+    if (context.mode === "live" && candle.returnBaseline !== null
+      && candle.returnBaseline === candle.close
+      && candle.high === candle.close && candle.low === candle.close) continue;
+    visibleCandles.push({ ...candle, returnSpansGap: visibleCandles.length > 0 && spansGap });
+    spansGap = false;
+  }
+  return { candles: visibleCandles, interval, candleAvailable: !closeOnly, unavailableReason, diagnostics };
 }

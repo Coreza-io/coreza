@@ -780,6 +780,7 @@ export class PortfolioExecutor implements INodeExecutor {
           avgFillPrice: toNumber(position.avg_entry_price) ?? 0,
           side,
           currentPrice: toNumber(position.current_price),
+          markObservedAt: Date.now(),
         });
 
         syncedPositions.push({

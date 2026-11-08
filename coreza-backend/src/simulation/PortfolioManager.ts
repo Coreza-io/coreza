@@ -277,7 +277,11 @@ export class PortfolioManager {
   private positionScopes = new Map<string, string>();
   private orderScopes = new Map<string, string>();
   private accountScope?: string;
-  private positionMarkTimes = new Map<string, number>();
+  // Independent market/broker-position observations only; never fill timestamps.
+  private positionMarketMarks = new Map<string, { price: number; observedAt: number }>();
+  // Gross acquisition units attributable to remaining inventory, including units
+  // withheld as fees. Valuation-only: never changes accounting quantity or cost.
+  private valuationGrossQuantities = new Map<string, string>();
   private fillTotalsActive = false;
   private realizedTotalExact = "0";
   private feesTotalExact = "0";
@@ -393,12 +397,21 @@ export class PortfolioManager {
     const cashNumber = cash.toNumber();
     const exactPosition = calculated.position;
     let nextPosition: PositionState | undefined;
+    let valuationGrossQuantity: string | undefined;
+    const independentMark = this.positionMarketMarks.get(input.symbol);
+    const useIndependentMark = independentMark != null && independentMark.observedAt > Date.parse(input.timestamp);
     if (exactPosition) {
       const held = decimal(exactPosition.quantity).toNumber();
       const average = decimal(exactPosition.cost).div(exactPosition.quantity).toNumber();
-      const mark = previousPosition && (this.positionMarkTimes.get(input.symbol) ?? -Infinity) > Date.parse(input.timestamp) ? previousPosition.currentPrice : price;
-      const marketValue = decimal(mark).mul(exactPosition.quantity).toNumber();
-      const unrealizedPnl = decimal(mark).mul(exactPosition.quantity).sub(exactPosition.cost).toNumber();
+      const previousGross = decimal(this.valuationGrossQuantities.get(input.symbol) ?? previousCost?.quantity ?? 0);
+      valuationGrossQuantity = (side === "buy" ? previousGross.add(fill.quantity)
+        : previousGross.mul(exactPosition.quantity).div(previousCost!.quantity)).toString();
+      const valuationMark = useIndependentMark ? decimal(independentMark.price)
+        : side === "sell" && previousPosition ? decimal(previousPosition.currentPrice)
+        : decimal(exactPosition.cost).div(valuationGrossQuantity);
+      const mark = valuationMark.toNumber();
+      const marketValue = valuationMark.mul(exactPosition.quantity).toNumber();
+      const unrealizedPnl = valuationMark.mul(exactPosition.quantity).sub(exactPosition.cost).toNumber();
       const realizedPnl = decimal(exactPosition.realized).toNumber();
       nextPosition = { symbol: input.symbol, quantity: held, side: "long", avgFillPrice: average, currentPrice: mark, marketValue,
         openCostBasis: decimal(exactPosition.cost).toNumber(), realizedPnl, unrealizedPnl, totalPnl: decimal(realizedPnl).add(unrealizedPnl).toNumber() };
@@ -447,9 +460,10 @@ export class PortfolioManager {
     this.balances.set(currency, nextBalance);
     if (nextPosition && exactPosition) {
       this.positions.set(input.symbol, nextPosition); this.openCosts.set(input.symbol, exactPosition);
-      this.positionMarkTimes.set(input.symbol, Math.max(this.positionMarkTimes.get(input.symbol) ?? -Infinity, Date.parse(input.timestamp)));
+      this.valuationGrossQuantities.set(input.symbol, valuationGrossQuantity!);
     } else {
-      this.positions.delete(input.symbol); this.openCosts.delete(input.symbol); this.currentEntryMap.delete(input.symbol); this.positionMarkTimes.delete(input.symbol);
+      this.positions.delete(input.symbol); this.openCosts.delete(input.symbol); this.currentEntryMap.delete(input.symbol); this.positionMarketMarks.delete(input.symbol);
+      this.valuationGrossQuantities.delete(input.symbol);
     }
     if (closing) {
       if (trade) { this.trades.push(trade); this.pendingClosingTrades.delete(input.orderId); }
@@ -525,7 +539,8 @@ export class PortfolioManager {
   destroy(): void {
     this.nativeFees.clear(); this.orderFeeAssets.clear();
     this.fillProgress.clear(); this.acceptedFills.clear(); this.openCosts.clear(); this.exactCash.clear();
-    this.positionScopes.clear(); this.orderScopes.clear(); this.realizedBySymbol.clear(); this.positionMarkTimes.clear();
+    this.positionScopes.clear(); this.orderScopes.clear(); this.realizedBySymbol.clear(); this.positionMarketMarks.clear();
+    this.valuationGrossQuantities.clear();
     this.realizedTotalExact = "0"; this.feesTotalExact = "0"; this.realizedTotal = 0; this.feesTotal = 0; this.fillTotalsActive = false; this.accountScope = undefined;
     // Portfolio state
     this.orders.clear();
@@ -1086,12 +1101,20 @@ export class PortfolioManager {
     executionId?: string;
     positionQty?: number; // broker-truth resulting position qty
     currentPrice?: number;
+    markObservedAt?: number; // Known broker observation receipt time; absent for authored seeds.
     openCostBasis?: number;
     marketValue?: number;
     realizedPnl?: number;
     unrealizedPnl?: number;
   }): { position: PositionState | null } {
     const now = new Date().toISOString();
+    const recordMarketMark = () => {
+      if (input.markObservedAt != null && Number.isFinite(input.markObservedAt) && input.markObservedAt >= 0) {
+        this.positionMarketMarks.set(input.symbol, { price: input.currentPrice!, observedAt: input.markObservedAt });
+      } else {
+        this.positionMarketMarks.delete(input.symbol);
+      }
+    };
     const tracked = this.openCosts.get(input.symbol);
     if (tracked) {
       const target = input.positionQty != null ? decimal(input.positionQty) : decimal(tracked.quantity).add(input.side === "buy" ? input.filledQty ?? 0 : -(input.filledQty ?? 0));
@@ -1107,7 +1130,7 @@ export class PortfolioManager {
         const unrealizedPnl = mark.mul(tracked.quantity).sub(tracked.cost).toNumber();
         const totalPnl = decimal(position.realizedPnl).add(unrealizedPnl).toNumber();
         Object.assign(position, { currentPrice, marketValue, unrealizedPnl, totalPnl });
-        this.positionMarkTimes.set(input.symbol, Date.now());
+        recordMarketMark();
       }
       return { position: position ?? null };
     }
@@ -1207,6 +1230,8 @@ export class PortfolioManager {
       if (nextQty === 0) {
         this.positions.delete(input.symbol);
         this.currentEntryMap.delete(input.symbol);
+        this.positionMarketMarks.delete(input.symbol);
+        this.valuationGrossQuantities.delete(input.symbol);
         return { position: null };
       }
 
@@ -1266,6 +1291,9 @@ export class PortfolioManager {
       existing.marketValue = metrics.marketValue;
       existing.unrealizedPnl = metrics.unrealizedPnl;
       existing.totalPnl = metrics.totalPnl;
+      if (input.currentPrice != null && Number.isFinite(input.currentPrice) && input.currentPrice > 0) {
+        recordMarketMark();
+      }
 
       // Refresh entry map when a brand-new position is opened or a flip happens
       if (previousQty === 0 || isFlip(previousQty, nextQty)) {
@@ -1320,6 +1348,9 @@ export class PortfolioManager {
     };
 
     this.positions.set(input.symbol, position);
+    if (input.currentPrice != null && Number.isFinite(input.currentPrice) && input.currentPrice > 0) {
+      recordMarketMark();
+    }
     this.currentEntryMap.set(input.symbol, {
       fillId:
         input.executionId ?? input.normalizedBrokerId ?? `entry-${Date.now()}`,
@@ -1771,12 +1802,12 @@ export class PortfolioManager {
 
     for (const [symbol, price] of Object.entries(prices)) {
       const position = this.positions.get(symbol);
-      if (!position) continue;
+      if (!position || !Number.isFinite(price) || price <= 0) continue;
 
       const absQty = Math.abs(position.quantity);
 
       position.currentPrice = price;
-      this.positionMarkTimes.set(symbol, markTime);
+      this.positionMarketMarks.set(symbol, { price, observedAt: markTime });
       position.marketValue = absQty * price;
       position.unrealizedPnl = position.quantity >= 0 ? position.marketValue - position.openCostBasis :
         (position.currentPrice - position.avgFillPrice) * position.quantity;

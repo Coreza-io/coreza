@@ -29,15 +29,15 @@ function colors() {
   };
 }
 
-function displayCandles(data: (CandlestickData | WhitespaceData)[], lookup: Map<number, EquityCandle>, palette: ReturnType<typeof colors>) {
+function displayCandles(data: (CandlestickData | WhitespaceData)[], lookup: Map<number, EquityCandle>, palette: ReturnType<typeof colors>, live: boolean) {
   return data.map(point => {
     const candle = typeof point.time === "number" ? lookup.get(point.time) : undefined;
-    if (!candle || candle.sampleCount !== 1 || !("open" in point)) return point;
+    if (!candle || (!live && candle.sampleCount !== 1) || !("open" in point)) return point;
     const color = candle.returnPct === null || candle.returnPct === 0 ? palette.neutral
       : candle.returnPct < 0 ? palette.down : palette.up;
-    // Display movement between observations without inventing an intraperiod range.
-    const open = candle.returnBaseline ?? candle.close;
-    return { ...point, open, high: Math.max(open, candle.close), low: Math.min(open, candle.close),
+    // The baseline is a comparison reference; the model retains observed OHLC.
+    const open = candle.returnBaseline ?? (live ? candle.open : candle.close);
+    return { ...point, open, high: Math.max(live ? candle.high : open, open, candle.close), low: Math.min(live ? candle.low : open, open, candle.close),
       close: candle.close, color, borderColor: color, wickColor: color };
   });
 }
@@ -129,7 +129,7 @@ export function EquityHistoryChart({ model, context, currency, chartType }: {
         equity.current?.applyOptions({ upColor: palette.up, downColor: palette.down, wickUpColor: palette.up,
           wickDownColor: palette.down, borderUpColor: palette.up, borderDownColor: palette.down,
           priceFormat });
-        equity.current?.setData(displayCandles(previousTimeline.current, buckets.current, palette));
+        equity.current?.setData(displayCandles(previousTimeline.current, buckets.current, palette, context.mode === "live"));
       }
       returns.current?.applyOptions({ color: palette.blue });
       zeroLine.current?.applyOptions({ color: palette.grid });
@@ -140,7 +140,7 @@ export function EquityHistoryChart({ model, context, currency, chartType }: {
     const observer = new MutationObserver(applyTheme);
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class", "style"] });
     return () => observer.disconnect();
-  }, [theme, prefix, context.runId, chartType]);
+  }, [theme, prefix, context.runId, context.mode, chartType]);
 
   const seriesData = useMemo(() => {
     const candles: (CandlestickData | WhitespaceData)[] = [];
@@ -178,7 +178,7 @@ export function EquityHistoryChart({ model, context, currency, chartType }: {
     buckets.current = seriesData.lookup;
     setHover(null);
     returns.current.applyOptions({ priceFormat: { type: "custom", minMove: seriesData.returnMinMove, formatter: formatEquityReturn } });
-    equity.current.setData(chartType === "line" ? seriesData.line : displayCandles(seriesData.candles, seriesData.lookup, colors()));
+    equity.current.setData(chartType === "line" ? seriesData.line : displayCandles(seriesData.candles, seriesData.lookup, colors(), context.mode === "live"));
     returns.current.setData(seriesData.histogram);
     if (model.candles.length && (!fitted.current || changedInterval)) {
       if (model.candles.length > 1000) {
@@ -194,7 +194,7 @@ export function EquityHistoryChart({ model, context, currency, chartType }: {
     } else fitted.current = false;
     previousInterval.current = model.interval;
     previousTimeline.current = seriesData.candles;
-  }, [seriesData, model.interval, model.candles, context.runId, chartType]);
+  }, [seriesData, model.interval, model.candles, context.runId, context.mode, chartType]);
 
   useEffect(() => {
     equity.current?.applyOptions({ visible: showEquity });
@@ -204,11 +204,11 @@ export function EquityHistoryChart({ model, context, currency, chartType }: {
   const tableStart = Math.min(tablePage * 25, Math.max(0, Math.ceil(model.candles.length / 25) - 1) * 25);
   const tableRows = model.candles.slice(tableStart, tableStart + 25);
   const candleValues = (candle: EquityCandle) => <>
-    {chartType === "candle" && candle.sampleCount === 1 && <>
+    {chartType === "candle" && (context.mode === "live" || candle.sampleCount === 1) && <>
       <div className="font-medium">Equity change bar</div>
       <div>Comparison baseline {candle.returnBaseline === null ? "unavailable" : money(candle.returnBaseline)}</div>
       <div>Equity change {candle.returnBaseline === null ? "—" : `${candle.close < candle.returnBaseline ? "-" : "+"}${money(Math.abs(candle.close - candle.returnBaseline))}`}</div>
-      <div className="mt-1 text-muted-foreground">Observed OHLC (one sample)</div>
+      <div className="mt-1 text-muted-foreground">Observed OHLC{candle.sampleCount === 1 ? " (one sample)" : ""}</div>
     </>}
     {chartType === "candle" ? <><div>Open {money(candle.open)}</div><div>High {money(candle.high)}</div>
     <div>Low {money(candle.low)}</div><div>Close {money(candle.close)}</div></> : <div>Equity {money(candle.close)}</div>}
@@ -228,7 +228,8 @@ export function EquityHistoryChart({ model, context, currency, chartType }: {
         <Button size="sm" variant="outline" onClick={() => chart.current?.timeScale().fitContent()}>All / reset</Button>
       </div>
     </div>
-    <p className="text-xs text-muted-foreground">{chartType === "line" ? "Blue line: closing equity. " : "One-sample equity change bars span the return baseline to observed close: height shows currency movement, red for declines, green for increases, gray for zero or unavailable comparison. Multi-sample candles show observed OHLC and open-to-close direction. Bar width follows chart spacing. "}Blue bars below: period return from the previous observed bucket close; the first compares with initial capital when available.</p>
+    <p className="text-xs text-muted-foreground">{chartType === "line" ? "Blue line: closing equity. " : context.mode === "live" ? "Equity-change candles compare the bucket close with the previous observed bucket close, or initial capital for the first when available. Green shows an increase, red a decline, gray zero or unavailable comparison. Wicks include observed extremes; the baseline is a reference, not an observation. " : "One-sample equity change bars span the return baseline to observed close: height shows currency movement, red for declines, green for increases, gray for zero or unavailable comparison. Multi-sample candles show observed OHLC and open-to-close direction. Bar width follows chart spacing. "}Blue bars below: period return from the previous observed bucket close; the first compares with initial capital when available.</p>
+    {context.mode === "live" && <p className="text-xs text-muted-foreground">New fills use an acquisition-cost fallback when no qualifying market price is available. Fees can reduce equity; partial exits retain the remaining holding’s previous valuation. Existing snapshots are unchanged.</p>}
     {!model.candleAvailable && <p className="text-xs text-muted-foreground">Line uses saved closing equity observations only; unavailable OHLC is not shown.</p>}
     {chartType === "candle" && context.mode === "backtest" && (model.interval === "1W" || model.interval === "1M") && <p role="note" className="text-xs text-muted-foreground">Observed daily equity grouped into {model.interval === "1W" ? "weekly (Monday–Monday)" : "calendar-month"} candles. High/low reflect saved equity observations, not unobserved intraday extremes.</p>}
     {chartType === "candle" && context.mode === "backtest" && model.interval === "1D" && allSparse && <p role="note" className="text-xs text-muted-foreground">This run has one equity observation per day, so daily O/H/L/C are equal. Choose Auto, 1W or 1M to group observations, or rerun with intraday input data for daily equity ranges.</p>}
@@ -245,7 +246,7 @@ export function EquityHistoryChart({ model, context, currency, chartType }: {
     </div>
     <div id={summaryId} className="text-xs text-muted-foreground">
       {latest ? <><span className="font-medium">Latest bucket: {utc(latest.startMs)} UTC. </span>
-        {chartType === "candle" ? <>O {money(latest.open)}, H {money(latest.high)}, L {money(latest.low)}, C {money(latest.close)}</> : <>Equity {money(latest.close)}</>}; return {formatEquityReturn(latest.returnPct)}; {latest.sampleCount} samples{latest.isProvisional ? "; provisional" : ""}.</> : "No valid observed equity data."}
+        {chartType === "candle" ? <>Observed O {money(latest.open)}, H {money(latest.high)}, L {money(latest.low)}, C {money(latest.close)}</> : <>Equity {money(latest.close)}</>}; return {formatEquityReturn(latest.returnPct)}; {latest.sampleCount} samples{latest.isProvisional ? "; provisional" : ""}.</> : "No valid observed equity data."}
       {allSparse && <p>Each bucket has one observed valuation{chartType === "candle" ? "; observed O/H/L/C are equal. Equity change bars show movement from the comparison baseline, when available" : ""}.</p>}
       {(model.diagnostics.invalidRows > 0 || model.diagnostics.duplicateRows > 0 || model.diagnostics.foreignRows > 0) && <p>Excluded invalid rows: {model.diagnostics.invalidRows}; simultaneous duplicates: {model.diagnostics.duplicateRows}; other sources: {model.diagnostics.foreignRows}.</p>}
       <p>Equity observations omit changes between samples. Cash movements may affect returns.</p>
@@ -254,7 +255,7 @@ export function EquityHistoryChart({ model, context, currency, chartType }: {
       <summary className="cursor-pointer py-2">Inspect equity buckets as a table</summary>
       <div className="overflow-x-auto">
         <table className="w-full text-left"><caption className="sr-only">Sampled equity and period returns in UTC, {currency || "USD"}</caption>
-          <thead><tr>{["Start / end (UTC)", ...(chartType === "candle" ? ["Open", "High", "Low", "Close"] : ["Equity"]), "Return", "Samples / status"].map(label => <th key={label} scope="col" className="px-2 py-2">{label}</th>)}</tr></thead>
+          <thead><tr>{["Start / end (UTC)", ...(chartType === "candle" ? ["Observed open", "Observed high", "Observed low", "Observed close"] : ["Equity"]), "Return", "Samples / status"].map(label => <th key={label} scope="col" className="px-2 py-2">{label}</th>)}</tr></thead>
           <tbody>{tableRows.map(candle => <tr key={candle.startMs} className="border-t">
             <th scope="row" className="px-2 py-2 font-normal">{utc(candle.startMs)} / {utc(candle.endMs)}</th>
             {(chartType === "candle" ? [candle.open, candle.high, candle.low, candle.close] : [candle.close]).map((value, index) => <td key={index} className="px-2 py-2">{money(value)}</td>)}

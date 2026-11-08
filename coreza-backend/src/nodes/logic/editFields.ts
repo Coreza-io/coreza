@@ -1,13 +1,9 @@
-import { isNodeResult } from "../../contracts/nodeResult";
 import { VARIABLE_LIMITS, validateVariable, type VariableChange } from "../../variables/contract";
 import { pickTypedJsonSource } from "./typedExpressionContext";
 import { restoreExpressionTransport } from "./expressionTransport";
 import { ExpressionContext, ExpressionError, TYPED_EXPRESSION_FEATURES } from "./safeExpression";
 import { compileEditTemplate, evaluateEditTemplate } from "./editTemplate";
-import {
-  hasTypedEditFieldShape,
-  isTypedEditFieldRow,
-} from "./typedEditFieldRow";
+import { isTypedEditFieldRow } from "./typedEditFieldRow";
 import { pickJsonSource } from "../../utils/referenceResolution";
 
 export type EditFieldDataType =
@@ -37,26 +33,15 @@ export interface EditFieldRowV2 {
   valueMode: "fixed" | "expression";
   value: unknown;
 }
-export interface LegacyFieldRow {
-  left?: string;
-  operator?: "set" | "copy" | "remove";
-  right?: unknown;
-}
-export type EditFieldRow = EditFieldRowV2 | LegacyFieldRow;
+export type EditFieldRow = EditFieldRowV2;
 
 export interface EditFieldsContext extends Partial<ExpressionContext> {
   expressionContexts?: Record<string, unknown>;
-  persistent?: boolean;
-  getPersistentValue?: (key: string) => unknown;
-  setPersistentValue?: (key: string, value: unknown) => unknown;
 }
 
 export interface ApplyFieldRowsOptions {
   input: unknown;
-  legacyResultSeed: Record<string, unknown>;
   context?: EditFieldsContext;
-  /** Preserve the executor's historical read-before-write persistent Set behavior. */
-  legacyPersistentRead?: boolean;
   nodeId?: string;
   abortSignal?: AbortSignal;
 }
@@ -200,52 +185,16 @@ export function checkExpressionResult(
   );
 }
 
-const isV2 = (row: EditFieldRow): row is EditFieldRowV2 =>
-  isTypedEditFieldRow(row);
-
 const BLOCKED_DESTINATIONS = new Set(["__proto__", "prototype", "constructor"]);
 
 function validateRows(rows: EditFieldRow[], nodeId?: string): void {
   rows.forEach((row, rowIndex) => {
-    if (!row || typeof row !== "object" || Array.isArray(row)) {
-      throw new EditFieldError("Edit Fields: invalid row configuration", {
-        nodeId,
-        rowIndex,
-        fieldName: "",
-        phase: "configuration",
+    if (!isTypedEditFieldRow(row)) {
+      throw new EditFieldError("Edit Fields: expected a typed field row", {
+        nodeId, rowIndex, fieldName: "", phase: "configuration",
       });
     }
-    const typedShape = hasTypedEditFieldShape(row);
-    if (typedShape && !isV2(row)) {
-      const candidate = row as Partial<EditFieldRowV2>;
-      throw new EditFieldError("Edit Fields: invalid typed row configuration", {
-        nodeId,
-        rowIndex,
-        fieldName:
-          typeof candidate.fieldName === "string" ? candidate.fieldName : "",
-        phase: "configuration",
-      });
-    }
-    if (!typedShape) {
-      const legacy = row as LegacyFieldRow;
-      if (
-        (legacy.left !== undefined && typeof legacy.left !== "string") ||
-        (legacy.operator !== undefined &&
-          !["set", "copy", "remove"].includes(legacy.operator)) ||
-        (legacy.left && legacy.operator === undefined) ||
-        (legacy.operator === "copy" && typeof legacy.right !== "string")
-      )
-        throw new EditFieldError(
-          "Edit Fields: invalid legacy row configuration",
-          {
-            nodeId,
-            rowIndex,
-            fieldName: typeof legacy.left === "string" ? legacy.left : "",
-            phase: "configuration",
-          },
-        );
-    }
-    const fieldName = isV2(row) ? row.fieldName : row.left;
+    const fieldName = row.fieldName;
     if (fieldName && BLOCKED_DESTINATIONS.has(fieldName))
       throw new EditFieldError(
         `Edit Fields: destination field "${fieldName}" is not allowed`,
@@ -361,81 +310,18 @@ export function applyTypedFieldRow(
   }
 }
 
-/** Field input accepts a current result or an explicit business payload. */
-function extractFieldInputData(value: unknown): unknown {
-  return isNodeResult(value) ? value.data : value;
-}
-
+/** Build fresh output from configured rows; input remains available to expressions. */
 export function applyFieldRows(
   rows: EditFieldRow[],
   options: ApplyFieldRowsOptions,
 ): Record<string, unknown> {
   if (options.abortSignal?.aborted) throw new Error("Workflow cancelled by user");
   validateRows(rows, options.nodeId);
-  const hasV2Rows = rows.some(isV2);
-  // Typed rows emit only their configured fields; no rows means empty output.
-  // Keep the complete input
-  // available for expression evaluation, without copying it into the output.
-  const legacyData = extractFieldInputData(options.legacyResultSeed);
-  const legacyResultSeed = isPlainObject(legacyData) ? legacyData : {};
   const result: Record<string, unknown> = Object.create(null);
-  const legacyResult: Record<string, unknown> = Object.create(null);
-  if (rows.length > 0 && !hasV2Rows) Object.entries(legacyResultSeed).forEach(
-    ([key, value]) => defineResultValue(result, key, value),
-  );
-  Object.entries(legacyResultSeed).forEach(([key, value]) =>
-    defineResultValue(legacyResult, key, value),
-  );
-  const context = options.context ?? {};
   for (const [rowIndex, row] of rows.entries()) {
-    if (isV2(row)) {
-      if (!row.fieldName) continue;
-      const value = applyTypedFieldRow(
-        row,
-        rowIndex,
-        options.input,
-        context,
-        options.nodeId,
-      );
-      if (context.persistent && context.setPersistentValue)
-        context.setPersistentValue(row.fieldName, value);
-      defineResultValue(result, row.fieldName, value);
-      continue;
-    }
-    const fieldName = row.left;
-    const value = row.right;
-    if (!fieldName) continue;
-    if (row.operator === "set") {
-      let finalValue = value;
-      if (
-        context.persistent &&
-        context.getPersistentValue &&
-        context.setPersistentValue &&
-        options.legacyPersistentRead
-      ) {
-        const current = context.getPersistentValue(fieldName);
-        finalValue = current !== undefined ? current : value;
-        if (current !== finalValue)
-          context.setPersistentValue(fieldName, finalValue);
-      } else if (context.persistent && context.setPersistentValue)
-        context.setPersistentValue(fieldName, value);
-      defineResultValue(legacyResult, fieldName, finalValue);
-      defineResultValue(result, fieldName, finalValue);
-    } else if (
-      row.operator === "copy" &&
-      typeof value === "string" &&
-      legacyResult[value] !== undefined
-    ) {
-      if (context.persistent && context.setPersistentValue)
-        context.setPersistentValue(fieldName, legacyResult[value]);
-      defineResultValue(legacyResult, fieldName, legacyResult[value]);
-      defineResultValue(result, fieldName, legacyResult[value]);
-    } else if (row.operator === "remove") {
-      if (context.persistent && context.setPersistentValue)
-        context.setPersistentValue(fieldName, undefined);
-      delete legacyResult[fieldName];
-      delete result[fieldName];
-    }
+    if (!row.fieldName) continue;
+    const value = applyTypedFieldRow(row, rowIndex, options.input, options.context ?? {}, options.nodeId);
+    defineResultValue(result, row.fieldName, value);
   }
   if (options.abortSignal?.aborted) throw new Error("Workflow cancelled by user");
   return result;
@@ -446,14 +332,14 @@ export function stagePersistentFields(rows: EditFieldRow[], options: ApplyFieldR
   if (rows.length > VARIABLE_LIMITS.count) throw new Error("Persistent Edit Fields supports at most 128 variables");
   const names = new Set<string>();
   for (const row of rows) {
-    if (!isTypedEditFieldRow(row)) throw new Error("Persistent variables require typed Edit Fields rows; migrate legacy rows explicitly");
+    if (!isTypedEditFieldRow(row)) throw new Error("Persistent variables require typed Edit Fields rows");
     if (!row.fieldName) throw new Error("Persistent Edit Fields requires a variable name");
     validateVariable(row.fieldName, null);
     if (names.has(row.fieldName)) throw new Error(`Duplicate persistent variable name: ${row.fieldName}`);
     if (row.dataType === "array" || row.dataType === "object") throw new Error("Persistent variables support String, Number and Boolean; turn Persistent off for Array/Object fields");
     names.add(row.fieldName);
   }
-  const result = applyFieldRows(rows, { ...options, context: { ...options.context, persistent: false } });
+  const result = applyFieldRows(rows, options);
   const changes: VariableChange[] = [];
   for (const key of names) {
     const value = result[key];

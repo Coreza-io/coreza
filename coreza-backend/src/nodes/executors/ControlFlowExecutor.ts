@@ -16,7 +16,6 @@ import { ComputeService } from "../../nodes/logic/compute";
 import { LoopExecutorV2 } from "./LoopExecutorV2";
 import { ComparatorService } from "../../nodes/logic/comparator";
 import { createSuccessOutput, createErrorOutput } from "../../utils/nodeResultHelpers";
-import { isTypedEditFieldRow } from "../logic/typedEditFieldRow";
 import { applyFieldRows, stagePersistentFields } from "../logic/editFields";
 
 export class ControlFlowExecutor implements INodeExecutor {
@@ -172,28 +171,13 @@ export class ControlFlowExecutor implements INodeExecutor {
       ? resolvedParams.fields
       : [];
     const persistent = !!resolvedParams.persistent;
-    const setPersistentValue = context?.setPersistentValue
-      ? (key: string, value: unknown) => {
-          const operation = context.setPersistentValue(key, value);
-          if (this.isPromiseLike(operation))
-            throw new Error(
-              "Edit Fields persistent operations require async execution",
-            );
-          return operation;
-        }
-      : undefined;
     const outputs = context?.getAllNodeResults?.() ?? {};
     const typedContext = snapshotTypedExpressionContext(context?.nodes ?? [], id => outputs[id]);
     const options = {
       nodeId: node.id,
       abortSignal: context?.abortSignal,
       input,
-      legacyResultSeed: {},
-      legacyPersistentRead: true,
       context: {
-        persistent,
-        getPersistentValue: context?.getPersistentValue,
-        setPersistentValue,
         $nodes: outputs,
         expressionOutputs: typedContext.nodeResults,
         $state: context?.persistentValues ?? {},
@@ -201,7 +185,7 @@ export class ControlFlowExecutor implements INodeExecutor {
         nodes: typedContext.nodeIdentities,
       },
     };
-    if (persistent && fields.some(isTypedEditFieldRow)) {
+    if (persistent && fields.length > 0) {
       const staged = stagePersistentFields(fields, options);
       if (!context?.commitVariables) throw new Error("Persistent Edit Fields requires a workflow variable execution context");
       const committed = context.commitVariables(staged.changes);

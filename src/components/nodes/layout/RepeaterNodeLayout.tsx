@@ -1065,7 +1065,14 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
 
             {(isConditional || isFieldRepeater) &&
               conditions.map((cond, i) => {
-                if (isFieldRepeater && isTypedEditFieldRow(cond)) {
+                if (isFieldRepeater) {
+                  if (!isTypedEditFieldRow(cond)) return (
+                    <div key={rowKey(cond)} className="space-y-2 text-xs text-destructive">
+                      <p>Unsupported field row. Remove it and add a new field.</p>
+                      <Button type="button" variant="outline" size="sm" disabled={readOnly}
+                        onClick={() => { if (!liveReadOnly.current) removeCondition(i); }}>Remove field</Button>
+                    </div>
+                  );
                   return (
                     <EditFieldEditor
                       key={rowKey(cond)}

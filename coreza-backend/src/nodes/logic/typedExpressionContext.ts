@@ -1,3 +1,4 @@
+import { isNodeResult } from "../../contracts/nodeResult";
 import type { ReferenceNode } from "../../utils/referenceResolution";
 
 /** Snapshot canonical identities and current results once per action/preview.
@@ -35,6 +36,12 @@ export function pickTypedJsonSource(value: unknown): unknown {
     if (property && !("value" in property)) throw new Error(`Accessor envelope property "${key}" is not supported`);
     return property?.value;
   };
+  // Recognize result envelopes without invoking accessors in expression data.
+  if (Object.getOwnPropertyDescriptor(value, "status")?.value !== undefined) {
+    const shape = Object.fromEntries(Object.entries(Object.getOwnPropertyDescriptors(value))
+      .map(([key, property]) => [key, property.value]));
+    if (isNodeResult(shape)) return value;
+  }
   const json = read(value, "json"); if (json !== undefined) return json;
   const output = read(value, "output");
   const outputJson = read(output, "json"); if (outputJson !== undefined) return outputJson;

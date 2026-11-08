@@ -42,7 +42,9 @@ Likely files: `coreza-backend/src/simulation/PortfolioManager.ts`, `coreza-backe
 
 ## Implementation notes
 
-Implementation was subsequently requested. Portfolio now authors the native fill identifier as `brokerExecutionId` (Broker Execution ID). The editor uses `executionId` and `workflowSessionId` for the workflow session without a Portfolio exception. `PortfolioExecutor` maps `params.brokerExecutionId` to the internal `applyOrderEvent().executionId` and uses it for fill-reporting identity; activation context IDs remain separate. Accepted non-cumulative fills use scoped ID membership, recorded after successful accounting; cumulative progress handling is unchanged.
+Implementation was subsequently requested. Portfolio now authors the native fill identifier as `brokerExecutionId` (Broker Execution ID). The editor uses `executionId` and `workflowSessionId` for the workflow session without a Portfolio exception. `PortfolioExecutor` maps `params.brokerExecutionId` to the internal `applyOrderEvent().executionId` and uses it for fill-reporting identity; activation context IDs remain separate. Per the subsequent user correction, accepted fills in both cumulative and individual modes use scoped ID membership, recorded after successful accounting. This supersedes the original plan's exemption for cumulative snapshots. The checkbox controls accounting interpretation only; new IDs still use the existing cumulative delta calculations when checked.
+
+Reporting also uses broker ID or sequence independently of cumulative mode. A repeated accepted scoped ID is ignored even if its cumulative totals differ; successive actual fills must therefore have distinct native fill IDs, rather than reusing an order or workflow ID.
 
 Accepted-ID lookup precedes quantity/fee validation, so changed or zero-valued replay amounts cannot prevent `duplicate_execution`. New fills still undergo the existing financial validation; lifecycle-only messages do not reserve execution IDs. Duplicate events retain the existing order-status update path without reapplying financial values.
 

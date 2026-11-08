@@ -945,9 +945,7 @@ export class PortfolioExecutor implements INodeExecutor {
     if (opts.filledQty > 0 && (!nativeId || nativeId === "-1") && !validSequence) {
       throw new Error("Broker Execution ID (brokerExecutionId) or a positive execution sequence is required for fills");
     }
-    const executionKey = opts.params._cumulativeFillValues === true
-      ? ["cumulative", decimal(optionalDecimal(opts.params.filledQty) ?? 0).toString()]
-      : nativeId && nativeId !== "-1" ? ["execution", nativeId]
+    const executionKey = nativeId && nativeId !== "-1" ? ["execution", nativeId]
       : validSequence ? ["sequence", sequence]
       : ["fill", opts.filledQty, opts.fillPrice, eventTime];
     const fillId = this.buildDeterministicEventId({

@@ -312,11 +312,9 @@ export class PortfolioManager {
     const nativeId = trimmedId && trimmedId !== "-1" ? trimmedId : undefined;
     if (input.sequence != null && (!Number.isSafeInteger(input.sequence) || input.sequence < 0)) throw new Error("Execution sequence must be a nonnegative safe integer");
     const sequence = input.sequence != null && input.sequence > 0 ? input.sequence : undefined;
-    // Cumulative snapshots are identified by accepted order progress. Some
-    // brokers reuse an exchange order ID in their executionId field.
-    // Membership must not depend on a replay's quantity, price or fee. Only
+    // Membership must not depend on cumulative mode, quantity, price or fee. Only
     // successfully accounted economic fills are added to acceptedFills below.
-    const identity = !input.cumulative && (nativeId || sequence != null) ? JSON.stringify([progressKey, nativeId ?? `seq:${sequence}`]) : undefined;
+    const identity = (nativeId || sequence != null) ? JSON.stringify([progressKey, nativeId ?? `seq:${sequence}`]) : undefined;
     const duplicate = identity !== undefined && this.acceptedFills.has(identity);
     if (!duplicate && previousFeeAsset === baseAsset && input.fee != null && decimal(input.fee).compare(0) !== 0 && !input.feeAsset) {
       throw new Error("A supplied fee requires an explicit asset after a base-asset fee");

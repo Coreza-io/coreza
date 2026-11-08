@@ -1,5 +1,4 @@
-import { validateAlpacaCryptoSymbol } from "../brokers/alpaca/cryptoOrderSymbol";
-import { createError } from "../middleware/errorHandler";
+import { resolveAlpacaStreamSymbols } from "../brokers/alpaca/cryptoOrderSymbol";
 
 /**
  * Shared symbol resolution helpers.
@@ -48,13 +47,15 @@ export function normalizeSymbolList(symbols: unknown): string[] {
   return [];
 }
 
-/** Alpaca streams use full pairs directly, never base/quote construction. */
-export function validateAlpacaCryptoSymbols(input: unknown): string[] {
-  if (input == null || (typeof input === "string" && input.trim() === "")) return [];
-  const symbols = Array.isArray(input) ? input : typeof input === "string" ? input.split(",") : [input];
-  try {
-    return symbols.map(validateAlpacaCryptoSymbol);
-  } catch (error) {
-    throw createError(error instanceof Error ? error.message : "Invalid Alpaca crypto symbols", 400);
-  }
+/** Delegate broker-specific symbol rules before applying the caller's standard policy. */
+export function resolveStreamSymbols<T>(
+  source: string,
+  assetType: unknown,
+  cryptoInput: unknown,
+  fallback: () => T,
+): string[] | T {
+  const brokerSymbols = source.split("_")[0] === "alpaca"
+    ? resolveAlpacaStreamSymbols(assetType, cryptoInput)
+    : undefined;
+  return brokerSymbols ?? fallback();
 }

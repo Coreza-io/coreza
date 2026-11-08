@@ -15,7 +15,7 @@ import { SubscriptionService } from "../services/SubscriptionService";
 import { parseSymbols, resolveStreamSourceId } from "./subscriptionPolicy";
 import { classifyTrigger, findStreamingDataNodes } from "./triggerClassifier";
 import { RedisKeys } from "../infra/redisKeys";
-import { buildCryptoSymbols, validateAlpacaCryptoSymbols } from "../utils/symbolHelpers";
+import { buildCryptoSymbols, resolveStreamSymbols } from "../utils/symbolHelpers";
 import logger from "../utils/logger";
 import { MAX_LISTENERS_PER_USER } from "../config/streaming";
 import { OrderOwnerRegistry } from "../services/OrderOwnerRegistry";
@@ -156,16 +156,12 @@ export class StreamingLifecycleAdapter {
     }
 
     // --- Resolve symbols (standard + crypto fallback) ---
-    let symbols = parseSymbols(nodeValues.symbols);
-    if (sourceId.split("_")[0] === "alpaca" && nodeValues.assetType === "crypto") {
-      symbols = validateAlpacaCryptoSymbols(nodeValues.crypto_base ?? nodeValues.symbols);
-    } else if (symbols.length === 0 && nodeValues.assetType === "crypto") {
-      symbols = buildCryptoSymbols(
-        nodeValues.assetType,
-        nodeValues.crypto_base,
-        nodeValues.crypto_quote,
-      );
-    }
+    const symbols = resolveStreamSymbols(sourceId, nodeValues.assetType, nodeValues.crypto_base ?? nodeValues.symbols, () => {
+      const parsed = parseSymbols(nodeValues.symbols);
+      return parsed.length === 0 && nodeValues.assetType === "crypto"
+        ? buildCryptoSymbols(nodeValues.assetType, nodeValues.crypto_base, nodeValues.crypto_quote)
+        : parsed;
+    });
 
     const streamType = normalizeStreamTypeList(
       nodeValues.stream_type ?? nodeValues.stream_types,
@@ -417,9 +413,8 @@ export class StreamingLifecycleAdapter {
       if (!sourceId) {
         continue;
       }
-      const symbolArray = sourceId.split("_")[0] === "alpaca" && nodeValues.assetType === "crypto"
-        ? validateAlpacaCryptoSymbols(nodeValues.crypto_base ?? nodeValues.symbols)
-        : parseSymbols(nodeValues.symbols);
+      const symbolArray = resolveStreamSymbols(sourceId, nodeValues.assetType,
+        nodeValues.crypto_base ?? nodeValues.symbols, () => parseSymbols(nodeValues.symbols));
 
       const streamTypes = normalizeStreamTypeList(
         nodeValues.stream_type ?? nodeValues.stream_types,

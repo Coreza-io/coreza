@@ -27,7 +27,7 @@ import {
 import {
   buildCryptoSymbols,
   normalizeSymbolList,
-  validateAlpacaCryptoSymbols,
+  resolveStreamSymbols,
 } from "../utils/symbolHelpers";
 import { resolveStreamSourceId } from "./helpers/streamSource";
 
@@ -389,12 +389,10 @@ router.post("/:source/subscribe", async (req, res) => {
         },
       );
 
-    const isAlpacaCrypto = source.split("_")[0] === "alpaca" && assetType === "crypto";
-    const normalizedSymbols = isAlpacaCrypto
-      ? validateAlpacaCryptoSymbols(crypto_base ?? symbols)
-      : buildCryptoSymbols(assetType, crypto_base, crypto_quote);
-    const resolvedSymbols =
-      isAlpacaCrypto || normalizedSymbols.length > 0 ? normalizedSymbols : symbols;
+    const resolvedSymbols = resolveStreamSymbols(source, assetType, crypto_base ?? symbols, () => {
+      const cryptoSymbols = buildCryptoSymbols(assetType, crypto_base, crypto_quote);
+      return cryptoSymbols.length > 0 ? cryptoSymbols : symbols;
+    });
     // const parsedMarketSymbols = normalizeSymbolList(resolvedSymbols);
     // if (marketstreamType.length > 0 && parsedMarketSymbols.length === 0) {
     //   return res.status(400).json({
@@ -560,12 +558,10 @@ router.post("/:source/unsubscribe", async (req, res) => {
           newsStreamType: [] as string[],
         },
       );
-    const isAlpacaCrypto = source.split("_")[0] === "alpaca" && assetType === "crypto";
-    const normalizedSymbols = isAlpacaCrypto
-      ? validateAlpacaCryptoSymbols(crypto_base ?? symbols)
-      : buildCryptoSymbols(stream_type, crypto_base, crypto_quote);
-    const resolvedSymbols =
-      isAlpacaCrypto || normalizedSymbols.length > 0 ? normalizedSymbols : symbols;
+    const resolvedSymbols = resolveStreamSymbols(source, assetType, crypto_base ?? symbols, () => {
+      const cryptoSymbols = buildCryptoSymbols(assetType, crypto_base, crypto_quote);
+      return cryptoSymbols.length > 0 ? cryptoSymbols : symbols;
+    });
 
     let result;
     if (hasOrderUpdate) {
@@ -775,12 +771,10 @@ router.post("/:source/register", async (req, res) => {
     }
 
     // Parse symbols (crypto-aware)
-    const isAlpacaCrypto = source.split("_")[0] === "alpaca" && assetType === "crypto";
-    const cryptoSymbols = isAlpacaCrypto
-      ? validateAlpacaCryptoSymbols(crypto_base ?? symbols)
-      : buildCryptoSymbols(assetType, crypto_base, crypto_quote);
-    const parsedSymbols: string[] =
-      isAlpacaCrypto || cryptoSymbols.length > 0 ? cryptoSymbols : normalizeSymbolList(symbols);
+    const parsedSymbols: string[] = resolveStreamSymbols(source, assetType, crypto_base ?? symbols, () => {
+      const cryptoSymbols = buildCryptoSymbols(assetType, crypto_base, crypto_quote);
+      return cryptoSymbols.length > 0 ? cryptoSymbols : normalizeSymbolList(symbols);
+    });
 
     // Dhan nodes historically send `stream_types`; most broker nodes send `stream_type`.
     const streamType = normalizeStreamTypeList(stream_types ?? stream_type);

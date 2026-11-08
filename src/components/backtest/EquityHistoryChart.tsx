@@ -37,6 +37,11 @@ function displayCandles(data: (CandlestickData | WhitespaceData)[], lookup: Map<
       : candle.returnPct < 0 ? palette.down : palette.up;
     // The baseline is a comparison reference; the model retains observed OHLC.
     const open = candle.returnBaseline ?? (live ? candle.open : candle.close);
+    // Keep the time bucket without drawing a flat live candle.
+    if (live && candle.returnBaseline !== null && candle.returnBaseline === candle.close
+      && candle.high === candle.close && candle.low === candle.close) {
+      return { time: point.time };
+    }
     return { ...point, open, high: Math.max(live ? candle.high : open, open, candle.close), low: Math.min(live ? candle.low : open, open, candle.close),
       close: candle.close, color, borderColor: color, wickColor: color };
   });

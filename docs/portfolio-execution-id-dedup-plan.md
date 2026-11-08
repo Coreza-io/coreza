@@ -46,7 +46,7 @@ Implementation was subsequently requested. Portfolio now authors the native fill
 
 Accepted-ID lookup precedes quantity/fee validation, so changed or zero-valued replay amounts cannot prevent `duplicate_execution`. New fills still undergo the existing financial validation; lifecycle-only messages do not reserve execution IDs. Duplicate events retain the existing order-status update path without reapplying financial values.
 
-Individual economic fills without a native broker ID or positive safe-integer sequence are rejected before accounting or fill reporting, including late fills for retired activations. This prevents an unmapped renamed field from silently disabling deduplication. Cumulative updates and zero-quantity lifecycle messages do not require an execution ID. The Alpaca template maps Broker Execution ID to the normalized `data.order.executionId` (native `execution_id`).
+Any positive applied or reported fill without a native broker ID or positive safe-integer sequence is rejected, including late fills for retired activations. This requirement is independent of Cumulative Fill Values; the checkbox controls accounting interpretation. Cumulative snapshots with no additional quantity and zero-quantity lifecycle messages retain their existing no-fill handling. The Alpaca template maps Broker Execution ID to the normalized `data.order.executionId` (native `execution_id`).
 
 For Binance Spot **individual fills**, uncheck Cumulative Fill Values and map these Portfolio fields (replace the listener name if renamed):
 

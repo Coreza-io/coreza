@@ -348,10 +348,8 @@ VITE_SUPABASE_URL=${this.config.supabaseUrl}
 VITE_SUPABASE_PROJECT_ID=${this.config.projectId}
 # Format: sb_publishable_... (or a legacy anon JWT); public key only, never a secret/service_role key.
 VITE_SUPABASE_PUBLISHABLE_KEY=${this.config.supabasePublishableKey}
-# Values: integer 1-65535; legacy frontend entry, current frontend uses VITE_BACKEND_WS_URL.
-WEBSOCKET_PORT=8081
 # Format: ws://host:port or wss://host; backend WebSocket URL.
-VITE_BACKEND_WS_URL=ws://localhost:8081
+VITE_WS_URL=ws://localhost:8081
 # Format: positive integer in milliseconds (600000 = 10 minutes); legacy setting, current frontend does not read it.
 VITE_INACTIVITY_TIMEOUT=600000
 `;

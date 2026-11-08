@@ -188,6 +188,7 @@ function normalizeAlpacaCryptoSymbol(symbol: any, assetClass?: string): string {
 }
 
 export class PortfolioExecutor implements INodeExecutor {
+  private static pendingExplicitBaselines = new WeakMap<PortfolioManager, () => Promise<void>>();
   readonly category = "Portfolio";
   // Backtest mode is fully sync. Broker mode is async, but compiled execution
   // only calls this node in backtest mode and the adapter safely rejects Promise returns.
@@ -395,7 +396,22 @@ export class PortfolioExecutor implements INodeExecutor {
     const baseCurrency = params.base_currency || "USDT";
 
     if (operation === "create_portfolio") {
+      const posSymbols = toArray(params.position_symbol);
+      const explicitCapital = toNumber(params.balance_equity) ?? (posSymbols.length === 0 ? toNumber(params.balance_cash ?? params.cash_balance) : undefined);
+      const recordExplicitBaseline = async () => {
+        if (explicitCapital !== undefined && (context.executionMode === "live" || context.reportingExecutionId)) {
+          await LiveStrategiesRepository.recordBaseline(userId, context.workflowId, executionId, explicitCapital, {
+            broker: params.broker || "unknown", credential_id: params.credential_id || userId, base_currency: baseCurrency,
+          });
+        }
+      };
       if (pm.isBootstrapped()) {
+        // Retry the supplied baseline after a failed write without reseeding positions.
+        const retryBaseline = PortfolioExecutor.pendingExplicitBaselines.get(pm);
+        if (retryBaseline) {
+          await retryBaseline();
+          PortfolioExecutor.pendingExplicitBaselines.delete(pm);
+        }
         return createSuccessOutput({
             message: "Portfolio already initialized",
             already_created: true,
@@ -430,7 +446,6 @@ export class PortfolioExecutor implements INodeExecutor {
       }
 
       // Seed positions — supports single value or parallel arrays
-      const posSymbols = toArray(params.position_symbol);
       const posQuantities = toArray(params.position_quantity);
       const posSides = toArray(params.position_side);
       const posAvgPrices = toArray(params.position_avg_fill_price);
@@ -466,12 +481,9 @@ export class PortfolioExecutor implements INodeExecutor {
       }
 
       pm.initializeEquity(baseCurrency);
-      const explicitCapital = toNumber(params.balance_equity) ?? (posSymbols.length === 0 ? toNumber(params.balance_cash ?? params.cash_balance) : undefined);
-      if (explicitCapital !== undefined && (context.executionMode === "live" || context.reportingExecutionId)) {
-        await LiveStrategiesRepository.recordBaseline(userId, context.workflowId, executionId, explicitCapital, {
-          broker: params.broker || "unknown", credential_id: params.credential_id || userId, base_currency: baseCurrency,
-        });
-      }
+      PortfolioExecutor.pendingExplicitBaselines.set(pm, recordExplicitBaseline);
+      await recordExplicitBaseline();
+      PortfolioExecutor.pendingExplicitBaselines.delete(pm);
       return createSuccessOutput({
           message: "Portfolio created with explicit balance and position data",
           created: true,

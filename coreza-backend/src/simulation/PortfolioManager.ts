@@ -10,7 +10,7 @@
 
 import { randomUUID } from "crypto";
 import { decimal } from "../portfolio/decimal";
-import { FillInput, FillProgress, OpenCost, InventoryQuantityResolver, normalizeFill, calculatePositionFill, fillFingerprint } from "../portfolio/fillAccounting";
+import { FillInput, FillProgress, OpenCost, InventoryQuantityResolver, normalizeFill, calculatePositionFill } from "../portfolio/fillAccounting";
 import { finished } from "stream";
 import { Position, Trade } from "../backtest/simBroker/interfaces";
 import {
@@ -271,7 +271,7 @@ export class PortfolioManager {
 
   private bootstrapped = false;
   private fillProgress = new Map<string, FillProgress>();
-  private acceptedFills = new Map<string, string>();
+  private acceptedFills = new Set<string>();
   private openCosts = new Map<string, OpenCost>();
   private exactCash = new Map<string, string>();
   private positionScopes = new Map<string, string>();
@@ -306,24 +306,19 @@ export class PortfolioManager {
     const currency = quoteAsset ?? input.baseCurrency;
     const previousFeeAsset = this.orderFeeAssets.get(input.orderId);
     const feeAsset = input.feeAsset || previousFeeAsset || currency;
-    if (previousFeeAsset === baseAsset && input.fee != null && decimal(input.fee).compare(0) !== 0 && !input.feeAsset) {
-      throw new Error("A supplied fee requires an explicit asset after a base-asset fee");
-    }
     const baseFee = feeAsset === baseAsset && baseAsset !== currency;
     if (currency !== input.baseCurrency) throw new Error("Cross-currency fill valuation requires an FX treatment");
-    const rawQuantity = decimal(input.quantity ?? 0);
-    const economicInput = rawQuantity.compare(0) > 0 || decimal(input.fee ?? 0).compare(0) !== 0;
     const trimmedId = input.executionId?.trim();
     const nativeId = trimmedId && trimmedId !== "-1" ? trimmedId : undefined;
     if (input.sequence != null && (!Number.isSafeInteger(input.sequence) || input.sequence < 0)) throw new Error("Execution sequence must be a nonnegative safe integer");
     const sequence = input.sequence != null && input.sequence > 0 ? input.sequence : undefined;
-    // Cumulative snapshots are identified by accepted order progress. Some
-    // brokers reuse an exchange order ID in their executionId field.
-    const identity = !input.cumulative && economicInput && (nativeId || sequence != null) ? JSON.stringify([progressKey, nativeId ?? `seq:${sequence}`]) : undefined;
-    const fingerprint = identity ? fillFingerprint(input, side, feeAsset) : undefined;
-    const existingFingerprint = identity ? this.acceptedFills.get(identity) : undefined;
-    if (existingFingerprint && existingFingerprint !== fingerprint) throw new Error("Conflicting execution identity");
-    const duplicate = existingFingerprint !== undefined;
+    // Membership must not depend on cumulative mode, quantity, price or fee. Only
+    // successfully accounted economic fills are added to acceptedFills below.
+    const identity = (nativeId || sequence != null) ? JSON.stringify([progressKey, nativeId ?? `seq:${sequence}`]) : undefined;
+    const duplicate = identity !== undefined && this.acceptedFills.has(identity);
+    if (!duplicate && previousFeeAsset === baseAsset && input.fee != null && decimal(input.fee).compare(0) !== 0 && !input.feeAsset) {
+      throw new Error("A supplied fee requires an explicit asset after a base-asset fee");
+    }
     const priorProgress = this.fillProgress.get(progressKey);
     const baseline = priorProgress ?? (previousOrder && previousOrder.filledQty > 0 ? {
       quantity: String(previousOrder.filledQty), notional: decimal(previousOrder.filledQty).mul(previousOrder.avgFillPrice ?? 0).toString(),
@@ -333,6 +328,9 @@ export class PortfolioManager {
       : normalizeFill(input, baseline);
     const quantity = decimal(fill.quantity).toNumber(), price = decimal(fill.price).toNumber(), fee = decimal(fill.fee).toNumber();
     const notional = decimal(fill.notional).toNumber();
+    if (quantity > 0 && !nativeId && sequence == null) {
+      throw new Error("Broker Execution ID (brokerExecutionId) or a positive execution sequence is required for fills");
+    }
     if (quantity > 0 && previousFeeAsset && previousFeeAsset !== feeAsset && decimal(baseline?.fees ?? 0).compare(0) !== 0) {
       throw new Error("Mixed fee assets for one order require explicit reconciliation");
     }
@@ -457,7 +455,7 @@ export class PortfolioManager {
       if (trade) { this.trades.push(trade); this.pendingClosingTrades.delete(input.orderId); }
       else this.pendingClosingTrades.set(input.orderId, closing);
     }
-    if (identity && fingerprint) this.acceptedFills.set(identity, fingerprint);
+    if (identity) this.acceptedFills.add(identity);
     this.realizedTotalExact = realizedTotal.toString(); this.realizedTotal = realizedNumber;
     this.feesTotalExact = feesTotal.toString(); this.feesTotal = feesNumber;
     this.realizedBySymbol.set(input.symbol, { exact: symbolRealizedExact.toString(), value: symbolRealized }); this.fillTotalsActive = true;

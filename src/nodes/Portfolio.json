@@ -531,10 +531,11 @@
       }
     },
     {
-      "key": "executionId",
-      "label": "Execution ID",
+      "key": "brokerExecutionId",
+      "label": "Broker Execution ID",
       "type": "text",
-      "placeholder": "e.g. execution or trade id",
+      "placeholder": "e.g. broker execution or trade id",
+      "description": "Native broker fill identifier, separate from the workflow execution/session ID.",
       "required": false,
       "displayOptions": {
         "show": {

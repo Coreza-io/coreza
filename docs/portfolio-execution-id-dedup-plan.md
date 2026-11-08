@@ -39,3 +39,29 @@ Likely files: `coreza-backend/src/simulation/PortfolioManager.ts`, `coreza-backe
 
 ## Constraints
 **Plan only. No implementation, tests, builds, lint, or other validation runs requested.**
+
+## Implementation notes
+
+Implementation was subsequently requested. Portfolio now authors the native fill identifier as `brokerExecutionId` (Broker Execution ID). The editor uses `executionId` and `workflowSessionId` for the workflow session without a Portfolio exception. `PortfolioExecutor` maps `params.brokerExecutionId` to the internal `applyOrderEvent().executionId` and uses it for fill-reporting identity; activation context IDs remain separate. Per the subsequent user correction, accepted fills in both cumulative and individual modes use scoped ID membership, recorded after successful accounting. This supersedes the original plan's exemption for cumulative snapshots. The checkbox controls accounting interpretation only; new IDs still use the existing cumulative delta calculations when checked.
+
+Reporting also uses broker ID or sequence independently of cumulative mode. A repeated accepted scoped ID is ignored even if its cumulative totals differ; successive actual fills must therefore have distinct native fill IDs, rather than reusing an order or workflow ID.
+
+Accepted-ID lookup precedes quantity/fee validation, so changed or zero-valued replay amounts cannot prevent `duplicate_execution`. New fills still undergo the existing financial validation; lifecycle-only messages do not reserve execution IDs. Duplicate events retain the existing order-status update path without reapplying financial values.
+
+Any positive applied or reported fill without a native broker ID or positive safe-integer sequence is rejected, including late fills for retired activations. This requirement is independent of Cumulative Fill Values; the checkbox controls accounting interpretation. Cumulative snapshots with no additional quantity and zero-quantity lifecycle messages retain their existing no-fill handling. The Alpaca template maps Broker Execution ID to the normalized `data.order.executionId` (native `execution_id`).
+
+For Binance Spot **individual fills**, uncheck Cumulative Fill Values and map these Portfolio fields (replace the listener name if renamed):
+
+| Portfolio field | Expression |
+| --- | --- |
+| Broker Execution ID (`brokerExecutionId`) | `{{ $('BinanceStreamListener').json.data.order.executionId }}` |
+| Filled Quantity | `{{ $('BinanceStreamListener').json.data.order.filledQty }}` |
+| Fill Price | `{{ $('BinanceStreamListener').json.data.order.lastFillPrice }}` |
+| Fee Amount | `{{ $('BinanceStreamListener').json.data.order.feeAmount }}` |
+| Fee Asset | `{{ $('BinanceStreamListener').json.data.order.feeAsset }}` |
+
+Spot's normalized `executionId` comes from native `executionReport.I`, with native trade ID `t` as fallback. Distinct native IDs therefore remain distinct through the editor request and Portfolio executor; no session UUID substitutes for them. Duplicate identity remains scoped by broker/environment/credential, symbol and order. The bundled templates use the renamed field. Existing saved workflows must move their old Execution ID mapping to Broker Execution ID (`brokerExecutionId`); this change does not edit saved workflow configurations or read the session `executionId` as a fill ID.
+
+When Cumulative Fill Values is checked, supply cumulative quantity, average fill price and cumulative fee totals instead. Binance's per-fill fee must not be mapped as a cumulative fee total. Futures remain unsupported; their listener's `lastFilledPrice` name does not add Portfolio futures support.
+
+Source review only. No tests, builds, lint or runtime validation were run.

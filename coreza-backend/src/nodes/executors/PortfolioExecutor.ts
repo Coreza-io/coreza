@@ -382,7 +382,7 @@ export class PortfolioExecutor implements INodeExecutor {
       // Preserve raw fill attribution without inventing a position or resetting old equity.
       await FillEventBus.publish(this.buildFillStreamEvent({
         context, params, symbol: String(params.symbol || ""), side: params.side,
-        orderId: String(params.orderId || ""), executionId: params.executionId,
+        orderId: String(params.orderId || ""), brokerExecutionId: params.brokerExecutionId,
         filledQty: toNumber(params.filledQty) ?? 0, fillPrice: toNumber(params.avgFillPrice) ?? 0,
         fillStatus: params.status, feeAmount: toNumber(params.feeAmount), feeAsset: params.feeAsset,
         baseCurrency: params.base_currency, algoId: params.algoId,
@@ -917,7 +917,7 @@ export class PortfolioExecutor implements INodeExecutor {
     symbol: string;
     side: string;
     orderId?: string;
-    executionId?: string;
+    brokerExecutionId?: string;
     filledQty: number;
     fillPrice: number;
     fillStatus?: string;
@@ -939,12 +939,14 @@ export class PortfolioExecutor implements INodeExecutor {
       opts.params.eventTime ||
       new Date().toISOString();
 
-    const nativeId = opts.executionId == null ? "" : String(opts.executionId).trim();
+    const nativeId = opts.brokerExecutionId == null ? "" : String(opts.brokerExecutionId).trim();
     const sequence = toNumber(opts.params._seq);
-    const executionKey = opts.params._cumulativeFillValues === true
-      ? ["cumulative", decimal(optionalDecimal(opts.params.filledQty) ?? 0).toString()]
-      : nativeId && nativeId !== "-1" ? ["execution", nativeId]
-      : sequence != null && sequence > 0 ? ["sequence", sequence]
+    const validSequence = sequence != null && Number.isSafeInteger(sequence) && sequence > 0;
+    if (opts.filledQty > 0 && (!nativeId || nativeId === "-1") && !validSequence) {
+      throw new Error("Broker Execution ID (brokerExecutionId) or a positive execution sequence is required for fills");
+    }
+    const executionKey = nativeId && nativeId !== "-1" ? ["execution", nativeId]
+      : validSequence ? ["sequence", sequence]
       : ["fill", opts.filledQty, opts.fillPrice, eventTime];
     const fillId = this.buildDeterministicEventId({
         user_id: opts.context.userId,
@@ -1246,7 +1248,7 @@ export class PortfolioExecutor implements INodeExecutor {
         quantity: optionalDecimal(params.filledQty), price: optionalDecimal(params.avgFillPrice), fee: optionalDecimal(params.feeAmount),
         cumulative: params._cumulativeFillValues === true,
         origQty, orderType: params.orderType, timeInForce: params.timeInForce, limitPrice, stopPrice, trailPercent, trailPrice,
-        executionId: params.executionId == null ? undefined : String(params.executionId), sequence: seq,
+        executionId: params.brokerExecutionId == null ? undefined : String(params.brokerExecutionId), sequence: seq,
         scope: JSON.stringify([params.broker ?? "", params.environment ?? "", params.credential_id ?? ""]),
         feeAsset, baseCurrency, positionQty,
         resolveInventoryQuantity: getBrokerConfig(params.broker ?? "")?.resolvePortfolioInventoryQuantity,
@@ -1302,7 +1304,7 @@ export class PortfolioExecutor implements INodeExecutor {
             symbol,
             side: side ?? pm.getOrder(normalizedBrokerId)!.side,
             orderId: normalizedBrokerId,
-            executionId: params.executionId,
+            brokerExecutionId: params.brokerExecutionId,
             filledQty: accepted.quantity,
             fillPrice: accepted.price,
             fillStatus: params.status,

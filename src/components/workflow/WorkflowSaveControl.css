@@ -53,3 +53,22 @@
 @media (prefers-reduced-motion: reduce) {
   .coreza-workflow-save { transition: none; }
 }
+
+/* Light mode uses a flat surface in every interaction state. */
+.light .coreza-workflow-save,
+.light .coreza-workflow-save:hover:not(:disabled),
+.light .coreza-workflow-save:active:not(:disabled) {
+  background: #23619e;
+  border-color: #23619e;
+  box-shadow: none;
+  transform: none;
+}
+.light .coreza-workflow-save::before {
+  display: none;
+}
+.light .coreza-workflow-save:hover:not(:disabled) {
+  background: #1e5387;
+}
+.light .coreza-workflow-save:focus-visible {
+  outline-color: #23619e;
+}

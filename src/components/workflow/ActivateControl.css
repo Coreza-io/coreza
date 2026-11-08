@@ -74,3 +74,26 @@
 @media (prefers-reduced-motion: reduce) {
   .coreza-activate-control { transition: none; }
 }
+
+/* Light mode uses flat activation/deactivation surfaces. */
+.light .coreza-activate-control {
+  background: #0b9658;
+  border-color: #08764d;
+}
+.light .coreza-activate-control::before {
+  display: none;
+}
+.light .coreza-activate-control--active {
+  color: #14532d;
+  background: #e2e8f0;
+  border-color: #94a3b8;
+}
+.light .coreza-activate-control,
+.light .coreza-activate-control:hover:not(:disabled),
+.light .coreza-activate-control:active:not(:disabled) {
+  box-shadow: none;
+  transform: none;
+}
+.light .coreza-activate-control:focus-visible {
+  outline-color: #08764d;
+}

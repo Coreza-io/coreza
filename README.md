@@ -10,6 +10,8 @@
 
 An advanced, open-source trading platform that combines powerful workflow automation with institutional-level security. Built for traders, by traders - featuring multi-broker integration, real-time market data, technical analysis, and visual workflow orchestration.
 
+**Current trading support:** Coreza supports spot trading only. Futures trading is not supported on any broker.
+
 ## 🌟 What Makes Coreza Different
 
 - **Visual Workflow Builder**: Design complex trading strategies without code using our intuitive node-based editor

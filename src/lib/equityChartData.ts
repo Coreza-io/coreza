@@ -6,6 +6,11 @@ export const EQUITY_INTERVALS: Record<Exclude<FixedEquityInterval, "1W" | "1M">,
 };
 const LIVE_INTERVALS = ["1m", "5m", "15m", "1h", "1D"] as const;
 
+// Suppress compatibility-number residue, not economically small returns.
+function sameLiveEquity(a: number, b: number): boolean {
+  return Math.abs(a - b) <= 8 * Number.EPSILON * Math.max(Math.abs(a), Math.abs(b));
+}
+
 /** UTC calendar months and Monday-start weeks; no synthetic observations. */
 function bucketBounds(ts: number, interval: FixedEquityInterval): [number, number] {
   if (interval === "1M") {
@@ -49,7 +54,10 @@ export function orderedLiveEquitySnapshots<T extends { id: string; snapshot_at: 
     .filter(({ row, ts }) => Number.isFinite(ts) &&
       (finiteEquityNumber(row.equity) ?? finiteEquityNumber(row.total_value_usdt) ?? finiteEquityNumber(row.cash)) !== null);
   valid.sort((a, b) => a.ts - b.ts || (a.row.id < b.row.id ? -1 : a.row.id > b.row.id ? 1 : a.index - b.index));
-  const snapshots = valid.filter((sample, index) => index === valid.length - 1 || sample.ts !== valid[index + 1].ts)
+  // Different completed trades can share a millisecond. Keep their observations
+  // for bucket extremes and sample counts; only repeated rows are duplicates.
+  const snapshots = valid.filter((sample, index) => index === valid.length - 1
+    || sample.ts !== valid[index + 1].ts || sample.row.id !== valid[index + 1].row.id)
     .map(sample => ({ ...sample.row, snapshot_at: new Date(sample.ts).toISOString() }));
   return { snapshots, diagnostics: { invalidRows: rows.length - valid.length, duplicateRows: valid.length - snapshots.length } };
 }
@@ -95,7 +103,8 @@ export function buildEquityChartData(
   samples.sort((a, b) => a.ts - b.ts || (a.row.id < b.row.id ? -1 : a.row.id > b.row.id ? 1 : a.index - b.index));
   const unique: typeof samples = [];
   for (const sample of samples) {
-    if (unique.length && unique[unique.length - 1].ts === sample.ts) {
+    if (unique.length && unique[unique.length - 1].ts === sample.ts
+      && (context.mode === "backtest" || unique[unique.length - 1].row.id === sample.row.id)) {
       diagnostics.duplicateRows++;
       unique[unique.length - 1] = sample;
     } else unique.push(sample);
@@ -165,7 +174,10 @@ export function buildEquityChartData(
   for (let index = 0; index < candles.length; index++) {
     const candle = candles[index];
     const baseline = index ? candles[index - 1].close : finiteEquityNumber(context.initialCapital);
-    const result = baseline !== null && baseline > 0 ? 100 * (candle.close / baseline - 1) : null;
+    const result = baseline !== null && baseline > 0
+      ? context.mode === "live" && sameLiveEquity(candle.close, baseline)
+        ? 0 : 100 * (candle.close / baseline - 1)
+      : null;
     candle.returnPct = result !== null && Number.isFinite(result) ? result : null;
     candle.returnBaseline = candle.returnPct !== null ? baseline : null;
     candle.returnSpansGap = index > 0 && candles[index - 1].endMs < candle.startMs;
@@ -178,8 +190,8 @@ export function buildEquityChartData(
   for (const candle of candles) {
     spansGap ||= candle.returnSpansGap;
     if (context.mode === "live" && candle.returnBaseline !== null
-      && candle.returnBaseline === candle.close
-      && candle.high === candle.close && candle.low === candle.close) continue;
+      && sameLiveEquity(candle.returnBaseline, candle.close)
+      && sameLiveEquity(candle.high, candle.close) && sameLiveEquity(candle.low, candle.close)) continue;
     visibleCandles.push({ ...candle, returnSpansGap: visibleCandles.length > 0 && spansGap });
     spansGap = false;
   }

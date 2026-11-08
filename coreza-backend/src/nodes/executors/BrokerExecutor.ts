@@ -256,8 +256,12 @@ export class BrokerExecutor implements INodeExecutor {
                 resolvedParams.instruction ??
                 resolvedParams.transactionType ??
                 ""),
-          quantity:
-            resolvedParams.quantity ??
+          quantity: operation === "close_position"
+            ? resolvedParams.qty != null && resolvedParams.qty !== ""
+              ? `qty:${resolvedParams.qty}`
+              : resolvedParams.percentage != null && resolvedParams.percentage !== ""
+                ? `percentage:${resolvedParams.percentage}` : "full"
+            : resolvedParams.quantity ??
             resolvedParams.qty ??
             resolvedParams.percentage ??
             resolvedParams.notional ??
@@ -344,29 +348,8 @@ export class BrokerExecutor implements INodeExecutor {
       let data: any;
       fetchStart = performance.now();
 
-      if (op.execute) {
-        if (LOG) console.log(`📤 [BROKER] Executing custom ${broker}.${operation}`);
-        timing.mark("brokerOperation");
-        data = await op.execute({
-          input: resolvedParams,
-          creds: workingCreds,
-          baseUrl,
-          headers,
-          request,
-        });
-      } else {
-        const path =
-          typeof op.path === "function"
-            ? op.path(resolvedParams, workingCreds)
-            : op.path;
-
-        const url = `${baseUrl}${path}`;
-        const params = op.makeParams?.(resolvedParams, workingCreds) ?? {};
-        const body = op.makeBody
-          ? await op.makeBody(resolvedParams, workingCreds)
-          : undefined;
+      const preRegisterOwner = async () => {
         const shouldPreRegisterOrderOwner =
-          operation === "place_order" &&
           typeof resolvedParams?._idempotencyKey === "string" &&
           resolvedParams._idempotencyKey.trim().length > 0;
 
@@ -390,6 +373,31 @@ export class BrokerExecutor implements INodeExecutor {
             console.warn("Failed to pre-save order-owner mapping", safeToolError(err));
           }
         }
+      };
+
+      if (op.execute) {
+        if (op.preRegisterOrderOwner) await preRegisterOwner();
+        if (LOG) console.log(`📤 [BROKER] Executing custom ${broker}.${operation}`);
+        timing.mark("brokerOperation");
+        data = await op.execute({
+          input: resolvedParams,
+          creds: workingCreds,
+          baseUrl,
+          headers,
+          request,
+        });
+      } else {
+        const path =
+          typeof op.path === "function"
+            ? op.path(resolvedParams, workingCreds)
+            : op.path;
+
+        const url = `${baseUrl}${path}`;
+        const params = op.makeParams?.(resolvedParams, workingCreds) ?? {};
+        const body = op.makeBody
+          ? await op.makeBody(resolvedParams, workingCreds)
+          : undefined;
+        if (operation === "place_order") await preRegisterOwner();
 
         timing.mark("requestPreparation");
         if (LOG) console.log(`📤 [BROKER] Executing ${broker}.${operation}`);
@@ -557,7 +565,7 @@ export class BrokerExecutor implements INodeExecutor {
         return resultFailure(error.message, { data: null, details: { code: error.code, provider: error.provider, recoverable: error.recoverable } });
       }
 
-      if (preRegisteredClientOrderId && operation === "place_order") {
+      if (preRegisteredClientOrderId) {
         try {
           await OrderOwnerRegistry.deleteOwnerIds(`${broker}_trading`, {
             clientOrderId: preRegisteredClientOrderId,

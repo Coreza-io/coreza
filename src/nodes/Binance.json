@@ -138,6 +138,10 @@
           "name": "Place Order"
         },
         {
+          "id": "close_position",
+          "name": "Close Position"
+        },
+        {
           "id": "cancel_order",
           "name": "Cancel Order"
         }
@@ -160,7 +164,8 @@
             "get_orders",
             "get_trades",
             "place_order",
-            "cancel_order"
+            "cancel_order",
+            "close_position"
           ]
         }
       },
@@ -455,6 +460,22 @@
         }
       },
       "description": "Order type: Market executes immediately, Limit at specified price, Stop/TP for conditional orders."
+    },
+    {
+      "key": "qty",
+      "label": "Close Quantity",
+      "type": "text",
+      "placeholder": "Leave empty to close available balance",
+      "description": "Binance Spot: market-sell this base-asset quantity, or use Percentage. Leave both empty to sell the account's available balance, not just this workflow's holdings. Locked funds are excluded; rounding may leave dust. Orders are not cancelled automatically.",
+      "displayOptions": { "show": { "operation": ["close_position"], "marketType": ["spot"] } }
+    },
+    {
+      "key": "percentage",
+      "label": "Percentage",
+      "type": "text",
+      "placeholder": "e.g. 50",
+      "description": "Percentage of the available Spot base-asset balance to sell (greater than 0, up to 100). Set either Close Quantity or Percentage, not both. Binance may reject balances below its minimum trade value.",
+      "displayOptions": { "show": { "operation": ["close_position"], "marketType": ["spot"] } }
     },
     {
       "key": "quantity",

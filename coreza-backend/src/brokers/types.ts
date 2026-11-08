@@ -29,6 +29,8 @@ export interface BrokerOperation {
   transformResult?: (data: any, input: any, response?: BrokerHttpResponse) => any;
   pagination?: PaginationConfig;
   execute?: (ctx: BrokerOperationExecuteContext) => Promise<any>;
+  /** Custom operation submits _idempotencyKey as the broker client order ID. */
+  preRegisterOrderOwner?: boolean;
 }
 
 export interface BrokerConfig {

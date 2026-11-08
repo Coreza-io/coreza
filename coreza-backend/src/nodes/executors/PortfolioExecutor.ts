@@ -740,8 +740,18 @@ export class PortfolioExecutor implements INodeExecutor {
       const cash = toNumber(account.cash) ?? 0;
       const buyingPower = toNumber(account.buying_power) ?? cash;
       const margin = toNumber(account.multiplier) ?? 1;
-      const equity = toNumber(account.equity) ?? 1;
+      const reportedEquity = toNumber(account.equity);
+      const equity = reportedEquity ?? cash;
       const initialMargin = toNumber(account.initial_margin);
+      // Record broker equity before bootstrapping so a failed baseline write can
+      // be retried, and the first closed trade is compared with pre-trade capital.
+      if (!pm.isBootstrapped() && context?.userId && context.workflowId
+        && (context.executionMode === "live" || context.reportingExecutionId)) {
+        await LiveStrategiesRepository.recordBaseline(
+          context.userId, context.workflowId, context.reportingExecutionId ?? context.executionId,
+          equity, { broker: params.broker, credential_id: params.credential_id, base_currency: baseCurrency },
+        );
+      }
       pm.initializePortfolio(baseCurrency, cash);
 
       pm.reconcileBalance({
@@ -1300,6 +1310,8 @@ export class PortfolioExecutor implements INodeExecutor {
             credentialId: params.credential_id,
             baseCurrency,
           });
+          // Stable per-trade identity makes cache/persistence retries idempotent.
+          snapshot.id = reportingTradeId(context.reportingExecutionId ?? context.executionId, finalizedTrade.id);
           void SnapshotCache.upsertLatest(snapshot).catch((err) =>
             fillLogger.warn({ err }, "snapshot cache update failed"),
           );

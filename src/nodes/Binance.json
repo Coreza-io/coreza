@@ -86,6 +86,13 @@
     },
     {
       "key": "marketType",
+      "_comment": "Temporarily disabled. Restore these entries to options when Futures is supported.",
+      "_commentedOptions": [
+        {
+          "name": "Futures",
+          "id": "futures"
+        }
+      ],
       "label": "Market Type",
       "type": "select",
       "options": [

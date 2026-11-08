@@ -57,6 +57,13 @@
     },
     {
       "key": "assetType",
+      "_comment": "Temporarily disabled. Restore these entries to options when Futures is supported.",
+      "_commentedOptions": [
+        {
+          "name": "Futures",
+          "id": "futures"
+        }
+      ],
       "label": "Asset Type",
       "type": "select",
       "options": [

@@ -104,6 +104,15 @@
     },
     {
       "key": "asset_type",
+      "_comment": "Temporarily disabled. Restore these entries to conditionalOptions when Futures is supported.",
+      "_commentedConditionalOptions": {
+        "binance": [
+          {
+            "id": "futures",
+            "name": "Futures"
+          }
+        ]
+      },
       "label": "Asset Type",
       "type": "select",
       "required": false,

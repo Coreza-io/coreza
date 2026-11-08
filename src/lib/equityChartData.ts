@@ -8,7 +8,7 @@ const LIVE_INTERVALS = ["1m", "5m", "15m", "1h", "1D"] as const;
 
 // Suppress compatibility-number residue, not economically small returns.
 function sameLiveEquity(a: number, b: number): boolean {
-  return Math.abs(a - b) <= 8 * Number.EPSILON * Math.max(1, Math.abs(a), Math.abs(b));
+  return Math.abs(a - b) <= 8 * Number.EPSILON * Math.max(Math.abs(a), Math.abs(b));
 }
 
 /** UTC calendar months and Monday-start weeks; no synthetic observations. */
@@ -54,7 +54,10 @@ export function orderedLiveEquitySnapshots<T extends { id: string; snapshot_at: 
     .filter(({ row, ts }) => Number.isFinite(ts) &&
       (finiteEquityNumber(row.equity) ?? finiteEquityNumber(row.total_value_usdt) ?? finiteEquityNumber(row.cash)) !== null);
   valid.sort((a, b) => a.ts - b.ts || (a.row.id < b.row.id ? -1 : a.row.id > b.row.id ? 1 : a.index - b.index));
-  const snapshots = valid.filter((sample, index) => index === valid.length - 1 || sample.ts !== valid[index + 1].ts)
+  // Different completed trades can share a millisecond. Keep their observations
+  // for bucket extremes and sample counts; only repeated rows are duplicates.
+  const snapshots = valid.filter((sample, index) => index === valid.length - 1
+    || sample.ts !== valid[index + 1].ts || sample.row.id !== valid[index + 1].row.id)
     .map(sample => ({ ...sample.row, snapshot_at: new Date(sample.ts).toISOString() }));
   return { snapshots, diagnostics: { invalidRows: rows.length - valid.length, duplicateRows: valid.length - snapshots.length } };
 }
@@ -100,7 +103,8 @@ export function buildEquityChartData(
   samples.sort((a, b) => a.ts - b.ts || (a.row.id < b.row.id ? -1 : a.row.id > b.row.id ? 1 : a.index - b.index));
   const unique: typeof samples = [];
   for (const sample of samples) {
-    if (unique.length && unique[unique.length - 1].ts === sample.ts) {
+    if (unique.length && unique[unique.length - 1].ts === sample.ts
+      && (context.mode === "backtest" || unique[unique.length - 1].row.id === sample.row.id)) {
       diagnostics.duplicateRows++;
       unique[unique.length - 1] = sample;
     } else unique.push(sample);

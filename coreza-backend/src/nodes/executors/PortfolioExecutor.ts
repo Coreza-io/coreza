@@ -747,9 +747,12 @@ export class PortfolioExecutor implements INodeExecutor {
       // be retried, and the first closed trade is compared with pre-trade capital.
       if (!pm.isBootstrapped() && context?.userId && context.workflowId
         && (context.executionMode === "live" || context.reportingExecutionId)) {
+        if (reportedEquity === undefined || reportedEquity <= 0) {
+          throw new Error("Positive broker account equity is required to capture the initial reporting baseline");
+        }
         await LiveStrategiesRepository.recordBaseline(
           context.userId, context.workflowId, context.reportingExecutionId ?? context.executionId,
-          equity, { broker: params.broker, credential_id: params.credential_id, base_currency: baseCurrency },
+          reportedEquity, { broker: params.broker, credential_id: params.credential_id, base_currency: baseCurrency },
         );
       }
       pm.initializePortfolio(baseCurrency, cash);

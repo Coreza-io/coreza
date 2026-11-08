@@ -410,8 +410,13 @@ export class PortfolioManager {
         : side === "sell" && previousPosition ? decimal(previousPosition.currentPrice)
         : decimal(exactPosition.cost).div(valuationGrossQuantity);
       const mark = valuationMark.toNumber();
-      const marketValue = valuationMark.mul(exactPosition.quantity).toNumber();
-      const unrealizedPnl = valuationMark.mul(exactPosition.quantity).sub(exactPosition.cost).toNumber();
+      // Divide last: multiplying a 72-place unit price by fractional inventory
+      // can exceed the decimal helper's external precision boundary.
+      const valuation = useIndependentMark || (side === "sell" && previousPosition)
+        ? valuationMark.mul(exactPosition.quantity)
+        : decimal(exactPosition.cost).mul(exactPosition.quantity).div(valuationGrossQuantity);
+      const marketValue = valuation.toNumber();
+      const unrealizedPnl = valuation.sub(exactPosition.cost).toNumber();
       const realizedPnl = decimal(exactPosition.realized).toNumber();
       nextPosition = { symbol: input.symbol, quantity: held, side: "long", avgFillPrice: average, currentPrice: mark, marketValue,
         openCostBasis: decimal(exactPosition.cost).toNumber(), realizedPnl, unrealizedPnl, totalPnl: decimal(realizedPnl).add(unrealizedPnl).toNumber() };
@@ -1108,6 +1113,11 @@ export class PortfolioManager {
     unrealizedPnl?: number;
   }): { position: PositionState | null } {
     const now = new Date().toISOString();
+    const marketMark = this.positionMarketMarks.get(input.symbol);
+    if (input.markObservedAt != null && marketMark && marketMark.observedAt > input.markObservedAt) {
+      // Reconcile inventory without replacing a newer independent observation.
+      input = { ...input, currentPrice: undefined, markObservedAt: undefined };
+    }
     const recordMarketMark = () => {
       if (input.markObservedAt != null && Number.isFinite(input.markObservedAt) && input.markObservedAt >= 0) {
         this.positionMarketMarks.set(input.symbol, { price: input.currentPrice!, observedAt: input.markObservedAt });

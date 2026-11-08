@@ -708,6 +708,7 @@ export class PortfolioExecutor implements INodeExecutor {
         "alpaca",
         context,
       )) as { positions?: AlpacaPosition[] };
+      const positionsObservedAt = Date.now();
       const positions = Array.isArray(positionsResult.positions)
         ? positionsResult.positions
         : [];
@@ -780,7 +781,7 @@ export class PortfolioExecutor implements INodeExecutor {
           avgFillPrice: toNumber(position.avg_entry_price) ?? 0,
           side,
           currentPrice: toNumber(position.current_price),
-          markObservedAt: Date.now(),
+          markObservedAt: positionsObservedAt,
         });
 
         syncedPositions.push({

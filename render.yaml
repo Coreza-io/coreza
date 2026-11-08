@@ -129,8 +129,8 @@ services:
         value: "YOUR_SUPABASE_PUBLISHABLE_KEY"
       - key: VITE_COREZA_ENCRYPTION_KEY
         value: "YOUR_ENCRYPTION_KEY"
-      - key: VITE_API_URL
-        fromService:
-          name: coreza-backend
-          type: web
-          property: host
+      # Complete public URLs are required; a fromService host has no scheme.
+      - key: VITE_BACKEND_URL
+        sync: false
+      - key: VITE_WS_URL
+        sync: false

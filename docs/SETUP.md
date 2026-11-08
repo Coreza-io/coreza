@@ -84,3 +84,41 @@ Upgrade existing projects explicitly before rerunning setup:
 
 Already-deployed legacy Edge Functions are not deleted by this installer. Their
 source and deployment steps have been removed from the repository.
+
+## Frontend production delivery
+
+The Compose `production` profile builds the Dockerfile's `production` target and
+serves compiled `dist` assets through Nginx on port 80. The Vite `frontend`
+service belongs to the `development` profile; the default Dockerfile target and
+Windows launcher retain the development workflow.
+
+Before a production build, set these public frontend values in the build environment
+(or Compose's root `.env`):
+
+- `VITE_BACKEND_URL`: a complete public URL without a trailing slash. For the
+  same-origin Nginx path, use `https://app.example.com/api`.
+- `VITE_WS_URL`: the public WebSocket URL, such as `wss://app.example.com/ws`.
+  All frontend socket consumers honor this setting, including the consumer with
+  the legacy `VITE_BACKEND_WS_URL` fallback.
+- `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`: the public Supabase
+  configuration. Never supply a secret/service-role key to a frontend build.
+
+Vite embeds these settings at build time; changing container runtime variables
+requires rebuilding the frontend. Local development keeps its existing localhost
+defaults. Nginx removes `/api` before forwarding to `coreza-backend:8000` and
+forwards `/ws` to `coreza-backend:8081`. Direct backend routes remain unchanged.
+Fingerprint assets are immutable; HTML and stable-path public icons revalidate.
+API responses remain private/no-store, with no shared proxy cache.
+
+The supplied Nginx server listens for HTTP only. Configure TLS termination and
+HTTP/2 at the actual ingress/hosting edge; the mounted certificate directory and
+published port 443 alone do not enable TLS. An HTTPS frontend requires a working
+secure WebSocket ingress forwarding `/ws` to this proxy.
+
+Render serves `dist` separately: set `VITE_BACKEND_URL` to the backend's complete
+public HTTPS URL (for example `https://coreza-backend.example.com`, without `/api`
+when connecting directly). Set `VITE_WS_URL` to a separately configured public
+WSS endpoint reaching the backend WebSocket listener. Render's backend hostname
+and `WEBSOCKET_PORT=10001` do not by themselves expose that listener publicly.
+Rebuild the static frontend after changing either URL. This configuration does
+not deploy services or provision TLS/WebSocket ingress.

@@ -326,7 +326,7 @@
         "stopPrice": null,
         "limitPrice": null,
         "trailPrice": null,
-        "brokerExecutionId": "{{ $('AlpacaStreamListener').json.data.order.rawOrderData.event_id }}",
+        "brokerExecutionId": "{{ $('AlpacaStreamListener').json.data.order.executionId }}",
         "positionQty": "{{ $('AlpacaStreamListener').json.data.order.positionQty }}",
         "timeInForce": "{{ $('AlpacaStreamListener').json.data.order.rawOrderData.order.time_in_force }}",
         "avgFillPrice": "{{ $('AlpacaStreamListener').json.data.order.filledAvgPrice }}",

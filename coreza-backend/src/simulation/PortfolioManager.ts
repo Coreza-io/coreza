@@ -330,6 +330,9 @@ export class PortfolioManager {
       : normalizeFill(input, baseline);
     const quantity = decimal(fill.quantity).toNumber(), price = decimal(fill.price).toNumber(), fee = decimal(fill.fee).toNumber();
     const notional = decimal(fill.notional).toNumber();
+    if (!input.cumulative && quantity > 0 && !identity) {
+      throw new Error("Broker Execution ID (brokerExecutionId) or a positive execution sequence is required for individual fills");
+    }
     if (quantity > 0 && previousFeeAsset && previousFeeAsset !== feeAsset && decimal(baseline?.fees ?? 0).compare(0) !== 0) {
       throw new Error("Mixed fee assets for one order require explicit reconciliation");
     }

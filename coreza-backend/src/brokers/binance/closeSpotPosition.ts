@@ -1,5 +1,5 @@
 import BigNumber from "bignumber.js";
-import type { BrokerOperationExecuteContext } from "../types";
+import { OrderSubmissionUnknownError, type BrokerOperationExecuteContext } from "../types";
 import { decimal } from "../../portfolio/decimal";
 import { getBinanceTimestamp } from "../../utils/binanceTimeSync";
 import { signHmacSha256 } from "../../utils/crypto";
@@ -22,6 +22,8 @@ export async function closeBinanceSpotPosition({ input, creds, baseUrl, headers,
   if (market !== undefined && market !== "spot" && market !== "crypto") throw new Error("Close Position supports Binance Spot only");
   const symbol = typeof input.symbol === "string" ? input.symbol.trim().toUpperCase() : "";
   if (!/^[A-Z0-9]+$/.test(symbol)) throw new Error("Close Position requires a Binance pair such as ETHUSDT");
+  const clientOrderId = typeof input._idempotencyKey === "string" ? input._idempotencyKey.trim() : "";
+  if (!/^[A-Za-z0-9_-]{1,36}$/.test(clientOrderId)) throw new Error("Close Position requires a client order ID");
   const hasQty = present(input.qty), hasPercentage = present(input.percentage);
   if (hasQty && hasPercentage) throw new Error("Provide either quantity or percentage, not both");
   const requested = hasQty ? positive(input.qty, "Quantity") : undefined;
@@ -71,11 +73,20 @@ export async function closeBinanceSpotPosition({ input, creds, baseUrl, headers,
     }
   }
   // Submit once. Binance remains authoritative for notional and other dynamic filters.
-  const { data } = await request.post(`${baseUrl}/api/v3/order`, null, {
-    headers, timeout: 15000,
-    params: signed({ symbol, side: "SELL", type: "MARKET", quantity: quantity.toFixed(), newOrderRespType: "FULL",
-      ...(input._idempotencyKey ? { newClientOrderId: input._idempotencyKey } : {}),
-      recvWindow: 60000, timestamp: timestamp() }),
-  });
-  return data;
+  try {
+    const { data } = await request.post(`${baseUrl}/api/v3/order`, null, {
+      headers, timeout: 15000,
+      params: signed({ symbol, side: "SELL", type: "MARKET", quantity: quantity.toFixed(), newOrderRespType: "FULL",
+        newClientOrderId: clientOrderId,
+        recvWindow: 60000, timestamp: timestamp() }),
+    });
+    return data;
+  } catch (error) {
+    const response = (error as { response?: { status?: number; data?: { code?: number } } })?.response;
+    // No response, HTTP 5xx and Binance timeout/message-bus errors do not prove rejection.
+    if (!response || !response.status || response.status >= 500 || [-1000, -1006, -1007].includes(Number(response.data?.code))) {
+      throw new OrderSubmissionUnknownError(clientOrderId, error);
+    }
+    throw error;
+  }
 }

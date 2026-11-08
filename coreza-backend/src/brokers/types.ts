@@ -13,6 +13,14 @@ export interface BrokerHttpResponse {
   headers?: Record<string, unknown>;
 }
 
+/** The request may have reached the exchange; retain its intent until reconciled. */
+export class OrderSubmissionUnknownError extends Error {
+  constructor(readonly clientOrderId: string, cause: unknown) {
+    super("Order submission status is unknown", { cause });
+    this.name = "OrderSubmissionUnknownError";
+  }
+}
+
 export interface BrokerOperationExecuteContext {
   input: any;
   creds: any;

@@ -17,6 +17,7 @@ import { LIVE_TIMING_ENABLED, observeLive, observeEpoch, orderSubmitHttp, orderS
 import { historicalRowCount, safeToolError, toolInputFields, traceToolHttp, ToolExecutionTrace } from "../../utils/toolExecutionLog";
 import {
   getBrokerConfig,
+  OrderSubmissionUnknownError,
   BrokerOperation,
   PaginationConfig,
 } from "../../brokers";
@@ -184,6 +185,7 @@ export class BrokerExecutor implements INodeExecutor {
     let requestCount = () => 0;
 
     let preRegisteredClientOrderId: string | null = null;
+    let acknowledgedClientOrderId: string | null = null;
     try {
       operation = node.values?.operation;
       const brokerNode = node as WorkflowNode & { subCategory: string };
@@ -251,7 +253,7 @@ export class BrokerExecutor implements INodeExecutor {
           symbol: resolvedParams.symbol ?? "",
           side:
             operation === "close_position"
-              ? "close"
+              ? JSON.stringify(["close", broker, credential_id, resolvedParams.environment ?? ""])
               : (resolvedParams.side ??
                 resolvedParams.instruction ??
                 resolvedParams.transactionType ??
@@ -348,11 +350,12 @@ export class BrokerExecutor implements INodeExecutor {
       let data: any;
       fetchStart = performance.now();
 
-      const preRegisterOwner = async () => {
+      const preRegisterOwner = async (required = false) => {
         const shouldPreRegisterOrderOwner =
           typeof resolvedParams?._idempotencyKey === "string" &&
           resolvedParams._idempotencyKey.trim().length > 0;
 
+        if (required && !shouldPreRegisterOrderOwner) throw new Error("Client order ID is required before submission");
         if (shouldPreRegisterOrderOwner) {
           timing.mark("ownerBeforeRequest");
           if (LOG) timing.source("ownerBeforeRequest", "redis_queue");
@@ -371,12 +374,13 @@ export class BrokerExecutor implements INodeExecutor {
             });
           } catch (err) {
             console.warn("Failed to pre-save order-owner mapping", safeToolError(err));
+            if (required) throw err;
           }
         }
       };
 
       if (op.execute) {
-        if (op.preRegisterOrderOwner) await preRegisterOwner();
+        if (op.preRegisterOrderOwner) await preRegisterOwner(true);
         if (LOG) console.log(`📤 [BROKER] Executing custom ${broker}.${operation}`);
         timing.mark("brokerOperation");
         data = await op.execute({
@@ -386,6 +390,7 @@ export class BrokerExecutor implements INodeExecutor {
           headers,
           request,
         });
+        if (op.preRegisterOrderOwner) acknowledgedClientOrderId = preRegisteredClientOrderId;
       } else {
         const path =
           typeof op.path === "function"
@@ -551,6 +556,17 @@ export class BrokerExecutor implements INodeExecutor {
         });
       }
 
+      const unresolvedClientOrderId = error instanceof OrderSubmissionUnknownError
+        ? error.clientOrderId : acknowledgedClientOrderId;
+      if (unresolvedClientOrderId) {
+        // Do not release the pending intent/owner for a possibly accepted order.
+        return resultFailure(
+          `Order submission requires reconciliation for client order ID ${unresolvedClientOrderId}. Check the exchange before submitting again.`,
+          { data: { clientOrderId: unresolvedClientOrderId },
+            details: { code: "ORDER_STATUS_UNKNOWN", provider: broker, recoverable: false } },
+        );
+      }
+
       if (shouldPersistRedisState && isOrderOperation && idempotencyKey) {
         if (LOG) timing.source("orderCache", "redis_cache");
         await updateOrderCache(userId, workflowId, idempotencyKey, "failed", {
@@ -559,10 +575,6 @@ export class BrokerExecutor implements INodeExecutor {
               ? enrichedError.message
               : String(enrichedError),
         });
-      }
-
-      if (isBrokerAuthError(error)) {
-        return resultFailure(error.message, { data: null, details: { code: error.code, provider: error.provider, recoverable: error.recoverable } });
       }
 
       if (preRegisteredClientOrderId) {
@@ -576,6 +588,10 @@ export class BrokerExecutor implements INodeExecutor {
             safeToolError(cleanupErr),
           );
         }
+      }
+
+      if (isBrokerAuthError(error)) {
+        return resultFailure(error.message, { data: null, details: { code: error.code, provider: error.provider, recoverable: error.recoverable } });
       }
 
       const normalized = createErrorOutput(

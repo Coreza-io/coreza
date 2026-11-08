@@ -1927,9 +1927,11 @@ const WorkflowEditorContent = () => {
       if (!canMutateDocument()) return false;
 
       const viewport = rf.getViewport();
-      const canvasRect = canvasContainerRef.current?.getBoundingClientRect();
-      const canvasCenter = canvasRect
-        ? rf.screenToFlowPosition({ x: canvasRect.left + canvasRect.width / 2, y: canvasRect.top + canvasRect.height / 2 })
+      const canvas = canvasContainerRef.current;
+      // Palette selection closes the sidebar, so center in the resulting canvas area.
+      const insertionRect = canvas?.parentElement?.getBoundingClientRect() ?? canvas?.getBoundingClientRect();
+      const canvasCenter = insertionRect
+        ? rf.screenToFlowPosition({ x: insertionRect.left + insertionRect.width / 2, y: insertionRect.top + insertionRect.height / 2 })
         : { x: -viewport.x / viewport.zoom, y: -viewport.y / viewport.zoom };
       const fallbackPosition = {
         x: canvasCenter.x - (nodeDefinition.collapsedSize?.width ?? 200) / 2,

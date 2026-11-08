@@ -373,13 +373,14 @@ export function applyFieldRows(
   if (options.abortSignal?.aborted) throw new Error("Workflow cancelled by user");
   validateRows(rows, options.nodeId);
   const hasV2Rows = rows.some(isV2);
-  // Typed rows emit only their configured fields. Keep the complete input
+  // Typed rows emit only their configured fields; no rows means empty output.
+  // Keep the complete input
   // available for expression evaluation, without copying it into the output.
   const legacyData = extractFieldInputData(options.legacyResultSeed);
   const legacyResultSeed = isPlainObject(legacyData) ? legacyData : {};
   const result: Record<string, unknown> = Object.create(null);
   const legacyResult: Record<string, unknown> = Object.create(null);
-  if (!hasV2Rows) Object.entries(legacyResultSeed).forEach(
+  if (rows.length > 0 && !hasV2Rows) Object.entries(legacyResultSeed).forEach(
     ([key, value]) => defineResultValue(result, key, value),
   );
   Object.entries(legacyResultSeed).forEach(([key, value]) =>

@@ -122,16 +122,19 @@
     },
     {
       "key": "marketType",
+      "_comment": "Temporarily disabled. Restore these entries to options when Futures is supported.",
+      "_commentedOptions": [
+        {
+          "id": "futures",
+          "name": "Futures (USDT-M)"
+        }
+      ],
       "label": "Market Type",
       "type": "select",
       "options": [
         {
           "id": "spot",
           "name": "Spot"
-        },
-        {
-          "id": "futures",
-          "name": "Futures (USDT-M)"
         }
       ],
       "default": "spot",

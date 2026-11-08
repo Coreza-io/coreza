@@ -57,21 +57,24 @@
     },
     {
       "key": "assetType",
+      "_comment": "Temporarily disabled. Restore these entries to options when Futures is supported.",
+      "_commentedOptions": [
+        {
+          "name": "Futures",
+          "id": "futures"
+        }
+      ],
       "label": "Asset Type",
       "type": "select",
       "options": [
         {
           "name": "Spot",
           "id": "spot"
-        },
-        {
-          "name": "Futures",
-          "id": "futures"
         }
       ],
       "default": "spot",
       "required": true,
-      "description": "Market type: Spot for regular trading, Futures for derivatives."
+      "description": "Binance Spot is available. Futures is temporarily unavailable."
     },
     {
       "key": "operation",

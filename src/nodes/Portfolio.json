@@ -58,6 +58,13 @@
     },
     {
       "key": "broker",
+      "_comment": "Temporarily disabled. Restore these entries to options when Futures is supported.",
+      "_commentedOptions": [
+        {
+          "id": "binance_futures",
+          "name": "Binance Futures"
+        }
+      ],
       "label": "Broker",
       "type": "select",
       "required": false,
@@ -74,10 +81,6 @@
         {
           "id": "binance_spot",
           "name": "Binance Spot"
-        },
-        {
-          "id": "binance_futures",
-          "name": "Binance Futures"
         }
       ],
       "displayOptions": {

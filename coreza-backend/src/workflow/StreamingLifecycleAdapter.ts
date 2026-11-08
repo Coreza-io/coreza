@@ -1,3 +1,4 @@
+import { resolveSymbols } from "../brokers/helpers";
 import { FillSyncWorker } from "../workers/FillSyncWorker";
 import { getRedisCache } from "../config/redis";
 import { REDIS_CHANNELS } from "../config/redisChannels";
@@ -12,10 +13,9 @@ import { WorkflowEdge, WorkflowNode } from "../nodes/types";
 import { RegistrationService } from "../services/RegistrationService";
 import { bullMqJobQueue as jobQueue } from "../infra/jobQueue/jobQueueManager";
 import { SubscriptionService } from "../services/SubscriptionService";
-import { parseSymbols, resolveStreamSourceId } from "./subscriptionPolicy";
+import { resolveStreamSourceId } from "./subscriptionPolicy";
 import { classifyTrigger, findStreamingDataNodes } from "./triggerClassifier";
 import { RedisKeys } from "../infra/redisKeys";
-import { buildCryptoSymbols, validateAlpacaCryptoSymbols } from "../utils/symbolHelpers";
 import logger from "../utils/logger";
 import { MAX_LISTENERS_PER_USER } from "../config/streaming";
 import { OrderOwnerRegistry } from "../services/OrderOwnerRegistry";
@@ -156,16 +156,11 @@ export class StreamingLifecycleAdapter {
     }
 
     // --- Resolve symbols (standard + crypto fallback) ---
-    let symbols = parseSymbols(nodeValues.symbols);
-    if (sourceId.split("_")[0] === "alpaca" && nodeValues.assetType === "crypto") {
-      symbols = validateAlpacaCryptoSymbols(nodeValues.crypto_base ?? nodeValues.symbols);
-    } else if (symbols.length === 0 && nodeValues.assetType === "crypto") {
-      symbols = buildCryptoSymbols(
-        nodeValues.assetType,
-        nodeValues.crypto_base,
-        nodeValues.crypto_quote,
-      );
-    }
+    const symbols = resolveSymbols(sourceId, {
+      assetType: nodeValues.assetType, symbols: nodeValues.symbols,
+      cryptoBase: nodeValues.crypto_base, cryptoQuote: nodeValues.crypto_quote,
+      preferSymbols: true,
+    });
 
     const streamType = normalizeStreamTypeList(
       nodeValues.stream_type ?? nodeValues.stream_types,
@@ -417,9 +412,11 @@ export class StreamingLifecycleAdapter {
       if (!sourceId) {
         continue;
       }
-      const symbolArray = sourceId.split("_")[0] === "alpaca" && nodeValues.assetType === "crypto"
-        ? validateAlpacaCryptoSymbols(nodeValues.crypto_base ?? nodeValues.symbols)
-        : parseSymbols(nodeValues.symbols);
+      const symbolArray = resolveSymbols(sourceId, {
+        assetType: nodeValues.assetType, symbols: nodeValues.symbols,
+        cryptoBase: nodeValues.crypto_base, cryptoQuote: nodeValues.crypto_quote,
+        preferSymbols: true,
+      });
 
       const streamTypes = normalizeStreamTypeList(
         nodeValues.stream_type ?? nodeValues.stream_types,

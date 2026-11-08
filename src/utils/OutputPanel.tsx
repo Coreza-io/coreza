@@ -99,7 +99,7 @@ const createRenderData = (sourceNodeId?: string, persistentVariableKeys?: string
     }
     
     return (
-      <div className="flex items-center gap-2 p-3 bg-background rounded-md border border-border/30">
+      <div className="flex items-start gap-2 p-3 bg-background rounded-md border border-border/30">
         <span className="text-xs font-semibold text-primary">value:</span>
         <span className="text-xs text-foreground break-words">{String(data).length > 2000 ? `${String(data).slice(0, 2000)}…` : String(data)}</span>
       </div>

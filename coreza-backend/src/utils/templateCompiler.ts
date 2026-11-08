@@ -1,3 +1,4 @@
+import { isNodeResult } from "../contracts/nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -69,7 +70,7 @@ function resolveNodeKeyStatic(
  * Eliminates repeated pickJsonSource probing after the first bar.
  */
 function buildShapeExtractor(sample: any): (d: any) => any {
-  if (sample == null) return pickJsonSource;
+  if (sample == null || isNodeResult(sample)) return pickJsonSource;
   if (sample.json !== undefined) return (d: any) => d.json;
   if (sample.output?.json !== undefined) return (d: any) => d.output.json;
   if (sample.output !== undefined) return (d: any) => d.output;

@@ -1,3 +1,5 @@
+import { isNodeResult } from "../contracts/nodeResult";
+
 export interface ReferenceNode {
   id: string;
   name?: string;
@@ -8,6 +10,10 @@ export interface ReferenceNode {
 
 export function pickJsonSource(value: unknown): unknown {
   if (value == null || typeof value !== "object") return value;
+
+  // Public .json references address the full result shown in the data panels.
+  // Payload fields named input/output are data, not legacy transport envelopes.
+  if (isNodeResult(value)) return value;
 
   const data = value as Record<string, unknown>;
   const output = asRecord(data.output);

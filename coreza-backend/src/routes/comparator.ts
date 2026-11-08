@@ -11,7 +11,6 @@ import { resultSuccess, resultFailure, safeErrorDetails } from "../contracts/nod
  */
 
 import { editorVariables } from "../variables/EditorVariableService";
-import { isTypedEditFieldRow } from "../nodes/logic/typedEditFieldRow";
 import express from "express";
 import { ComparatorService, ComparatorInput } from "../nodes/logic/comparator";
 import { ComputeService } from "../nodes/logic/compute";
@@ -193,9 +192,7 @@ router.post("/field", async (req, res) => {
       nodeId:
         typeof req.body.node_id === "string" ? req.body.node_id : undefined,
       input: data,
-      legacyResultSeed: { ...data },
       context: {
-        persistent: !!persistent,
         $vars: res.locals.variables,
         $nodes: safeNodeResults,
         expressionOutputs: expressionResults ? Object.fromEntries(Object.entries(expressionResults)) : safeNodeResults,
@@ -206,7 +203,7 @@ router.post("/field", async (req, res) => {
     let result: Record<string, unknown>;
     let variableSnapshot;
     let persistentVariableKeys: string[] | undefined;
-    if (persistent === true && fields.some(isTypedEditFieldRow)) {
+    if (persistent === true && fields.length > 0) {
       if (!res.locals.variableSnapshot || !req.user?.id) throw new Error("Persistent variable snapshot unavailable");
       if (typeof req.body.variableInvocationId !== "string" || !/^[0-9a-f-]{36}$/i.test(req.body.variableInvocationId))
         return res.status(400).json(resultFailure("Persistent Edit execution requires an invocation ID", { data: null }));

@@ -1,6 +1,3 @@
-import { validateAlpacaCryptoSymbol } from "../brokers/alpaca/cryptoOrderSymbol";
-import { createError } from "../middleware/errorHandler";
-
 /**
  * Shared symbol resolution helpers.
  * Used by both stream routes (manual test) and StreamingLifecycleAdapter (live activation).
@@ -34,6 +31,13 @@ export function buildCryptoSymbols(
  * Normalize a symbol input (string or array) into a clean array.
  */
 export function normalizeSymbolList(symbols: unknown): string[] {
+  // Subscription inputs may arrive as JSON-encoded arrays as well as CSV.
+  if (typeof symbols === "string") {
+    try {
+      const parsed: unknown = JSON.parse(symbols);
+      if (Array.isArray(parsed)) symbols = parsed;
+    } catch { /* Plain symbols/CSV are handled below. */ }
+  }
   if (Array.isArray(symbols)) {
     return symbols.map((s) => String(s).trim().toUpperCase()).filter(Boolean);
   }
@@ -46,15 +50,4 @@ export function normalizeSymbolList(symbols: unknown): string[] {
   }
 
   return [];
-}
-
-/** Alpaca streams use full pairs directly, never base/quote construction. */
-export function validateAlpacaCryptoSymbols(input: unknown): string[] {
-  if (input == null || (typeof input === "string" && input.trim() === "")) return [];
-  const symbols = Array.isArray(input) ? input : typeof input === "string" ? input.split(",") : [input];
-  try {
-    return symbols.map(validateAlpacaCryptoSymbol);
-  } catch (error) {
-    throw createError(error instanceof Error ? error.message : "Invalid Alpaca crypto symbols", 400);
-  }
 }

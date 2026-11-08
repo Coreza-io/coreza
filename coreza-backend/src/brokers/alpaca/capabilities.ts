@@ -1,6 +1,6 @@
 import { BrokerCapabilities } from "../capabilities";
 import { extractAlpacaOrderOwnerIds } from "./orderOwnerExtract";
-import { validateAlpacaCryptoSymbol } from "./cryptoOrderSymbol";
+import { validateAlpacaCryptoSymbol, resolveAlpacaSymbols } from "./cryptoOrderSymbol";
 
 const KNOWN_CRYPTO_QUOTES = ["USD", "USDT", "USDC", "BTC"];
 
@@ -58,6 +58,8 @@ export const alpacaCapabilities: BrokerCapabilities = {
     }
     return symbol;
   },
+
+  resolveSymbols: resolveAlpacaSymbols,
 
   normalizeCryptoParams: (params: Record<string, any>) => {
     if (params.operation && !["place_order", "close_position", "get_candle", "get_latest_bar"].includes(params.operation)) return;

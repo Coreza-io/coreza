@@ -32,8 +32,8 @@ export interface LatestSnapshotState {
 
 export class SnapshotCache {
   /**
-   * Upsert the latest coalesced portfolio snapshot into Redis.
-   * Only the most recent state per activation/account/currency source is kept.
+   * Queue a completed-trade portfolio snapshot in Redis.
+   * Distinct snapshot IDs survive independently until the worker persists them.
    * Fire-and-forget — caller should NOT await this.
    */
   private static pending = new Map<string, LatestSnapshotState>();
@@ -41,7 +41,8 @@ export class SnapshotCache {
 
   private static key(snapshot: LatestSnapshotState): string {
     return RedisKeys.portfolioSnapshotLatest(snapshot.user_id, snapshot.workflow_id, snapshot.execution_id,
-      `${snapshot.broker}:${snapshot.credential_id ?? snapshot.user_id}:${snapshot.base_currency ?? ""}`);
+      `${snapshot.broker}:${snapshot.credential_id ?? snapshot.user_id}:${snapshot.base_currency ?? ""}`)
+      + `:snapshotId:${snapshot.id}`;
   }
 
   static upsertLatest(snapshot: LatestSnapshotState): Promise<void> {
@@ -50,7 +51,7 @@ export class SnapshotCache {
     this.pending.set(key, snapshot);
     const existing = this.writes.get(key);
     if (existing) return existing;
-    // One writer per coalesced key; a slow Redis connection never queues every mutation.
+    // Retries of one snapshot share a writer; other trades have independent keys.
     const write = (async () => {
       while (this.pending.has(key)) {
         const latest = this.pending.get(key)!;

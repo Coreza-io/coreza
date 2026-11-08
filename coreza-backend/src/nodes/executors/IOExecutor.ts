@@ -58,13 +58,11 @@ export class IOExecutor implements INodeExecutor {
     startTime: number,
   ): Promise<NodeResult> {
     // Handle chat input logic
-    const message = node.values?.message || input.message || "";
+    const chatInput = node.values?.input ?? input.input ?? "";
 
     const successOutput = createSuccessOutput(
       {
-        message,
-        timestamp: new Date().toISOString(),
-        source: "chat_input",
+        input: chatInput,
       },
       {
         nodeId: node.id,

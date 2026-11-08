@@ -539,7 +539,8 @@ export function useNodeExecution({
         payload.workflowId = workflowId;
         if (definition?.name === "Edit Fields" && payload.persistent === true) payload.variableInvocationId = crypto.randomUUID();
         payload.workflowSessionId = executionSessionId;
-        payload.executionId = executionSessionId;
+        // Portfolio's executionId is the broker fill ID; its runtime scope uses workflowSessionId.
+        if (definition?.name !== "Portfolio") payload.executionId = executionSessionId;
         payload.category = definition.category;
         payload.subCategory = definition.subCategory;
         payload.provider = definition.provider;

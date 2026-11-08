@@ -10,7 +10,7 @@
 
 import { randomUUID } from "crypto";
 import { decimal } from "../portfolio/decimal";
-import { FillInput, FillProgress, OpenCost, InventoryQuantityResolver, normalizeFill, calculatePositionFill, fillFingerprint } from "../portfolio/fillAccounting";
+import { FillInput, FillProgress, OpenCost, InventoryQuantityResolver, normalizeFill, calculatePositionFill } from "../portfolio/fillAccounting";
 import { finished } from "stream";
 import { Position, Trade } from "../backtest/simBroker/interfaces";
 import {
@@ -271,7 +271,7 @@ export class PortfolioManager {
 
   private bootstrapped = false;
   private fillProgress = new Map<string, FillProgress>();
-  private acceptedFills = new Map<string, string>();
+  private acceptedFills = new Set<string>();
   private openCosts = new Map<string, OpenCost>();
   private exactCash = new Map<string, string>();
   private positionScopes = new Map<string, string>();
@@ -320,10 +320,7 @@ export class PortfolioManager {
     // Cumulative snapshots are identified by accepted order progress. Some
     // brokers reuse an exchange order ID in their executionId field.
     const identity = !input.cumulative && economicInput && (nativeId || sequence != null) ? JSON.stringify([progressKey, nativeId ?? `seq:${sequence}`]) : undefined;
-    const fingerprint = identity ? fillFingerprint(input, side, feeAsset) : undefined;
-    const existingFingerprint = identity ? this.acceptedFills.get(identity) : undefined;
-    if (existingFingerprint && existingFingerprint !== fingerprint) throw new Error("Conflicting execution identity");
-    const duplicate = existingFingerprint !== undefined;
+    const duplicate = identity !== undefined && this.acceptedFills.has(identity);
     const priorProgress = this.fillProgress.get(progressKey);
     const baseline = priorProgress ?? (previousOrder && previousOrder.filledQty > 0 ? {
       quantity: String(previousOrder.filledQty), notional: decimal(previousOrder.filledQty).mul(previousOrder.avgFillPrice ?? 0).toString(),
@@ -457,7 +454,7 @@ export class PortfolioManager {
       if (trade) { this.trades.push(trade); this.pendingClosingTrades.delete(input.orderId); }
       else this.pendingClosingTrades.set(input.orderId, closing);
     }
-    if (identity && fingerprint) this.acceptedFills.set(identity, fingerprint);
+    if (identity) this.acceptedFills.add(identity);
     this.realizedTotalExact = realizedTotal.toString(); this.realizedTotal = realizedNumber;
     this.feesTotalExact = feesTotal.toString(); this.feesTotal = feesNumber;
     this.realizedBySymbol.set(input.symbol, { exact: symbolRealizedExact.toString(), value: symbolRealized }); this.fillTotalsActive = true;

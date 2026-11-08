@@ -31,13 +31,6 @@ export interface OpenCost {
   entryTime: string;
 }
 
-/** Independent of order progress so a replay is identified before any mutation. */
-export function fillFingerprint(input: FillInput, side: string, feeAsset: string): string {
-  return JSON.stringify([side, decimal(input.quantity ?? 0).toString(), input.price == null ? null : decimal(input.price).toString(),
-    decimal(input.fee ?? 0).toString(),
-    feeAsset, input.cumulative]);
-}
-
 /** Normalize only the affected order. No I/O, full-book copies or history scans. */
 export function normalizeFill(input: FillInput, previous?: FillProgress) {
   if (typeof input.cumulative !== "boolean") throw new Error("Cumulative fill setting must be a checkbox value");

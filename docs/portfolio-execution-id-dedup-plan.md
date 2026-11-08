@@ -39,3 +39,23 @@ Likely files: `coreza-backend/src/simulation/PortfolioManager.ts`, `coreza-backe
 
 ## Constraints
 **Plan only. No implementation, tests, builds, lint, or other validation runs requested.**
+
+## Implementation notes
+
+Implementation was subsequently requested. The editor now preserves Portfolio's resolved `executionId`; the workflow session stays in `workflowSessionId` and the backend execution context. `PortfolioExecutor` already forwards the resolved broker ID unchanged to `applyOrderEvent()`. Accepted non-cumulative fills use scoped ID membership, recorded after successful accounting; cumulative progress handling is unchanged.
+
+For Binance Spot **individual fills**, uncheck Cumulative Fill Values and map these Portfolio fields (replace the listener name if renamed):
+
+| Portfolio field | Expression |
+| --- | --- |
+| Execution ID | `{{ $('BinanceStreamListener').json.data.order.executionId }}` |
+| Filled Quantity | `{{ $('BinanceStreamListener').json.data.order.filledQty }}` |
+| Fill Price | `{{ $('BinanceStreamListener').json.data.order.lastFillPrice }}` |
+| Fee Amount | `{{ $('BinanceStreamListener').json.data.order.feeAmount }}` |
+| Fee Asset | `{{ $('BinanceStreamListener').json.data.order.feeAsset }}` |
+
+Spot's normalized `executionId` comes from native `executionReport.I`, with native trade ID `t` as fallback. Distinct native IDs therefore remain distinct through the editor request and Portfolio executor; no session UUID substitutes for them. Duplicate identity remains scoped by broker/environment/credential, symbol and order. Existing saved workflows must map the native ID; this change does not edit saved workflow configurations.
+
+When Cumulative Fill Values is checked, supply cumulative quantity, average fill price and cumulative fee totals instead. Binance's per-fill fee must not be mapped as a cumulative fee total. Futures remain unsupported; their listener's `lastFilledPrice` name does not add Portfolio futures support.
+
+Source review only. No tests, builds, lint or runtime validation were run.

@@ -92,10 +92,6 @@
         {
           "name": "Spot",
           "id": "spot"
-        },
-        {
-          "name": "Futures",
-          "id": "futures"
         }
       ],
       "default": "spot",

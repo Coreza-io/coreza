@@ -128,10 +128,6 @@
           {
             "id": "spot",
             "name": "Spot"
-          },
-          {
-            "id": "futures",
-            "name": "Futures"
           }
         ]
       }

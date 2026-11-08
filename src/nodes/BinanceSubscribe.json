@@ -92,10 +92,6 @@
         {
           "id": "spot",
           "name": "Spot"
-        },
-        {
-          "id": "futures",
-          "name": "Futures (USDT-M)"
         }
       ],
       "default": "spot",

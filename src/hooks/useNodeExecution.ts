@@ -921,7 +921,8 @@ export function useNodeExecution({
             outputData = responseResult;
           }
         } else {
-          outputData = resultSuccess(payload);
+          // Chat Input publishes its message, not the execution request metadata.
+          outputData = resultSuccess(definition?.name === "ChatInput" ? { input: payload.input } : payload);
         }
 
         const finalOutput = toPublicNodeResult(overrideOutput != null ? readNodeResult(overrideOutput) : outputData);

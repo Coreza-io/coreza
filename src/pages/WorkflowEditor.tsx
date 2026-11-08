@@ -1872,7 +1872,8 @@ const WorkflowEditorContent = () => {
       y: event.clientY,
     };
     if ((event.target as HTMLElement).closest("button, input, textarea, [role='menu'], [data-cluster-control]")) return;
-    if (insertionIntentRef.current?.source === "member-selection") return;
+    if (insertionIntentRef.current?.source === "member-selection"
+      || insertionIntentRef.current?.source === "canvas-click") return;
     // Advisory hit-testing is skipped while any canvas drag is active; click/drop re-resolves.
     if (
       clusterMoveRef.current
@@ -1927,16 +1928,23 @@ const WorkflowEditorContent = () => {
 
       const viewport = rf.getViewport();
       const canvasRect = canvasContainerRef.current?.getBoundingClientRect();
-      const fallbackPosition = canvasRect
+      const canvasCenter = canvasRect
         ? rf.screenToFlowPosition({ x: canvasRect.left + canvasRect.width / 2, y: canvasRect.top + canvasRect.height / 2 })
         : { x: -viewport.x / viewport.zoom, y: -viewport.y / viewport.zoom };
+      const fallbackPosition = {
+        x: canvasCenter.x - (nodeDefinition.collapsedSize?.width ?? 200) / 2,
+        y: canvasCenter.y - (nodeDefinition.collapsedSize?.height ?? 150) / 2,
+      };
       const currentNodes = nodesRef.current;
       const currentEdges = canonicalEdgesRef.current;
       const currentClusters = clustersRef.current;
       const currentFocusedClusterId = focusedClusterIdRef.current;
       const selectedMember = currentNodes.find((node) => node.selected
         && currentClusters.some(c=>resolveClusterHierarchy(currentClusters).expandedPath(currentFocusedClusterId).includes(c.id) && c.memberNodeIds.includes(node.id)));
-      const effectiveIntent = intent ?? insertionIntentRef.current ?? (selectedMember ? {
+      // Palette clicks use explicit canvas choices, never the last hover near the sidebar.
+      const cachedIntent = insertionIntentRef.current;
+      const explicitIntent = cachedIntent?.source === "canvas-pointer" ? null : cachedIntent;
+      const effectiveIntent = intent ?? explicitIntent ?? (selectedMember ? {
         source: "member-selection" as const,
         selectedMemberId: selectedMember.id,
         targetClusterId: currentClusters.find(c=>c.memberNodeIds.includes(selectedMember.id))?.id,
@@ -2822,8 +2830,14 @@ const WorkflowEditorContent = () => {
                 onPaneClick={onPaneClick}
                 onNodeContextMenu={onNodeContextMenu}
                 onSelectionContextMenu={onSelectionContextMenu}
-                onPaneContextMenu={(event) => openCanvasMenu(event, [], "pane")}
-                onMoveStart={() => setCanvasMenu(null)}
+                onPaneContextMenu={(event) => {
+                  onPaneClick(event);
+                  openCanvasMenu(event, [], "pane");
+                }}
+                onMoveStart={() => {
+                  setCanvasMenu(null);
+                  if (insertionIntentRef.current?.source !== "member-selection") insertionIntentRef.current = null;
+                }}
                 nodeTypes={nodeTypes}
                 edgeTypes={edgeTypes}
                 connectionLineComponent={EdgeManager.PlugConnectionLine}

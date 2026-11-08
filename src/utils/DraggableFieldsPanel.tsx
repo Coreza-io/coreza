@@ -78,7 +78,7 @@ const DraggableFieldsPanel: React.FC<Props> = ({ data, onDragStart, parentKey = 
         const canDrag = draggable || Boolean(variableKey && sourceNodeId);
         const label = text(Array.isArray(source) ? `[${key}]` : String(key));
         return <div key={path} className="flex flex-col ml-2">
-          <div className="flex items-center gap-2">
+          <div className="flex items-start gap-2">
             {nested && <button type="button" className="nodrag text-xs" aria-label={`${isExpanded ? "Collapse" : "Expand"} ${label}`} aria-expanded={isExpanded} disabled={depth >= 12} onClick={() => setExpanded(previous => ({ ...previous, [path]: !(previous[path] ?? defaultExpanded) }))}>{isExpanded ? "−" : "+"}</button>}
             <div className={`nodrag px-2 py-1 bg-primary/10 rounded text-xs font-semibold text-primary ${canDrag ? "cursor-grab" : "cursor-default"}`}
               draggable={canDrag} onMouseDown={event => event.stopPropagation()}

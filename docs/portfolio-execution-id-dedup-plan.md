@@ -42,7 +42,7 @@ Likely files: `coreza-backend/src/simulation/PortfolioManager.ts`, `coreza-backe
 
 ## Implementation notes
 
-Implementation was subsequently requested. The editor now preserves Portfolio's resolved `executionId`; the workflow session stays in `workflowSessionId` and the backend execution context. `PortfolioExecutor` already forwards the resolved broker ID unchanged to `applyOrderEvent()`. Accepted non-cumulative fills use scoped ID membership, recorded after successful accounting; cumulative progress handling is unchanged.
+Implementation was subsequently requested. Portfolio now authors the native fill identifier as `brokerExecutionId` (Broker Execution ID). The editor uses `executionId` and `workflowSessionId` for the workflow session without a Portfolio exception. `PortfolioExecutor` maps `params.brokerExecutionId` to the internal `applyOrderEvent().executionId` and uses it for fill-reporting identity; activation context IDs remain separate. Accepted non-cumulative fills use scoped ID membership, recorded after successful accounting; cumulative progress handling is unchanged.
 
 Accepted-ID lookup precedes quantity/fee validation, so changed or zero-valued replay amounts cannot prevent `duplicate_execution`. New fills still undergo the existing financial validation; lifecycle-only messages do not reserve execution IDs. Duplicate events retain the existing order-status update path without reapplying financial values.
 
@@ -50,13 +50,13 @@ For Binance Spot **individual fills**, uncheck Cumulative Fill Values and map th
 
 | Portfolio field | Expression |
 | --- | --- |
-| Execution ID | `{{ $('BinanceStreamListener').json.data.order.executionId }}` |
+| Broker Execution ID (`brokerExecutionId`) | `{{ $('BinanceStreamListener').json.data.order.executionId }}` |
 | Filled Quantity | `{{ $('BinanceStreamListener').json.data.order.filledQty }}` |
 | Fill Price | `{{ $('BinanceStreamListener').json.data.order.lastFillPrice }}` |
 | Fee Amount | `{{ $('BinanceStreamListener').json.data.order.feeAmount }}` |
 | Fee Asset | `{{ $('BinanceStreamListener').json.data.order.feeAsset }}` |
 
-Spot's normalized `executionId` comes from native `executionReport.I`, with native trade ID `t` as fallback. Distinct native IDs therefore remain distinct through the editor request and Portfolio executor; no session UUID substitutes for them. Duplicate identity remains scoped by broker/environment/credential, symbol and order. Existing saved workflows must map the native ID; this change does not edit saved workflow configurations.
+Spot's normalized `executionId` comes from native `executionReport.I`, with native trade ID `t` as fallback. Distinct native IDs therefore remain distinct through the editor request and Portfolio executor; no session UUID substitutes for them. Duplicate identity remains scoped by broker/environment/credential, symbol and order. The bundled templates use the renamed field. Existing saved workflows must move their old Execution ID mapping to Broker Execution ID (`brokerExecutionId`); this change does not edit saved workflow configurations or read the session `executionId` as a fill ID.
 
 When Cumulative Fill Values is checked, supply cumulative quantity, average fill price and cumulative fee totals instead. Binance's per-fill fee must not be mapped as a cumulative fee total. Futures remain unsupported; their listener's `lastFilledPrice` name does not add Portfolio futures support.
 

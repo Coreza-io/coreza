@@ -1,3 +1,4 @@
+import { closeBinanceSpotPosition } from "../closeSpotPosition";
 import { getBinanceTimestamp } from "../../../utils/binanceTimeSync";
 import { signHmacSha256 } from "../../../utils/crypto";
 import { BrokerOperation, toBarSeries } from "../../types";
@@ -272,6 +273,12 @@ function buildAlgoFuturesPayload(input: any, baseParams: Record<string, any>) {
 }
 
 export const binanceOperations: Record<string, BrokerOperation> = {
+  close_position: {
+    method: "post",
+    path: "/api/v3/order",
+    execute: closeBinanceSpotPosition,
+    preRegisterOrderOwner: true,
+  },
   start_user_data_stream: {
     method: "post",
     path: (input: any) => {

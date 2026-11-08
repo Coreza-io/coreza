@@ -17,6 +17,7 @@ import { LIVE_TIMING_ENABLED, observeLive, observeEpoch, orderSubmitHttp, orderS
 import { historicalRowCount, safeToolError, toolInputFields, traceToolHttp, ToolExecutionTrace } from "../../utils/toolExecutionLog";
 import {
   getBrokerConfig,
+  OrderSubmissionUnknownError,
   BrokerOperation,
   PaginationConfig,
 } from "../../brokers";
@@ -184,6 +185,7 @@ export class BrokerExecutor implements INodeExecutor {
     let requestCount = () => 0;
 
     let preRegisteredClientOrderId: string | null = null;
+    let acknowledgedClientOrderId: string | null = null;
     try {
       operation = node.values?.operation;
       const brokerNode = node as WorkflowNode & { subCategory: string };
@@ -251,13 +253,17 @@ export class BrokerExecutor implements INodeExecutor {
           symbol: resolvedParams.symbol ?? "",
           side:
             operation === "close_position"
-              ? "close"
+              ? JSON.stringify(["close", broker, credential_id, resolvedParams.environment ?? ""])
               : (resolvedParams.side ??
                 resolvedParams.instruction ??
                 resolvedParams.transactionType ??
                 ""),
-          quantity:
-            resolvedParams.quantity ??
+          quantity: operation === "close_position"
+            ? resolvedParams.qty != null && resolvedParams.qty !== ""
+              ? `qty:${resolvedParams.qty}`
+              : resolvedParams.percentage != null && resolvedParams.percentage !== ""
+                ? `percentage:${resolvedParams.percentage}` : "full"
+            : resolvedParams.quantity ??
             resolvedParams.qty ??
             resolvedParams.percentage ??
             resolvedParams.notional ??
@@ -344,32 +350,12 @@ export class BrokerExecutor implements INodeExecutor {
       let data: any;
       fetchStart = performance.now();
 
-      if (op.execute) {
-        if (LOG) console.log(`📤 [BROKER] Executing custom ${broker}.${operation}`);
-        timing.mark("brokerOperation");
-        data = await op.execute({
-          input: resolvedParams,
-          creds: workingCreds,
-          baseUrl,
-          headers,
-          request,
-        });
-      } else {
-        const path =
-          typeof op.path === "function"
-            ? op.path(resolvedParams, workingCreds)
-            : op.path;
-
-        const url = `${baseUrl}${path}`;
-        const params = op.makeParams?.(resolvedParams, workingCreds) ?? {};
-        const body = op.makeBody
-          ? await op.makeBody(resolvedParams, workingCreds)
-          : undefined;
+      const preRegisterOwner = async (required = false) => {
         const shouldPreRegisterOrderOwner =
-          operation === "place_order" &&
           typeof resolvedParams?._idempotencyKey === "string" &&
           resolvedParams._idempotencyKey.trim().length > 0;
 
+        if (required && !shouldPreRegisterOrderOwner) throw new Error("Client order ID is required before submission");
         if (shouldPreRegisterOrderOwner) {
           timing.mark("ownerBeforeRequest");
           if (LOG) timing.source("ownerBeforeRequest", "redis_queue");
@@ -388,8 +374,35 @@ export class BrokerExecutor implements INodeExecutor {
             });
           } catch (err) {
             console.warn("Failed to pre-save order-owner mapping", safeToolError(err));
+            if (required) throw err;
           }
         }
+      };
+
+      if (op.execute) {
+        if (op.preRegisterOrderOwner) await preRegisterOwner(true);
+        if (LOG) console.log(`📤 [BROKER] Executing custom ${broker}.${operation}`);
+        timing.mark("brokerOperation");
+        data = await op.execute({
+          input: resolvedParams,
+          creds: workingCreds,
+          baseUrl,
+          headers,
+          request,
+        });
+        if (op.preRegisterOrderOwner) acknowledgedClientOrderId = preRegisteredClientOrderId;
+      } else {
+        const path =
+          typeof op.path === "function"
+            ? op.path(resolvedParams, workingCreds)
+            : op.path;
+
+        const url = `${baseUrl}${path}`;
+        const params = op.makeParams?.(resolvedParams, workingCreds) ?? {};
+        const body = op.makeBody
+          ? await op.makeBody(resolvedParams, workingCreds)
+          : undefined;
+        if (operation === "place_order") await preRegisterOwner();
 
         timing.mark("requestPreparation");
         if (LOG) console.log(`📤 [BROKER] Executing ${broker}.${operation}`);
@@ -543,6 +556,17 @@ export class BrokerExecutor implements INodeExecutor {
         });
       }
 
+      const unresolvedClientOrderId = error instanceof OrderSubmissionUnknownError
+        ? error.clientOrderId : acknowledgedClientOrderId;
+      if (unresolvedClientOrderId) {
+        // Do not release the pending intent/owner for a possibly accepted order.
+        return resultFailure(
+          `Order submission requires reconciliation for client order ID ${unresolvedClientOrderId}. Check the exchange before submitting again.`,
+          { data: { clientOrderId: unresolvedClientOrderId },
+            details: { code: "ORDER_STATUS_UNKNOWN", provider: broker, recoverable: false } },
+        );
+      }
+
       if (shouldPersistRedisState && isOrderOperation && idempotencyKey) {
         if (LOG) timing.source("orderCache", "redis_cache");
         await updateOrderCache(userId, workflowId, idempotencyKey, "failed", {
@@ -553,11 +577,7 @@ export class BrokerExecutor implements INodeExecutor {
         });
       }
 
-      if (isBrokerAuthError(error)) {
-        return resultFailure(error.message, { data: null, details: { code: error.code, provider: error.provider, recoverable: error.recoverable } });
-      }
-
-      if (preRegisteredClientOrderId && operation === "place_order") {
+      if (preRegisteredClientOrderId) {
         try {
           await OrderOwnerRegistry.deleteOwnerIds(`${broker}_trading`, {
             clientOrderId: preRegisteredClientOrderId,
@@ -568,6 +588,10 @@ export class BrokerExecutor implements INodeExecutor {
             safeToolError(cleanupErr),
           );
         }
+      }
+
+      if (isBrokerAuthError(error)) {
+        return resultFailure(error.message, { data: null, details: { code: error.code, provider: error.provider, recoverable: error.recoverable } });
       }
 
       const normalized = createErrorOutput(

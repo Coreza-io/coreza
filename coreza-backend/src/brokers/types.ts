@@ -13,6 +13,14 @@ export interface BrokerHttpResponse {
   headers?: Record<string, unknown>;
 }
 
+/** The request may have reached the exchange; retain its intent until reconciled. */
+export class OrderSubmissionUnknownError extends Error {
+  constructor(readonly clientOrderId: string, cause: unknown) {
+    super("Order submission status is unknown", { cause });
+    this.name = "OrderSubmissionUnknownError";
+  }
+}
+
 export interface BrokerOperationExecuteContext {
   input: any;
   creds: any;
@@ -29,6 +37,8 @@ export interface BrokerOperation {
   transformResult?: (data: any, input: any, response?: BrokerHttpResponse) => any;
   pagination?: PaginationConfig;
   execute?: (ctx: BrokerOperationExecuteContext) => Promise<any>;
+  /** Custom operation submits _idempotencyKey as the broker client order ID. */
+  preRegisterOrderOwner?: boolean;
 }
 
 export interface BrokerConfig {

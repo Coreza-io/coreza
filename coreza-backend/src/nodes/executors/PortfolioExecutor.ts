@@ -1290,6 +1290,19 @@ export class PortfolioExecutor implements INodeExecutor {
               "live trade persist failed",
             ),
           );
+
+          // Record reporting equity only after a closing trade is finalized.
+          const snapshot = this.buildLatestSnapshot(pm, {
+            userId: context.userId,
+            workflowId: context.workflowId,
+            runId: context.reportingExecutionId ?? context.executionId,
+            broker: params.broker || "unknown",
+            credentialId: params.credential_id,
+            baseCurrency,
+          });
+          void SnapshotCache.upsertLatest(snapshot).catch((err) =>
+            fillLogger.warn({ err }, "snapshot cache update failed"),
+          );
         }
       }
 
@@ -1328,19 +1341,6 @@ export class PortfolioExecutor implements INodeExecutor {
               { err, fillId: event.fill_id },
               "fill event append failed",
             ),
-          );
-
-          // 6. Coalesced snapshot update
-          const snapshot = this.buildLatestSnapshot(pm, {
-            userId: context.userId,
-            workflowId: context.workflowId,
-            runId: context.reportingExecutionId ?? context.executionId,
-            broker: params.broker || "unknown",
-            credentialId: params.credential_id,
-            baseCurrency,
-          });
-          void SnapshotCache.upsertLatest(snapshot).catch((err) =>
-            fillLogger.warn({ err }, "snapshot cache update failed"),
           );
         }
       }

@@ -89,8 +89,10 @@ source and deployment steps have been removed from the repository.
 
 The Compose `production` profile builds the Dockerfile's `production` target and
 serves compiled `dist` assets through Nginx on port 80. The Vite `frontend`
-service belongs to the `development` profile; the default Dockerfile target and
-Windows launcher retain the development workflow.
+service belongs to the separate `frontend-development` profile. Use
+`docker compose --profile frontend-development up` for the Vite frontend with its
+existing backend dependency, without selecting `coreza-backend-dev`. The default
+Dockerfile target and Windows launcher retain the development workflow.
 
 Before a production build, set these public frontend values in the build environment
 (or Compose's root `.env`):
@@ -108,7 +110,8 @@ requires rebuilding the frontend. Local development keeps its existing localhost
 defaults. Nginx removes `/api` before forwarding to `coreza-backend:8000` and
 forwards `/ws` to `coreza-backend:8081`. Direct backend routes remain unchanged.
 Fingerprint assets are immutable; HTML and stable-path public icons revalidate.
-API responses remain private/no-store, with no shared proxy cache.
+API responses remain private/no-store, with no shared proxy cache. `/api/metrics`
+is blocked; monitoring remains available through the IP-restricted `/metrics` path.
 
 The supplied Nginx server listens for HTTP only. Configure TLS termination and
 HTTP/2 at the actual ingress/hosting edge; the mounted certificate directory and

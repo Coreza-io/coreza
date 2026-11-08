@@ -306,21 +306,21 @@ export class PortfolioManager {
     const currency = quoteAsset ?? input.baseCurrency;
     const previousFeeAsset = this.orderFeeAssets.get(input.orderId);
     const feeAsset = input.feeAsset || previousFeeAsset || currency;
-    if (previousFeeAsset === baseAsset && input.fee != null && decimal(input.fee).compare(0) !== 0 && !input.feeAsset) {
-      throw new Error("A supplied fee requires an explicit asset after a base-asset fee");
-    }
     const baseFee = feeAsset === baseAsset && baseAsset !== currency;
     if (currency !== input.baseCurrency) throw new Error("Cross-currency fill valuation requires an FX treatment");
-    const rawQuantity = decimal(input.quantity ?? 0);
-    const economicInput = rawQuantity.compare(0) > 0 || decimal(input.fee ?? 0).compare(0) !== 0;
     const trimmedId = input.executionId?.trim();
     const nativeId = trimmedId && trimmedId !== "-1" ? trimmedId : undefined;
     if (input.sequence != null && (!Number.isSafeInteger(input.sequence) || input.sequence < 0)) throw new Error("Execution sequence must be a nonnegative safe integer");
     const sequence = input.sequence != null && input.sequence > 0 ? input.sequence : undefined;
     // Cumulative snapshots are identified by accepted order progress. Some
     // brokers reuse an exchange order ID in their executionId field.
-    const identity = !input.cumulative && economicInput && (nativeId || sequence != null) ? JSON.stringify([progressKey, nativeId ?? `seq:${sequence}`]) : undefined;
+    // Membership must not depend on a replay's quantity, price or fee. Only
+    // successfully accounted economic fills are added to acceptedFills below.
+    const identity = !input.cumulative && (nativeId || sequence != null) ? JSON.stringify([progressKey, nativeId ?? `seq:${sequence}`]) : undefined;
     const duplicate = identity !== undefined && this.acceptedFills.has(identity);
+    if (!duplicate && previousFeeAsset === baseAsset && input.fee != null && decimal(input.fee).compare(0) !== 0 && !input.feeAsset) {
+      throw new Error("A supplied fee requires an explicit asset after a base-asset fee");
+    }
     const priorProgress = this.fillProgress.get(progressKey);
     const baseline = priorProgress ?? (previousOrder && previousOrder.filledQty > 0 ? {
       quantity: String(previousOrder.filledQty), notional: decimal(previousOrder.filledQty).mul(previousOrder.avgFillPrice ?? 0).toString(),

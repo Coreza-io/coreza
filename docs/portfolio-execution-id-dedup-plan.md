@@ -44,6 +44,8 @@ Likely files: `coreza-backend/src/simulation/PortfolioManager.ts`, `coreza-backe
 
 Implementation was subsequently requested. The editor now preserves Portfolio's resolved `executionId`; the workflow session stays in `workflowSessionId` and the backend execution context. `PortfolioExecutor` already forwards the resolved broker ID unchanged to `applyOrderEvent()`. Accepted non-cumulative fills use scoped ID membership, recorded after successful accounting; cumulative progress handling is unchanged.
 
+Accepted-ID lookup precedes quantity/fee validation, so changed or zero-valued replay amounts cannot prevent `duplicate_execution`. New fills still undergo the existing financial validation; lifecycle-only messages do not reserve execution IDs. Duplicate events retain the existing order-status update path without reapplying financial values.
+
 For Binance Spot **individual fills**, uncheck Cumulative Fill Values and map these Portfolio fields (replace the listener name if renamed):
 
 | Portfolio field | Expression |

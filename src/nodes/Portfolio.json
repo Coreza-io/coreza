@@ -598,7 +598,7 @@
       "key": "cumulativeFilledQty",
       "label": "Cumulative Fill Values",
       "type": "checkbox",
-      "default": false,
+      "default": true,
       "description": "Checked: quantity is total filled so far, price is the order average, and fee is the total fee so far. Unchecked: all three describe this execution. Map matching values; broker streams may mix cumulative quantity with execution fees.",
       "displayOptions": {
         "show": {

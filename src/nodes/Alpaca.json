@@ -277,7 +277,7 @@
           ]
         }
       },
-      "description": "Time interval between data bars."
+      "description": "Time interval between bars. For 1Day bars spanning multiple days, provide start for the historical lookback. Intraday intervals below 1Day can omit dates for the current day's available data only."
     },
     {
       "key": "limit",
@@ -293,7 +293,7 @@
           ]
         }
       },
-      "description": "Maximum rows per response page (1-10000), for every timeframe. Does not expand the date range; without start only the current day's available data is searched. Auto-pagination may return more rows in total."
+      "description": "Maximum rows per response page (1-10000), for every timeframe. Does not expand the date range: without start, only the current day's available data is searched and no bars may exist before trading or on non-trading days. Auto-pagination may return more rows in total."
     },
     {
       "key": "feed",
@@ -437,7 +437,7 @@
           ]
         }
       },
-      "description": "Inclusive RFC-3339 or YYYY-MM-DD start. Omitted means the current day's beginning, subject to feed delay. Supply an earlier start for multiple daily bars or any prior-session history; optional for same-day intraday data."
+      "description": "Inclusive RFC-3339 or YYYY-MM-DD start. Omitted means the current day's beginning, subject to feed delay. Supply an earlier start for multiple daily bars, prior sessions, or indicator warm-up; optional for same-day intraday data."
     },
     {
       "key": "end",
@@ -518,7 +518,7 @@
           ]
         }
       },
-      "description": "Order side buy/sell — only for place_order operation."
+      "description": "Order side buy/sell \u2014 only for place_order operation."
     },
     {
       "key": "qty",
@@ -534,7 +534,7 @@
           ]
         }
       },
-      "description": "Order quantity — only for place_order."
+      "description": "Order quantity \u2014 only for place_order."
     },
     {
       "key": "percentage",
@@ -581,7 +581,7 @@
           ]
         }
       },
-      "description": "Order type market/limit/stop/etc — only for place_order."
+      "description": "Order type market/limit/stop/etc \u2014 only for place_order."
     },
     {
       "key": "limit_price",
@@ -597,7 +597,7 @@
           "type": "limit"
         }
       },
-      "description": "Limit price — only for limit/stop_limit orders."
+      "description": "Limit price \u2014 only for limit/stop_limit orders."
     },
     {
       "key": "stop_price",
@@ -613,7 +613,7 @@
           "type": "stop"
         }
       },
-      "description": "Stop price — only for stop/stop_limit orders."
+      "description": "Stop price \u2014 only for stop/stop_limit orders."
     },
     {
       "key": "trail_price",
@@ -692,7 +692,7 @@
           ]
         }
       },
-      "description": "Time in force — only for place_order."
+      "description": "Time in force \u2014 only for place_order."
     },
     {
       "key": "extended_hours",
@@ -729,10 +729,5 @@
       },
       "showDescription": false
     }
-  ],
-  "toolMetadata": {
-    "operationDescriptions": {
-      "get_candle": "Fetch historical OHLCV bars. If start is omitted, Alpaca defaults to the beginning of the current day (subject to feed access delays); it does not search backwards for the requested number of bars. For same-day intraday intervals below 1Day, dates may be omitted and limit caps rows within today's available data; before trading or on non-trading days this can return no bars. For multiple daily bars (1Day) or any lookback into previous sessions, supply at least an explicit start date covering the requested history and indicator warm-up. End is optional and defaults to the latest time allowed by the feed; supply end for a bounded past period. Limit applies to every timeframe as a per-page cap (1-10000), not a lookback; Coreza auto-pagination can return more than limit in total. Ascending sort returns the oldest bars in the selected range first. Historical output returns a summary plus dataRef; pass that exact dataRef to indicators instead of reproducing raw candles."
-    }
-  }
+  ]
 }

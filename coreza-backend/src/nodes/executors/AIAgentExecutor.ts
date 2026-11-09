@@ -670,21 +670,27 @@ export class AIAgentExecutor implements INodeExecutor {
     node: WorkflowNode,
     definition?: ToolDefinition,
   ): string {
-    const defaultMetadata = loadNodeDefinition(node.name || "")?.toolMetadata;
-    const metadata = (node as any).toolMetadata;
-    const description = metadata?.description || defaultMetadata?.description ||
-      node.description || (node as any).def || definition?.description ||
-      `Execute ${node.name || node.category || "node"} node to perform its configured action`;
-    // Tool-specific usage and limitations belong to definitions, not agent branches.
-    const operationDescriptions = {
-      ...defaultMetadata?.operationDescriptions,
-      ...metadata?.operationDescriptions,
-    };
-    const operation = node.values?.operation;
-    const operationInfo = typeof operation === "string" && operation
-      ? operationDescriptions[operation]
-      : Object.entries(operationDescriptions).map(([name, info]) => `${name}: ${info}`).join("\n");
-    return operationInfo ? `${description}\n${operationInfo}` : description;
+    const metadataDescription =
+      (node as any).toolMetadata?.description ||
+      loadNodeDefinition(node.name || "")?.toolMetadata?.description;
+    if (metadataDescription) {
+      return metadataDescription;
+    }
+
+    if (node.description) {
+      return node.description;
+    }
+
+    if ((node as any).def) {
+      return (node as any).def;
+    }
+
+    if (definition) {
+      return definition.description;
+    }
+
+    const nodeName = node.name || node.category || "node";
+    return `Execute ${nodeName} node to perform its configured action`;
   }
 
   private fieldToZodType(field: any): ZodTypeAny {

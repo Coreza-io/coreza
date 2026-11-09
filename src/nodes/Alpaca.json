@@ -277,7 +277,7 @@
           ]
         }
       },
-      "description": "Time interval between data bars."
+      "description": "Time interval between bars. For 1Day bars spanning multiple days, provide start for the historical lookback. Intraday intervals below 1Day can omit dates for the current day's available data only."
     },
     {
       "key": "limit",
@@ -293,7 +293,7 @@
           ]
         }
       },
-      "description": "Number of historical bars to retrieve."
+      "description": "Maximum rows per response page (1-10000), for every timeframe. Does not expand the date range: without start, only the current day's available data is searched and no bars may exist before trading or on non-trading days. Auto-pagination may return more rows in total."
     },
     {
       "key": "feed",
@@ -437,7 +437,7 @@
           ]
         }
       },
-      "description": "Start date/time for historical data range. ISO 8601 format."
+      "description": "Inclusive RFC-3339 or YYYY-MM-DD start. Omitted means the current day's beginning, subject to feed delay. Supply an earlier start for multiple daily bars, prior sessions, or indicator warm-up; optional for same-day intraday data."
     },
     {
       "key": "end",
@@ -453,7 +453,7 @@
           ]
         }
       },
-      "description": "End date/time for historical data range. ISO 8601 format."
+      "description": "Inclusive RFC-3339 or YYYY-MM-DD end. Optional; defaults to current time or the feed's delayed cutoff. Set for a bounded historical period."
     },
     {
       "key": "include_content",

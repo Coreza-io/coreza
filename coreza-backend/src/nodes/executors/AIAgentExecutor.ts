@@ -304,7 +304,7 @@ export class AIAgentExecutor implements INodeExecutor {
       const result = await agent.invoke(
         {
           messages: [
-            new SystemMessage(`${systemPrompt}\nCurrent UTC date/time: ${new Date().toISOString()}. For Alpaca get_candle, always supply an explicit ISO 8601 start covering the requested lookback and indicator warm-up; limit is a per-page row cap, not a date range. Supply end for a bounded historical period; omit end only when requesting data through the latest available time. Preserve saved tool settings.\nHistorical market-data tools return a dataRef. Pass that exact dataRef to indicator tools in candle_data or dataRef; tool names are not storage keys. Never claim indicator confirmation from failed or not_ready tool results.`),
+            new SystemMessage(`${systemPrompt}\nHistorical market-data tools return a dataRef. Pass that exact dataRef to indicator tools in candle_data or dataRef; tool names are not storage keys. Never claim indicator confirmation from failed or not_ready tool results.`),
             ...priorMessages,
             new HumanMessage(userPrompt),
           ],
@@ -511,16 +511,6 @@ export class AIAgentExecutor implements INodeExecutor {
           const unwrappedInput = executorCategory === 'Indicators' ? effectiveInput
             : resolveDataRef(effectiveInput, dataContext, refs);
           operation = unwrappedInput.operation;
-          if (node.name === 'Alpaca' && operation === 'get_candle') {
-            const start = typeof unwrappedInput.start === 'string' ? unwrappedInput.start.trim() : '';
-            const end = typeof unwrappedInput.end === 'string' ? unwrappedInput.end.trim() : '';
-            if (!start || !Number.isFinite(Date.parse(start))) {
-              throw new Error('Alpaca historical bars require an explicit valid ISO 8601 start date. Choose a lookback covering the requested period and indicator warm-up; limit does not set the date range.');
-            }
-            if (end && (!Number.isFinite(Date.parse(end)) || Date.parse(end) < Date.parse(start))) {
-              throw new Error('Alpaca historical bars end must be a valid ISO 8601 date on or after start.');
-            }
-          }
           trace('effective_input', () => ({ operation, source: 'effective',
             fields: toolInputFields(unwrappedInput, executorCategory === 'Broker' ? operation || '__broker_unknown__' : undefined),
             resolution: {
@@ -680,27 +670,21 @@ export class AIAgentExecutor implements INodeExecutor {
     node: WorkflowNode,
     definition?: ToolDefinition,
   ): string {
-    const metadataDescription =
-      (node as any).toolMetadata?.description ||
-      loadNodeDefinition(node.name || "")?.toolMetadata?.description;
-    if (metadataDescription) {
-      return metadataDescription;
-    }
-
-    if (node.description) {
-      return node.description;
-    }
-
-    if ((node as any).def) {
-      return (node as any).def;
-    }
-
-    if (definition) {
-      return definition.description;
-    }
-
-    const nodeName = node.name || node.category || "node";
-    return `Execute ${nodeName} node to perform its configured action`;
+    const defaultMetadata = loadNodeDefinition(node.name || "")?.toolMetadata;
+    const metadata = (node as any).toolMetadata;
+    const description = metadata?.description || defaultMetadata?.description ||
+      node.description || (node as any).def || definition?.description ||
+      `Execute ${node.name || node.category || "node"} node to perform its configured action`;
+    // Tool-specific usage and limitations belong to definitions, not agent branches.
+    const operationDescriptions = {
+      ...defaultMetadata?.operationDescriptions,
+      ...metadata?.operationDescriptions,
+    };
+    const operation = node.values?.operation;
+    const operationInfo = typeof operation === "string" && operation
+      ? operationDescriptions[operation]
+      : Object.entries(operationDescriptions).map(([name, info]) => `${name}: ${info}`).join("\n");
+    return operationInfo ? `${description}\n${operationInfo}` : description;
   }
 
   private fieldToZodType(field: any): ZodTypeAny {
@@ -756,7 +740,6 @@ export class AIAgentExecutor implements INodeExecutor {
   private generateSchemaFromNode(node: WorkflowNode): ZodTypeAny {
     const fields = (node as any).fields || [];
     const schemaObject: Record<string, ZodTypeAny> = {};
-    const alpacaHistory = node.name === 'Alpaca' && node.values?.operation === 'get_candle';
 
     for (const field of fields) {
       if (field.type === "hidden") continue;
@@ -778,16 +761,9 @@ export class AIAgentExecutor implements INodeExecutor {
         isConfiguredToolValue(node.values?.[key]) && getFieldValueMode(node.values ?? {}, key) === "fixed"
           && matches(key, allowed, true))) continue;
 
-      const toolField = alpacaHistory && field.key === 'start'
-        ? { ...field, required: true, description: 'Required ISO 8601 start date. Cover the requested lookback and indicator warm-up; limit does not select a historical date range.' }
-        : alpacaHistory && field.key === 'end'
-        ? { ...field, description: 'ISO 8601 end date on or after start. Set for a bounded historical period; omit only for data through the latest available time.' }
-        : alpacaHistory && field.key === 'limit'
-        ? { ...field, description: 'Maximum rows per API page, not a historical lookback. Always provide start separately.' }
-        : field;
       schemaObject[field.key] = field.key === 'candle_data' && node.category === 'Indicators'
         ? this.fieldToZodType({ ...field, required: false, description: 'Canonical candles as JSON, or the exact dataRef returned by a historical tool. Optional when dataRef is supplied.' })
-        : this.fieldToZodType(toolField);
+        : this.fieldToZodType(field);
     }
 
     const nodeCategory = (node as any).subCategory || node.category || "";

@@ -34,7 +34,7 @@ export interface NodeDefinition {
   handles?: any[];
   action?: any;
   size?: any;
-  toolMetadata?: { name?: string; description?: string; operationDescriptions?: Record<string, string> };
+  toolMetadata?: { name?: string; description?: string };
 }
 
 // Cache for loaded node definitions

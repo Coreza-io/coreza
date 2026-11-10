@@ -267,6 +267,9 @@ export class AIAgentExecutor implements INodeExecutor {
         } catch (error) { activity.end(readSpan, signal?.aborted ? "cancelled" : "failed"); throw error; }
       }
       assertAgentActive(signal);
+      // Observe only responses generated during this invocation. Restored memory can
+      // contain earlier provider metadata and must not count as a new search.
+      const observedSearchCalls = new Map<string, ReturnType<typeof nativeSearchCalls>[number]>();
       const modelSpans = new Map<string, string>();
       const modelTimes = new Map<string, number>();
       const modelStart = (_model: unknown, _messages: unknown, runId: string) => {
@@ -274,8 +277,14 @@ export class AIAgentExecutor implements INodeExecutor {
         if (modelSpans.size < 128 && !modelSpans.has(runId)) modelSpans.set(runId, activity.start("model", chatModelNode.id));
       };
       const modelEnd = (output: any, runId: string) => {
-        if (solModel) console.info('[AIAgent] native search response', { runId: executionId, nodeId: node.id, modelInvocationId: runId, enabled: nativeSearchEnabled,
-          calls: nativeSearchCalls(output?.generations?.flat()?.map((generation: any) => generation.message) ?? []) });
+        if (solModel) {
+          const calls = nativeSearchCalls(output?.generations?.flat()?.map((generation: any) => generation.message) ?? []);
+          for (const call of calls) {
+            if (observedSearchCalls.has(call.id) || observedSearchCalls.size < 100) observedSearchCalls.set(call.id, call);
+          }
+          console.info('[AIAgent] native search response', { runId: executionId, nodeId: node.id, modelInvocationId: runId,
+            enabled: nativeSearchEnabled, calls });
+        }
         const responseError = solModel ? this.solResponseError(output?.generations?.flat()?.map((generation: any) => generation.message) || []) : undefined;
         const start = modelTimes.get(runId);
         if (start !== undefined) console.info('[AIAgent] model', { runId: executionId, nodeId: node.id, modelInvocationId: runId, durationMs: performance.now() - start });
@@ -343,7 +352,7 @@ export class AIAgentExecutor implements INodeExecutor {
       const responseStart = performance.now();
       const agentOutput = solModel ? this.getSolAgentOutput(result) : this.getAgentOutput(result);
       const agentResponse = solModel ? extractResponseCitations(result?.messages?.at(-1), agentOutput) : undefined;
-      const searchCalls = solModel ? nativeSearchCalls(result?.messages ?? []) : [];
+      const searchCalls = [...observedSearchCalls.values()];
       console.info('[AIAgent] native search', { runId: executionId, nodeId: node.id, enabled: nativeSearchEnabled, observedCalls: searchCalls.length });
       console.info('[AIAgent] final response', { runId: executionId, nodeId: node.id, durationMs: performance.now() - responseStart });
 

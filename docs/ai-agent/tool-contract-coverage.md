@@ -1,0 +1,20 @@
+# Connected-tool contract coverage
+
+This change implements the plan's Alpaca market-data pilot and the shared invocation boundary. It does not establish complete validation of all converted nodes. No tests or live provider requests were run for this change.
+
+| Runtime identity / operation | Route | Argument schema | Effective contract | Output | Risk / recovery |
+| --- | --- | --- | --- | --- | --- |
+| Alpaca / `get_candle`, stock and crypto | BrokerExecutor → Alpaca HTTP | Conditional editable fields; supported envelope; unknown-argument diagnostics; pagination controls | `alpaca.market-data.v1`: authoritative configuration/aliases, single agent series, intervals, limits, calendar-valid dates, inclusive bounds, asset/operation controls | Existing immutable historical DataRef pipeline; safe requested range/feed and page completeness; empty versus partial versus malformed | Read-only; editable corrections within existing agent budget; no retries or date/feed substitution |
+| Alpaca / `get_latest_bar`, stock and crypto | BrokerExecutor → Alpaca HTTP | Conditional editable fields and supported envelope | Same contract, latest endpoint allowlist | Validated compact minute observation and timestamp; empty is `no_data`; no historical warm-up reference | Read-only; no automatic retry |
+| Alpaca / other operations | Existing BrokerExecutor routes | Shared conditional schemas | Legacy/unreviewed; existing executor controls retained | Existing adapters and safe failure evidence | Operation-specific; no new replay policy |
+| Binance, Dhan, Schwab / all operations | Existing BrokerExecutor routes | Shared conditional schemas | Legacy/unreviewed; no Alpaca rules applied | Existing adapters; Schwab `get_price_history` still needs a dedicated DataRef review | Operation-specific; no new replay policy |
+| Indicators / all operations | IndicatorsExecutor | Shared conditional schemas and structured defaults | Legacy/unreviewed; existing scalar/readiness/provenance checks remain owned by the executor | Existing DataRefs and `not_ready` behavior | Includes stateful initialization; no new replay policy |
+| GoogleWebSearch | ToolExecutor | Added missing `query`; identity comes from executor context | Legacy/unreviewed | Existing search output | External read; no new replay policy |
+| Other data/news/screeners, state/windows, logic/risk, portfolio/backtest, fetch/output, communication | Existing registered executor routes | Shared conditional schemas/envelope handling; structured repeater defaults | Legacy/unreviewed; no blanket UI reparse of resolved data | Existing output adapters; non-success lifecycle states cannot masquerade as completed data | Operation-specific; no new replay policy |
+| Agent/input/model/memory, streams/subscriptions, triggers and capability/static aliases | Existing attachment/registry behavior | Shared boundary only if actually invoked as a connected executable tool | Legacy/unreviewed; JSON presence does not establish synchronous support | Waiting/listening/streaming remain non-completed outcomes | Requires identity, lifecycle and side-effect review before expansion |
+
+Broker contracts are registered on `BrokerConfig`; operation-specific request/response rules stay in the broker directory. The agent uses only generic hooks. `legacy/unreviewed` is emitted explicitly for unsupported contract operations.
+
+Remaining delivery slice 2 work is a per-operation attachment/routing inventory, indicator scalar-contract expansion, and dedicated reviews of the other brokers and node families. Optional transient retries and last-N range expansion remain separate follow-on features. Framework correction delivery was inspected against the installed LangChain implementation but was not exercised end to end.
+
+Build comparison: the backend TypeScript build reports the same 54 diagnostics on the unchanged `dev` base and this change, with no new diagnostics. The full build remains blocked by those existing errors. The first build attempt exceeded Node’s default heap; the comparison used a 6144 MB heap.

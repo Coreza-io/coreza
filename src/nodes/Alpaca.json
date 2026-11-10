@@ -281,7 +281,7 @@
     },
     {
       "key": "limit",
-      "label": "Bars to Fetch",
+      "label": "Page Size",
       "type": "text",
       "placeholder": "e.g. 100",
       "required": false,
@@ -338,7 +338,58 @@
           ]
         }
       },
-      "description": "Market data feed source. SIP includes all US exchanges, IEX is free tier."
+      "description": "Feed choices depend on the operation. Historical: sip, iex, otc, boats. Latest also supports delayed_sip and overnight. Availability depends on your entitlement; feeds are never substituted.",
+      "dynamicOptions": {
+        "dependsOn": "operation",
+        "fallbackToStatic": true,
+        "preserveValidValue": true,
+        "optionsByValue": {
+          "get_candle": [
+            {
+              "id": "sip",
+              "name": "SIP - All US Exchanges"
+            },
+            {
+              "id": "iex",
+              "name": "IEX - Investors Exchange"
+            },
+            {
+              "id": "otc",
+              "name": "OTC - Over-the-counter"
+            },
+            {
+              "id": "boats",
+              "name": "BOATS - Blue Ocean"
+            }
+          ],
+          "get_latest_bar": [
+            {
+              "id": "sip",
+              "name": "SIP - All US Exchanges"
+            },
+            {
+              "id": "iex",
+              "name": "IEX - Investors Exchange"
+            },
+            {
+              "id": "delayed_sip",
+              "name": "Delayed SIP (15 min)"
+            },
+            {
+              "id": "otc",
+              "name": "OTC - Over-the-counter"
+            },
+            {
+              "id": "boats",
+              "name": "BOATS - Blue Ocean"
+            },
+            {
+              "id": "overnight",
+              "name": "Overnight Data"
+            }
+          ]
+        }
+      }
     },
     {
       "key": "currency",
@@ -352,6 +403,9 @@
           "operation": [
             "get_candle",
             "get_latest_bar"
+          ],
+          "assetType": [
+            "stock"
           ]
         }
       },

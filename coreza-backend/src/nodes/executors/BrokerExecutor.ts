@@ -183,6 +183,7 @@ export class BrokerExecutor implements INodeExecutor {
     let requestEnvironment: string | undefined;
     let fetchStart: number | undefined;
     let requestCount = () => 0;
+    let readCancellation = false;
 
     let preRegisteredClientOrderId: string | null = null;
     let acknowledgedClientOrderId: string | null = null;
@@ -216,16 +217,20 @@ export class BrokerExecutor implements INodeExecutor {
         input: "in_memory_execution_input",
         resolution: context?.resolveNodeParameters ? "execution_context_resolver" : "node_values_input_merge",
       });
+      readCancellation = op.supportsCancellation === true;
+
       // Resolve and merge node parameters with input data
       if (LOG) console.log(
         `🔧 [BROKER] Starting parameter resolution for node ${node.id}`,
       );
-      const resolvedParams = context?.resolveNodeParameters
+      let resolvedParams = context?.resolveNodeParameters
         ? context.resolveNodeParameters(node, input)
         : { ...node.values, ...input };
       if (LOG) console.log(
         `🔧 [BROKER] Parameter resolution completed for node ${node.id}`,
       );
+
+      resolvedParams = config.normalizeInput?.(resolvedParams) ?? resolvedParams;
 
       // Config-driven crypto symbol normalization
       const brokerCap = BROKER_CAPABILITIES[broker];
@@ -237,8 +242,9 @@ export class BrokerExecutor implements INodeExecutor {
       }
       context?.agentDataTrace?.('broker_parameters', () => ({ broker, operation,
         fields: toolInputFields(resolvedParams, operation) }), 'debug');
-      const transport = context?.agentDataTrace ? traceToolHttp(axios, context.agentDataTrace, resolvedParams) : undefined;
-      const request = timing.wrap(transport?.client ?? axios);
+      const client = readCancellation && context?.abortSignal ? axios.create({ signal: context.abortSignal }) as typeof axios : axios;
+      const transport = context?.agentDataTrace ? traceToolHttp(client, context.agentDataTrace, resolvedParams) : undefined;
+      const request = timing.wrap(transport?.client ?? client);
       if (transport) requestCount = transport.requestCount;
 
       isOrderOperation =
@@ -430,6 +436,8 @@ export class BrokerExecutor implements INodeExecutor {
             operation,
             context?.agentDataTrace,
             request,
+            readCancellation ? context?.abortSignal : undefined,
+            config.toolContract?.supports(operation) ? context?.dataContext?.getStats()?.maxSizeBytes : undefined,
           );
         } else {
           // Single request (no pagination or disabled)
@@ -518,6 +526,7 @@ export class BrokerExecutor implements INodeExecutor {
       timingStatus = "success";
       return normalized;
     } catch (error) {
+      if (readCancellation && (context?.abortSignal?.aborted || axios.isCancel(error))) throw error;
       timing.mark("errorHandling");
       if (fetchStart !== undefined) context?.agentDataTrace?.('broker_fetch', {
         durationMs: performance.now() - fetchStart, operation, success: false,
@@ -607,6 +616,14 @@ export class BrokerExecutor implements INodeExecutor {
           startTime,
         },
       );
+      const transportError = error as any;
+      const httpStatus = transportError?.response?.status;
+      const providerCode = transportError?.response?.data?.code;
+      normalized.details = { ...normalized.details,
+        status: typeof httpStatus === 'number' ? httpStatus : undefined,
+        code: typeof transportError?.code === 'string' && /^[A-Z_0-9]{1,64}$/.test(transportError.code) ? transportError.code : normalized.details?.code,
+        response: typeof providerCode === 'number' ? { providerCode } : undefined,
+      };
       return normalized;
     } finally {
       if (orderOperation && (LOG || LIVE_TIMING_ENABLED)) timing.finish({
@@ -713,13 +730,17 @@ export class BrokerExecutor implements INodeExecutor {
     operation: string,
     trace?: ToolExecutionTrace,
     request: typeof axios = axios,
+    signal?: AbortSignal,
+    maxBytes?: number,
   ): Promise<any> {
     type RequestParams = Record<string, any>;
     let allData: Record<string, any[]> = {};
     let pageToken: string | null = null;
     let requestCount = 0;
+    let receivedBytes = 0;
 
     do {
+      signal?.throwIfAborted();
       // Add page token if we have one
       const pageParams: RequestParams = {
         ...baseParams,
@@ -731,6 +752,7 @@ export class BrokerExecutor implements INodeExecutor {
         await this.delay(RATE_LIMIT_DELAY_MS);
       }
 
+      signal?.throwIfAborted();
       const pageStart = performance.now();
       trace?.('broker_page_request', () => ({ page: requestCount + 1, request: {
         query: toolInputFields(pageParams, operation), body: toolInputFields(body, operation, true),
@@ -748,7 +770,12 @@ export class BrokerExecutor implements INodeExecutor {
 
       // Extract data from response
       const responseData = response.data;
+      op.validateResponse?.(responseData, resolvedParams);
       const pageData = responseData[pagination.dataField];
+      if (maxBytes !== undefined) {
+        receivedBytes += Buffer.byteLength(JSON.stringify(pageData) ?? '', 'utf8');
+        if (receivedBytes > maxBytes) throw Object.assign(new Error('Historical data exceeds the run memory budget'), { code: 'RESOURCE_LIMIT' });
+      }
 
       // Merge data based on strategy
       if (pagination.mergeStrategy === "concat") {

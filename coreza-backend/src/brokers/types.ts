@@ -35,6 +35,8 @@ export interface BrokerOperation {
   makeParams?: (input: any, creds?: any) => Record<string, any>;
   makeBody?: (input: any, creds?: any) => any | Promise<any>;
   transformResult?: (data: any, input: any, response?: BrokerHttpResponse) => any;
+  supportsCancellation?: boolean;
+  validateResponse?: (data: any, input: any) => void;
   pagination?: PaginationConfig;
   execute?: (ctx: BrokerOperationExecuteContext) => Promise<any>;
   /** Custom operation submits _idempotencyKey as the broker client order ID. */
@@ -42,6 +44,8 @@ export interface BrokerOperation {
 }
 
 export interface BrokerConfig {
+  toolContract?: import('../nodes/logic/toolInputContract').ToolInputContract;
+  normalizeInput?: (input: Record<string, any>) => Record<string, any>;
   authType: 'api_key' | 'oauth';
   baseUrl: string | ((creds: any, input?: any) => string);
   makeAuthHeaders: (creds: any) => Record<string, string> | Promise<Record<string, string>>;

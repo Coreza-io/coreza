@@ -20,7 +20,7 @@ import type { ToolExecutionTrace } from '../../utils/toolExecutionLog';
  */
 export interface ProcessedToolOutput {
   success?: boolean;
-  status?: 'not_ready' | 'no_data';
+  status?: 'not_ready' | 'no_data' | 'partial_data';
   /** Reference to data stored in InMemoryStore (for large datasets) */
   dataRef?: string;
   /** Summary data safe for AI consumption */

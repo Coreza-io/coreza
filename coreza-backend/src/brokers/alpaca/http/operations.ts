@@ -1,7 +1,29 @@
+import { validateAlpacaMarketData } from "../marketDataContract";
+import { normalizeCandles } from "../../../marketData/normalizeCandles";
 import { convertToISO8601 } from "../../../utils/dates";
 import { BrokerOperation } from "../../types";
 import { fromAlpacaBar, parseAlpacaRawBar } from "../helpers";
 import { validateAlpacaCryptoSymbol } from "../cryptoOrderSymbol";
+
+function validateBarsResponse(raw: any, input: any): void {
+  if (!raw?.bars || typeof raw.bars !== 'object' || Array.isArray(raw.bars)) {
+    const error = new Error('Missing or malformed bars container');
+    Object.assign(error, { code: 'INVALID_OUTPUT' });
+    throw error;
+  }
+  if (raw.next_page_token != null && typeof raw.next_page_token !== 'string') {
+    throw Object.assign(new Error('Malformed continuation token'), { code: 'INVALID_OUTPUT' });
+  }
+  for (const value of Object.values(raw.bars)) {
+    if ((input.operation === 'get_candle' ? !Array.isArray(value) : Array.isArray(value)) || !value || typeof value !== 'object') {
+      const error = new Error('Malformed bars series');
+      Object.assign(error, { code: 'INVALID_OUTPUT' });
+      throw error;
+    }
+    try { normalizeCandles(Array.isArray(value) ? value : [value]); }
+    catch { throw Object.assign(new Error('Invalid bars in provider response'), { code: 'INVALID_OUTPUT' }); }
+  }
+}
 
 const KNOWN_CRYPTO_QUOTES = ["USD", "USDT", "USDC", "BTC"];
 const ALPACA_BAR_ADJUSTMENTS = new Set([
@@ -162,30 +184,31 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
     }),
   },
   get_candle: {
+    supportsCancellation: true,
     method: "get",
     path: (input: any) =>
       getAssetType(input) === "crypto"
         ? "/v1beta3/crypto/us/bars"
         : "/v2/stocks/bars",
     makeParams: (input: any) => {
-      if (!input.symbol)
-        throw new Error("Symbol is required for get_candle operation");
+      input = validateAlpacaMarketData({ ...input, operation: 'get_candle' });
       const params: Record<string, any> = {
         symbols: input.symbol,
         timeframe: input.interval,
         start: input.start,
-        feed: input.feed,
         sort: input.sort || "asc",
-        limit: Math.min(Number(input.limit) || 10000, 10000), // Max 10000 per request
+        limit: input.limit,
       };
       if (getAssetType(input) !== "crypto") {
         params.adjustment = normalizeBarAdjustment(input.adjustment);
+        if (input.feed) params.feed = input.feed;
+        if (input.currency) params.currency = input.currency;
       }
-      if (input.currency) params.currency = input.currency;
       if (input.end) params.end = input.end;
       if (input.page_token) params.page_token = input.page_token;
       return params;
     },
+    validateResponse: validateBarsResponse,
     pagination: {
       enabled: true,
       tokenField: "next_page_token",
@@ -195,7 +218,8 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
     },
 
     transformResult: (raw: any, input: any) => {
-      const barsObj = raw?.bars ?? {};
+      validateBarsResponse(raw, input);
+      const barsObj = raw.bars;
 
       const BarSeries = Object.entries(barsObj).map(
         ([symbol, b]: [string, any]) => {
@@ -224,22 +248,24 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
     },
   },
   get_latest_bar: {
+    supportsCancellation: true,
     method: "get",
     path: (input: any) =>
       getAssetType(input) === "crypto"
         ? "/v1beta3/crypto/us/latest/bars"
         : "/v2/stocks/bars/latest",
     makeParams: (input: any) => {
-      if (!input.symbol)
-        throw new Error("Symbol is required for get_latest_bar operation");
+      input = validateAlpacaMarketData({ ...input, operation: 'get_latest_bar' });
       const params: any = { symbols: input.symbol };
-      if (getAssetType(input) !== "crypto" && input.feed)
-        params.feed = input.feed;
-      if (input.currency) params.currency = input.currency;
+      if (getAssetType(input) !== "crypto") {
+        if (input.feed) params.feed = input.feed;
+        if (input.currency) params.currency = input.currency;
+      }
       return params;
     },
     transformResult: (raw: any, input: any) => {
-      const barsObj = raw?.bars ?? {};
+      validateBarsResponse(raw, input);
+      const barsObj = raw.bars;
 
       const BarSeries = Object.entries(barsObj).map(
         ([symbol, b]: [string, any]) => {
@@ -254,7 +280,7 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
               getAssetType(input) === "crypto"
                 ? toCanonicalCryptoSymbol(symbol)
                 : symbol,
-            interval: input.interval || "1m",
+            interval: "1Min",
             bars,
           };
         },

@@ -63,7 +63,10 @@ export const alpacaCapabilities: BrokerCapabilities = {
 
   normalizeCryptoParams: (params: Record<string, any>) => {
     if (params.operation && !["place_order", "close_position", "get_candle", "get_latest_bar"].includes(params.operation)) return;
-    params.symbol = validateAlpacaCryptoSymbol(params.crypto_base ?? params.symbol);
+    const value = params.crypto_base ?? params.symbol;
+    params.symbol = ["get_candle", "get_latest_bar"].includes(params.operation)
+      ? String(value).split(",").map(validateAlpacaCryptoSymbol).join(",")
+      : validateAlpacaCryptoSymbol(value);
   },
 
   orderOwnerExtract: extractAlpacaOrderOwnerIds,

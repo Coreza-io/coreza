@@ -37,7 +37,10 @@ export function createPaletteNodeBatch(args: {
     reservations.add(result.name);
     return result.name;
   };
-  const primaryNodeId = allocate(args.nodeType);
+  // Palette labels may contain punctuation that is not valid in instance names.
+  // Keep the registered type intact; only normalize the initial public name.
+  const initialName = args.nodeType.replace(/[^a-zA-Z0-9_\-\s]/g, " ").replace(/\s+/g, " ").trim().slice(0, 50) || "Node";
+  const primaryNodeId = allocate(initialName);
   const nodes: Node[] = [{
     id: primaryNodeId,
     type: args.nodeType,

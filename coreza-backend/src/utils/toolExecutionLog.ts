@@ -20,6 +20,7 @@ export function redactToolFields(value: unknown): unknown {
     if (typeof item === 'number') return Number.isFinite(item) ? item : '[Non-finite]';
     if (typeof item === 'bigint') return String(item);
     if (typeof item === 'string') {
+      if (item.includes('{{')) return '[Expression omitted]';
       if (/^(body|requestbody)$/.test(keyName(key))) return '[Body omitted]';
       if (/^\s*[\[{]/.test(item)) return `[Serialized data: ${item.length} characters]`;
       if (/^(candledata|bars|prices|resolveddata)$/.test(keyName(key)) && !item.startsWith('bars:')) return `[Data: ${item.length} characters]`;

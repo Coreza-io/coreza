@@ -26,6 +26,14 @@
   "authAction": { "url": "/models/openaichatmodel/auth", "method": "POST" },
   "fields": [
     {
+      "key": "enableWebSearch",
+      "label": "Enable Web Search",
+      "type": "checkbox",
+      "default": true,
+      "displayOptions": { "show": { "model": ["gpt-6.1-sol"] } },
+      "description": "Allows the agent to search the web for current information. Search may add API cost and response time."
+    },
+    {
       "key": "credential_id",
       "label": "Credential",
       "type": "select",

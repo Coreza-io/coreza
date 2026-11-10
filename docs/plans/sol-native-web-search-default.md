@@ -2,7 +2,7 @@
 
 Date: 2026-11-10
 Target branch: dev
-Status: implementation plan only
+Status: implemented; runtime acceptance pending
 
 ## Problem and expected behavior
 
@@ -142,3 +142,16 @@ Users can disable search per model node immediately. For code rollback, remove n
 - Current implementation: coreza-backend/src/config/llmProviders.ts and coreza-backend/src/nodes/executors/AIAgentExecutor.ts
 
 Documentation confirms native Responses search and URL annotations; exact LangChain composition and annotation shapes remain implementation checks against the locked dependency versions.
+
+
+## Implementation record
+
+- Uses the locked `@langchain/openai` 1.2.4, `@langchain/core` 1.1.18 and `langchain` 1.2.16 without upgrades. Inspected `ReactAgent` (client tools filtered via `isClientTool`), `AgentNode.#bindTools` (complete tool list bound per turn), and OpenAI Responses tool reduction (built-in definitions preserved alongside converted functions).
+- Composes `{ type: "web_search" }` in the agent's complete tool collection after connected-tool discovery, including zero connected tools. Existing Responses configuration and reserved model kwargs remain unchanged. Capability resolution accepts absent/null/boolean and persisted `"true"`/`"false"`, rejects malformed Sol settings, and ignores this setting for other models/providers.
+- The installed adapter converts URL annotations to `content[].annotations` records with `type: citation`, `source: url_citation`, `startIndex` and `endIndex`; native responses are in `additional_kwargs.tool_outputs`. Extraction accepts those representations and raw URL annotations, maps block-local character offsets to final JavaScript string offsets, bounds metadata, removes duplicates and retains source-only links for invalid ranges.
+- Result `data` remains the assistant string. `meta.agentResponse` holds exact text, citations and native enabled/observed call metadata. The portable result normalizer preserves arbitrary metadata, pins retain complete outputs, and OutputPanel exports the original complete result. Citation memory uses validated Markdown links and an instruction to reverify time-sensitive facts.
+- OutputPanel renders full untruncated answer text with safe inline source links and a source list. Its existing raw/reference panel remains accessible. Older results keep the prior renderer. Invalid/overlapping annotations do not remove answer text.
+- No test suites, mocked request fixtures or credentialed searches were run, retaining the user's earlier no-testing preference. Consequently the initial/subsequent outbound request sequence, live CAPR answer, Unicode provider offset semantics, and browser click/export acceptance are not reported as verified. Tool composition and annotation paths were inspected statically against installed source.
+- Backend compilation reports the same diagnostic signatures as the existing baseline (including the existing agent type-depth and schema-omit errors); none identifies the new citation module. Frontend type checking reports no diagnostics in the changed output-rendering files. The normal frontend build is blocked by five existing invalid node definitions (Binance, BinanceStreamData, BinanceSubscribe, DhanStreamData, FMPScreener); OpenAIChatModel validates successfully.
+
+Direct `vite build` succeeded after the normal build was blocked by the existing node-definition prebuild errors. This does not establish browser or live-provider acceptance.

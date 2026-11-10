@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Download, Edit2, Pin, PinOff, Save, X, CheckCircle, XCircle, Clock, Radio, Loader2, Square, Pause, Play, ChevronLeft, ChevronRight } from "lucide-react";
 import { isNodeResult } from "@/utils/nodeResult";
 import { canEditJson } from "./preview";
+import { AgentResponseContent, isAgentResponse } from "@/components/nodes/AgentResponseContent";
 import DraggableFieldsPanel from "./DraggableFieldsPanel";
 
 
@@ -274,7 +275,12 @@ const OutputPanel: React.FC<OutputPanelProps> = ({
           <div className="space-y-2">
             {isNodeResult(internalData) ? (
               <>
-                {renderData(displayData, "")}
+                {typeof internalData.data === "string" && isAgentResponse(internalData.meta?.agentResponse) && internalData.meta.agentResponse.text === internalData.data ? (
+                  <>
+                    <AgentResponseContent response={internalData.meta.agentResponse} />
+                    <details><summary className="text-xs cursor-pointer text-muted-foreground">Raw output and references</summary>{renderData(displayData, "")}</details>
+                  </>
+                ) : renderData(displayData, "")}
                 {internalData.meta?.executionTime && (
                   <div className="text-xs text-muted-foreground pt-2 border-t border-border/30">
                     Executed in {internalData.meta.executionTime}ms

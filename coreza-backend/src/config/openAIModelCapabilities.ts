@@ -17,3 +17,12 @@ export function resolveSolEffort(value: unknown): SolReasoningEffort {
   }
   return effort as SolReasoningEffort;
 }
+
+/** Execution-time default also covers saved workflows without the new checkbox. */
+export function resolveNativeWebSearch(provider: string, model: string, value: unknown): boolean {
+  if (!isSolModel(provider, model)) return false;
+  if (value == null) return true;
+  if (value === true || value === 'true') return true;
+  if (value === false || value === 'false') return false;
+  throw new Error('Enable Web Search must be a boolean (true or false)');
+}

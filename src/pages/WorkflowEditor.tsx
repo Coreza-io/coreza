@@ -1967,16 +1967,26 @@ const WorkflowEditorContent = () => {
       }
       const position = placement.position;
 
-      const batch = createPaletteNodeBatch({
-        nodeType,
-        definition: nodeDefinition,
-        onBarDefinition: nodeManifest[ON_BAR_NODE_TYPE],
-        position,
-        workflowSessionId,
-        existingNodes: currentNodes,
-        existingEdges: currentEdges,
-        onRemoveEdge: removeEdge,
-      });
+      let batch: ReturnType<typeof createPaletteNodeBatch>;
+      try {
+        batch = createPaletteNodeBatch({
+          nodeType,
+          definition: nodeDefinition,
+          onBarDefinition: nodeManifest[ON_BAR_NODE_TYPE],
+          position,
+          workflowSessionId,
+          existingNodes: currentNodes,
+          existingEdges: currentEdges,
+          onRemoveEdge: removeEdge,
+        });
+      } catch (error) {
+        toast({
+          title: "Cannot add node",
+          description: error instanceof Error ? error.message : "The node could not be created.",
+          variant: "destructive",
+        });
+        return false;
+      }
 
       const result = insertNodesInDocument(
         { nodes: currentNodes, edges: currentEdges, clusters: currentClusters },

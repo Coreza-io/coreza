@@ -5,7 +5,7 @@ export interface ResponseCitation {
   endIndex: number | null;
 }
 
-/** OpenAI Responses annotations use character offsets within each output_text block. */
+/** Keep block offsets local. For non-BMP text, do not guess an unverified provider offset unit. */
 export function extractResponseCitations(message: any, text: string) {
   const citations: ResponseCitation[] = [];
   const seen = new Set<string>();
@@ -13,7 +13,8 @@ export function extractResponseCitations(message: any, text: string) {
   const blocks = Array.isArray(message?.content) ? message.content : [];
   for (const block of blocks) {
     if (!['text', 'output_text'].includes(block?.type) || typeof block.text !== 'string') continue;
-    const characters = Array.from(block.text as string);
+    const pointOffsets = [0];
+    for (const character of block.text as string) pointOffsets.push(pointOffsets[pointOffsets.length - 1] + character.length);
     for (const annotation of (Array.isArray(block.annotations) ? block.annotations : []).slice(0, 200)) {
       if (citations.length >= 200) break;
       if (!(annotation?.type === 'citation' && annotation.source === 'url_citation') && annotation?.type !== 'url_citation') continue;
@@ -22,9 +23,14 @@ export function extractResponseCitations(message: any, text: string) {
       if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.href.length > 2048) continue;
       const start = annotation.startIndex ?? annotation.start_index;
       const end = annotation.endIndex ?? annotation.end_index;
-      const valid = Number.isInteger(start) && Number.isInteger(end) && start >= 0 && end >= start && end <= characters.length;
-      const startIndex = valid ? offset + characters.slice(0, start).join('').length : null;
-      const endIndex = valid ? offset + characters.slice(0, end).join('').length : null;
+      const valid = Number.isInteger(start) && Number.isInteger(end) && start >= 0 && end >= start;
+      const pointStart = valid ? pointOffsets[start] ?? null : null;
+      const pointEnd = valid ? pointOffsets[end] ?? null : null;
+      // The adapter preserves provider indices but does not declare code points vs UTF-16.
+      // Only attach inline attribution when both interpretations agree; keep a source link otherwise.
+      const unambiguous = valid && end <= block.text.length && pointStart === start && pointEnd === end;
+      const startIndex = unambiguous ? offset + start : null;
+      const endIndex = unambiguous ? offset + end : null;
       const key = JSON.stringify([url.href, startIndex, endIndex]);
       if (seen.has(key)) continue;
       seen.add(key);
@@ -44,20 +50,23 @@ export function citationMemory(response: ReturnType<typeof extractResponseCitati
   // A source list preserves even citations with malformed ranges, without inventing attribution.
   const sources = [...new Set(response.citations.map(c => c.url))];
   if (!sources.length) return response.text;
-  const link = (url: string) => `[${sources.indexOf(url) + 1}](${url.replace(/[\s()[\]<>]/g, char => char === '(' ? '%28' : char === ')' ? '%29' : encodeURIComponent(char))})`;
+  // Angle-delimited Markdown destinations preserve IPv6 hosts and parentheses in valid URLs.
+  const link = (url: string) => `[${sources.indexOf(url) + 1}](<${url}>)`;
   let cursor = 0, text = '';
+  let lastStart: number | null = null, lastEnd: number | null = null;
   const used = new Set<string>();
-  for (const citation of [...response.citations].sort((a, b) => (a.startIndex ?? Infinity) - (b.startIndex ?? Infinity) || (a.endIndex ?? Infinity) - (b.endIndex ?? Infinity))) {
-    if (citation.startIndex == null || citation.endIndex == null || citation.startIndex < cursor) continue;
+  for (const citation of [...response.citations].sort((a, b) => (a.startIndex ?? Infinity) - (b.startIndex ?? Infinity) || (a.endIndex ?? Infinity) - (b.endIndex ?? Infinity) || a.url.localeCompare(b.url))) {
+    const sameRange = citation.startIndex === lastStart && citation.endIndex === lastEnd;
+    if (citation.startIndex == null || citation.endIndex == null || (citation.startIndex < cursor && !sameRange)) continue;
     const key = JSON.stringify([citation.url, citation.startIndex, citation.endIndex]);
     if (used.has(key)) continue;
     used.add(key);
-    text += response.text.slice(cursor, citation.endIndex) + link(citation.url);
+    text += (sameRange ? '' : response.text.slice(cursor, citation.endIndex)) + link(citation.url);
+    lastStart = citation.startIndex; lastEnd = citation.endIndex;
     cursor = citation.endIndex;
   }
   text += response.text.slice(cursor);
-  return `${text}\n\nSources from this response (reverify time-sensitive facts):\n${sources.map((url, i) =>
-    `[${i + 1}](${url.replace(/[\s()[\]<>]/g, char => char === '(' ? '%28' : char === ')' ? '%29' : encodeURIComponent(char))})`).join('\n')}`;
+  return `${text}\n\nSources from this response (reverify time-sensitive facts):\n${sources.map(link).join('\n')}`;
 }
 
 export function nativeSearchCalls(messages: any[]) {

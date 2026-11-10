@@ -19,19 +19,26 @@ export function AgentResponseContent({ response }: { response: { text: string; c
   const sources = [...new Map(citations.map(c => [c.url, c])).values()];
   const content: React.ReactNode[] = [];
   let cursor = 0;
+  let lastStart: number | null = null, lastEnd: number | null = null;
   const used = new Set<string>();
+  const isTextBoundary = (index: number) => !(index > 0 && index < text.length &&
+    text.charCodeAt(index - 1) >= 0xD800 && text.charCodeAt(index - 1) <= 0xDBFF &&
+    text.charCodeAt(index) >= 0xDC00 && text.charCodeAt(index) <= 0xDFFF);
   const ranges = citations.filter(c => Number.isInteger(c.startIndex) && Number.isInteger(c.endIndex) &&
-    c.startIndex! >= 0 && c.endIndex! >= c.startIndex! && c.endIndex! <= text.length)
+    c.startIndex! >= 0 && c.endIndex! >= c.startIndex! && c.endIndex! <= text.length &&
+    isTextBoundary(c.startIndex!) && isTextBoundary(c.endIndex!))
     .sort((a, b) => a.startIndex! - b.startIndex! || a.endIndex! - b.endIndex! || a.url.localeCompare(b.url));
   for (const citation of ranges) {
     const key = `${citation.startIndex}:${citation.endIndex}:${citation.url}`;
-    if (citation.startIndex! < cursor || used.has(key)) continue;
+    const sameRange = citation.startIndex === lastStart && citation.endIndex === lastEnd;
+    if ((citation.startIndex! < cursor && !sameRange) || used.has(key)) continue;
     used.add(key);
-    content.push(text.slice(cursor, citation.endIndex!));
+    if (!sameRange) content.push(text.slice(cursor, citation.endIndex!));
     content.push(<a key={key} href={citation.url} target="_blank" rel="noopener noreferrer" className="text-primary underline mx-1" title={citation.title} aria-label={`Source: ${citation.title}`}>
       [{sources.findIndex(source => source.url === citation.url) + 1}]
     </a>);
     cursor = citation.endIndex!;
+    lastStart = citation.startIndex!; lastEnd = citation.endIndex!;
   }
   content.push(text.slice(cursor));
   return <section className="p-3 rounded-md border border-border/30 space-y-3" aria-label="Agent response">

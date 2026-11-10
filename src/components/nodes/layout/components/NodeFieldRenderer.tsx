@@ -686,7 +686,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
           <div className="flex items-center gap-2">
             <span className="text-sm text-foreground">{field.label}</span>
             <Switch
-              checked={!!fieldValue}
+              checked={fieldValue === "false" ? false : !!fieldValue}
               onCheckedChange={(checked) => onChange(field.key, checked)}
               disabled={readOnly}
             />

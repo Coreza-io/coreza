@@ -1,211 +1,399 @@
-# AI Agent Tool Input Validation & Market-Data Reliability Plan
+# AI Agent Tool Validation and Market-Data Reliability Plan
 
-Status: **Planning only — not implemented**
-Target branch: `dev`
-Scope: AI-agent-generated tools, with an Alpaca market-data pilot followed by broker/indicator expansion.
-Principle: minimal, backward-compatible changes; **do not introduce Python/Pydantic or MCP just to validate inputs**. Keep the existing TypeScript/Zod, LangChain and node-executor architecture.
+Status: **Revised plan only — no runtime implementation**  
+Target branch: `dev`  
+Review date: 10 November 2026  
+Reviewed source: [`fbddc0dc328135ecb47b34c76a080ad3f78b389f`](https://github.com/Coreza-io/coreza/tree/fbddc0dc328135ecb47b34c76a080ad3f78b389f)
 
-## 1. Problem and goal
+## 1. Decision and intended outcome
 
-A connected node is exposed as a LangChain `DynamicStructuredTool` by `AIAgentExecutor`. The agent can issue syntactically acceptable parameters that are semantically wrong for a broker operation (invalid date ordering, malformed limit, missing time bounds, incompatible asset/feed settings). The broker may return an error or zero candles, which prevents further analysis.
+Keep TypeScript, Zod, LangChain and Coreza's existing executors. Python/Pydantic or MCP would not by themselves fix these failures.
 
-Goals:
-- Validate the *effective* request sent to each executor, not only the raw LLM arguments.
-- Enforce operation-specific constraints without replicating whole executors or changing existing configured-node semantics.
-- Preserve user intent: never silently change the requested symbol, feed, interval, period, account or trading environment.
-- Make errors actionable for the LLM, distinguish legitimate zero data from invalid requests, and make debugging traces precise.
-- Apply common validation to every converted node; add deeper rules only where needed.
+The problem spans **tool construction, input resolution, broker mapping, error delivery and output interpretation**. A second Zod parse alone is insufficient: a correct call can be blocked before that parse, a later mapper can change its meaning, and an informative provider failure can become a generic message.
 
-Out of scope: replacing broker clients, changing trading strategies, automatic live trading retries, rebuilding the UI, altering backtesting/streaming engines, migrating to MCP, or adopting Python.
+Build a shared tool boundary with operation-specific contracts, then deliver a complete Alpaca historical/latest-bars pilot. Preserve configured settings and existing DataRef/indicator protections. Expand by actual node and operation coverage, rather than claiming every node is fully validated because it passes through the hook.
 
-## 2. Verified current implementation (dev branch)
+The first usable release must:
 
-- `coreza-backend/src/nodes/executors/AIAgentExecutor.ts`:
-  - `createToolsFromEdges` finds attached nodes and creates `DynamicStructuredTool` instances.
-  - `getToolSchema` uses a node's fields (or `loadNodeDefinition`) and `generateSchemaFromNode` before falling back to definition schema or optional `input: any`.
-  - `fieldToZodType` supports numeric coercion + UI min/max, select enum, boolean, required strings and defaults.
-  - Configured fields are omitted from the exposed schema. During execution, generated input is merged with configured node values, expressions and data refs; the resulting `unwrappedInput` is passed to the actual node executor without a **common second Zod parse**.
-  - Tool traces already include generated, validated, configured, and effective inputs, as well as executor results.
-- `src/nodes/Alpaca.json`: `get_candle` exposes `interval` select and optional string `start`, `end`, `limit`; feed select currently defaults to `sip`. UI display conditions vary with operation and asset type.
-- `coreza-backend/src/brokers/alpaca/http/operations.ts`: `get_candle` maps `interval` to `timeframe`, passes `start` and `feed`, caps `limit` via `Math.min(Number(input.limit) || 10000, 10000)`, and has pagination support. Invalid `limit: "abc"` can silently become 10000.
-- `coreza-backend/src/nodes/logic/toolOutputProcessor.ts`: normalized zero historical candles are already returned as `{success:false,status:'no_data',rowCount:0}`; dataRef validation already checks certain symbol/timeframe mismatches.
-- `coreza-backend/src/nodes/logic/toolDefinitions.ts` and `coreza-backend/src/brokers/capabilities.ts`: static and broker-generated tool metadata exist, but most broker metadata is descriptions rather than full per-operation Zod contracts.
+- Expose the correct editable fields; apply requirements to the selected operation and asset.
+- Validate resolved configured values as well as model arguments before execution.
+- Ensure endpoint mapping preserves those validated values.
+- Return safe, structured errors that the agent can act on within its existing execution budget.
+- Distinguish valid empty data, malformed responses, partial coverage, permission failures and local input errors.
+- Never silently switch feed, symbol, interval, account, environment or an explicit date range.
 
-These are architectural findings, not proof that every executor lacks its own internal checks. Preserve existing deeper validations where present.
+Out of scope for the pilot: strategy/portfolio changes, database migrations, a new validation service, broad editor redesign, automatic trading retries, a market-calendar subsystem, and automatic IEX/SIP substitution.
 
-## 3. Target pipeline
+## 2. Findings and corrections to the previous plan
 
-```text
-LLM tool call
-  -> existing LangChain / generated-field Zod parse
-  -> merge configured values + resolve expressions + DataRefs
-  -> shared effective-input validator
-       -> common shape/type validation where safe
-       -> optional broker/node + operation-specific rules
-  -> existing executor
-  -> classify and report outcome (success / no_data / invalid_input / forbidden / upstream_error)
-  -> optional safe, explicit read-only recovery (later phase)
-  -> structured tool result + existing diagnostics
+These findings come from static inspection of pinned `dev` source. They identify code paths and failure mechanisms. This review did not use live broker credentials or rerun the user's original request.
+
+| Priority | Verified finding | Consequence | Required change |
+| --- | --- | --- | --- |
+| P0 | `generateSchemaFromNode` checks display conditions against saved fixed controller values. With editable/expression operation or asset, unrelated dependent fields can remain required. | A request can fail before the effective validator runs. | Fix conditional schema construction with the shared hook. Enforce uncertain requirements after resolution. |
+| P0 | Generated `z.object(...)` schemas strip unknown keys. Nested `input` is unwrapped inside `func`, after LangChain's parse. | A wrapper or a wrong field such as `timeframe` can disappear before intended handling sees it. | Normalize supported envelopes before parsing; diagnose unknown parameters for reviewed contracts. |
+| P0 | The overridden `invoke` logs `ToolInputParsingException`, then rethrows it. The callback cannot catch this failure. | Coreza itself does not produce the same recoverable tool result for schema and callback failures. | Handle both boundaries; verify framework delivery with the installed LangChain version. |
+| P0 | Configured values/expressions merge after the first parse without a common semantic contract. | Valid model input does not establish valid executed input. | Validate the final object and use that same result for node values, executor input and resolver snapshot. |
+| P0 | Broker errors can become provider response text; `AIAgentExecutor` then throws `new Error(result.error)`. | HTTP status, provider code and reconciliation details can be lost. | Preserve a safe subset of `NodeResult.details`; classify before flattening errors. |
+| P1 | Alpaca limit uses `Math.min(Number(input.limit) || 10000, 10000)`. | Invalid text/zero can become 10000; negative/fractional values are not reliably rejected. | Validate explicit values before fallback; retain the omitted-value default. |
+| P1 | Historical/latest stock feed choices share UI metadata. Historical mapping forwards `feed` for crypto; both operations may forward crypto `currency`. | UI-valid settings can be incompatible with the endpoint. | Use operation-specific feed rules and endpoint parameter allowlists. |
+| P1 | Broker crypto normalization checks `assetType`; Alpaca HTTP also reads `asset_type`. Crypto UI input is `crypto_base`. | Alias-only requests can choose a crypto URL without identical symbol normalization. | Canonicalize reviewed aliases and configured authority before dispatch. |
+| P1 | Auto-pagination defaults to true and `max_pages` to 100. Tool summaries drop page-completion metadata. | `limit=100` does not mean 100 total/latest bars; incomplete coverage can look complete. | Separate page size from requested count and preserve pagination metadata. |
+| P1 | Historical DataRef extraction requires one matching symbol/timeframe; Alpaca HTTP accepts multiple symbols. | A remote success can fail during local series selection. | Pilot: one symbol per historical agent call; preserve ordinary broker multi-symbol support. |
+| P1 | Historical zero rows already produce `no_data`, but little request context. Latest bars bypass this historical branch. | Empty latest data can pass through as a successful-looking generic result. | Classify outputs by operation, including historical/latest emptiness. |
+| P1 | Latest-bar transforms use `input.interval || '1m'`, although the endpoint returns minute bars. | A stale saved interval can mislabel the observation. | Derive timeframe from the latest endpoint. |
+| P2 | UI metadata is not always an executable tool contract. GoogleWebSearch lacks `query`, required by its executor; repeaters fall through to string conversion. | Required executable arguments can be omitted or structured inputs misrepresented. | Audit metadata/executor agreement, complex field types, identities and routing during expansion. |
+
+### What the IEX/SIP incident establishes
+
+The user reported an empty IEX request and a working SIP request. Treat that as evidence that feed choice mattered in that case. It does **not** prove that IEX is generally invalid, that entitlement caused the empty response, or that Coreza should switch feeds automatically. The exact original requests were not reproduced here.
+
+A semantically valid request can have zero observations. Validation must constrain requests and explain outcomes; it cannot manufacture trading activity or guarantee availability. Preserve the distinction between local rejection, provider failure and valid emptiness.
+
+## 3. Execution path and contract boundaries
+
+The connected-node path is `AIAgentExecutor.createToolsFromEdges` → `createToolFromNode` → executor registry. `nodes/logic/agentSystem.ts` is a separate agent implementation; changing it alone does not fix this path.
+
+```mermaid
+flowchart TD
+  A["Model tool call"] --> B["Envelope and argument schema"]
+  B --> C["Configuration and expressions"]
+  C --> D["Effective operation contract"]
+  D --> E["Executor and broker mapper"]
+  E --> F["Provider request and response"]
+  F --> G["Output contract and DataRef"]
+  G --> H["Tool result to agent"]
+  B --> I["Structured failure"]
+  D --> I
+  E --> I
+  G --> I
+  I --> H
 ```
 
-**Critical:** a fixed field is authoritative. Revalidating it must not expose it as editable by the agent. Never invoke a broker or place an order when validation fails.
-
-## 4. Implementation phases
-
-### Phase A — Shared post-merge validation hook (smallest foundational change)
-
-1. Add a small backend helper, e.g. `coreza-backend/src/nodes/logic/effectiveToolInputValidation.ts`, exporting:
-   - `validateEffectiveToolInput({node, category, operation, input, brokerId?})`
-   - a typed `ToolInputValidationError` containing safe issue paths, error codes and user-facing messages (no credentials).
-   - an operation-validator registry, defaulting to **no extra semantic changes** for untouched nodes.
-2. Call it in `AIAgentExecutor.createToolFromNode` **after** `resolvedConfigured` and `resolveDataRef`, **before** `executor.execute`.
-3. Respect existing configured-field precedence, aliases, defaults, dynamic `displayOptions` and node executor behavior.
-4. Reuse the node's field schema only where it is valid for the effective operation. Avoid reapplying optional defaults in ways that overwrite fixed/derived values. Ensure a missing definition does not become a false validation failure; retain current permissive fallback with a trace warning.
-5. Do not silently strip extra keys if downstream executors legitimately consume them; distinguish known and unknown arguments and retain compatibility. Restrict strict rejection to known high-risk operations with reviewed contracts.
-6. Convert validation failures into concise, structured recoverable tool errors so the agent can correct its parameters within its existing iteration budget. Keep existing `tool_validation_failed` and `tool_completed` event flow; add a phase/source marker (`effective` vs `schema`) without logging secrets.
-
-**Acceptance:** a bad post-merge value cannot bypass the operation validator; normal tools with fixed or blank fields still execute as before.
-
-### Phase B — Alpaca read-only operation contracts (first implementation)
-
-Add a small reviewed validator for the actual node/executor parameter names (`operation=get_candle|get_latest_bar`, `interval` rather than `timeframe`, `assetType`/`asset_type` aliases) near Alpaca broker code or as registered validators. Reuse existing broker helper logic rather than duplicating API rules.
-
-`get_candle` checks:
-- `operation` is recognized; symbol or supported symbol list is supplied and normalized by existing broker conventions. Crypto pair validation should reuse existing `validateAlpacaCryptoSymbol` rather than a second regex.
-- `interval` is one of the values actually supported by the Coreza node and Alpaca endpoint; never invent/rescale timeframes.
-- `limit`, if supplied, parses as a finite positive integer in the supported range. Reject `abc`, `0`, negative, fractional, `NaN`, infinity; no implicit fallback to 10000 for an explicitly invalid value. Retain existing missing-value default for compatibility.
-- `start`/`end`, if present, parse as valid timestamps in an API-supported format; reject ambiguous timestamps when necessary; if both are present, enforce `start < end`; guard against future end values only when the endpoint/operation requires it. Do **not** assume `limit=100` alone guarantees 100 trading bars.
-- `feed` must be compatible with asset type and operation; don't send stock-only feeds to crypto. Preserve an explicit feed selection. An entitlement failure must be classified as `permission/entitlement`, not auto-switched to another feed.
-- `sort`, `adjustment`, `currency`, `page_token` are checked only when relevant to the specific endpoint; preserve the broker's existing normalization and pagination.
-- If the user asks for `last N bars`, distinguish that intent from an explicit `start`/`end` range. Resolve a suitable historical window via a separate explicit helper/operation enhancement, not a blanket injection of dates in the schema; use exchange calendars for equity sessions and 24/7 rules for crypto. Return `requestedBarCount` versus `returnedBarCount`.
-
-`get_latest_bar` checks:
-- symbol/asset normalization and operation-specific feed compatibility; no `interval` required.
-- Do not treat a missing latest bar during closed sessions as bad parameters by default.
-
-**Acceptance:** inverted dates and malformed limits fail *before the HTTP call*; valid fixed and model-supplied requests preserve behavior; unsupported feed/asset combinations get informative errors.
-
-### Phase C — Structured result and no-data diagnostics
-
-1. Keep the existing `toolOutputProcessor` dataRef/candle pipeline. Do **not** duplicate canonical normalization or copy full OHLCV arrays into the LLM result.
-2. Enrich a `no_data` outcome with safe metadata: requested symbol, interval, feed, effective start/end, asset type, returned rows, request count and known provider code. Mark possible causes as *hypotheses*, not confirmed facts.
-3. Distinguish:
-   - `invalid_input` (local contract failed);
-   - `permission_denied` / `feed_not_entitled` (provider response);
-   - `no_data` (valid request, zero observations);
-   - `upstream_error` / timeout / rate limit;
-   - `success` (positive rows; optionally partial requested coverage).
-4. Record `requested/validated/configured/effective` parameter snapshots through current tool traces with sensitive field redaction, plus attempt number, decision reason, provider status, returned row count, first/last timestamps, duration. Avoid high-cardinality full-data logging.
-5. Agent messaging should say `no_data` when no data was returned and must never claim analysis on missing candles.
-
-**Acceptance:** logs explain *why* a request was invalid or empty; indicator tools never receive a fabricated successful dataRef.
-
-### Phase D — Bounded recovery for read-only historical fetches
-
-Only after Phases A–C, optionally implement a small **read-only** recovery policy in the broker data fetch path:
-- One or at most two bounded retry attempts, with explicit audit trail.
-- Retry transient upstream failures with backoff; use pagination where supported.
-- For ambiguous `last N bars` requests, a market-calendar-aware prior-session range may be used **only if it preserves user intent**, and the attempted range must be disclosed.
-- Never silently switch IEX/SIP/overnight feeds, account, symbol, interval, asset class or explicitly requested timestamps; never escalate entitlement.
-- For explicitly requested dates or feeds, return `no_data` with actionable diagnostic suggestions instead of substituting a different dataset.
-- No automatic retry for trading mutations (`place_order`, `cancel_order`, `close_position`) because duplicates/side effects are dangerous.
-- Respect agent cancellation, rate limits and execution time budgets.
-
-**Acceptance:** read-only recoveries are bounded, attributable and cannot change the meaning of the requested data.
-
-### Phase E — Extend operation registry to other converted nodes
-
-Inventory every tool-capable node from node definitions + broker capabilities, and classify by risk:
-1. **High priority market-data brokers:** Alpaca, Schwab, Binance, Dhan (their asset-specific required fields, time units, subscriptions, feed entitlement and date rules differ).
-2. **Indicator tools:** RSI, EMA, SMA, MACD, ATR, Stochastic, etc. Check positive/consistent periods, minimum candle count, DataRef resolution, symbol/timeframe provenance, finite numeric values. Reuse existing indicator readiness and dataRef checks; do not duplicate indicator math.
-3. **Other read-only utilities:** screeners, news, search, date, transform, HTTP. Validate only meaningful cross-field constraints; beware user-configured HTTP endpoints.
-4. **Side-effect tools:** all trade/cancel/sync and workflow mutation tools. Require strict operation-specific schema, credential scope, paper/live identity, authorization and separate execution-safety rules. **No generic auto-correct or retry**.
-
-For each node, record `field schema`, `operation-specific schema`, `executor checks`, `response validation`, `recovery policy`; gaps become small follow-on changes rather than an invasive common rewrite.
-
-## 5. Design safeguards
-
-- **Single source of truth:** Prefer broker-operation validators near existing broker operations, reused by the agent path. Do not recreate dozens of fields in both node JSON and Zod if metadata can be safely reused.
-- **No surprise defaults:** Never silently choose SIP, IEX, a different historical window, or a larger candle count based on an invalid input. Any existing node defaults must be distinguished from AI choices in traces.
-- **Correct time semantics:** Timestamp timezone, market session, exchange calendar, current session vs last completed session, stock vs crypto, and feed rules must be explicit.
-- **Maintain tool compatibility:** Shared hooks must not break dynamically configured node fields, optional `dataRef`, nested `input` wrappers, aliases, or existing tool names.
-- **Validation is not market availability:** A well-formed request can legitimately return zero bars.
-- **Credentials/data:** Never expose API keys, account identifiers or large raw responses in logs or model-visible errors.
-- **Mutating operations:** Reject before execution; prohibit automatic replays without validated idempotency and user authorization.
-- **Performance:** Only local schema checks in the synchronous tool path; no extra remote lookup for every invocation.
-
-## 6. Concrete examples / desired behavior
-
-| Request | Today | Desired |
+| Contract | Responsibility | Avoid |
 | --- | --- | --- |
-| `get_candle({symbol:'RKLB',interval:'1Day',start:'2026-11-10',end:'2026-08-01'})` | UI-field types can pass; broker likely errors | Local `invalid_input` with `start < end` correction |
-| `get_candle({symbol:'RKLB',interval:'1Day',limit:'abc'})` | Numeric fallback can yield 10000 | Local `invalid_input` for `limit` |
-| `get_candle({symbol:'RKLB',interval:'5Min',feed:'iex',limit:'100'})` returns no bars | `no_data` detected | `no_data` + effective parameters + clear potential reasons; no silent feed switch |
-| Agent's `1Day` RSI references `5Min` data | Existing DataRef provenance check | Preserve check; emit actionable mismatch |
-| Fixed node `feed='sip'`, LLM proposes `iex` | Fixed config wins | Fixed config wins; validated post-merge and trace records override |
-| `place_order` returns timeout | Executor behavior varies | Never blind retry; preserve current trade safety and reconciliation |
+| Model arguments | Describe editable fields in provider-compatible JSON schema and validate basic shape. | Inactive required fields, editable fixed credentials/settings, silent argument loss. |
+| Effective runtime input | Validate the selected operation after configuration/expressions and applicable reference handling. | Parsing resolved arrays with text-only UI types or applying defaults twice. |
+| Broker/output | Preserve meaning through endpoint mapping; validate response and coverage. | Treating HTTP 200 as usable data or losing provider/page details. |
 
-Example **tool-facing** invalid input (no remote request):
+Indicators intentionally resolve DataRefs in `IndicatorsExecutor`. Preserve that ownership. The shared hook validates scalar controls; existing indicator code checks references, candles and readiness. Do not eagerly resolve indicator arrays again for a generic UI parse.
+
+## 4. Shared contract design
+
+Add a small helper such as `coreza-backend/src/nodes/logic/effectiveToolInputValidation.ts`. Key its registry by **resolved executor/broker identity + operation**, with node-specific contracts for indicators/utilities. Generated tool names and suffixes are not stable validator identifiers.
+
+A contract records:
+
+- Known editable/runtime fields, conditional requirements, aliases and safe scalar normalization.
+- Risk: read-only, state mutation, external communication/trading, or unsupported synchronous execution.
+- Coverage: field-only, operation-reviewed, or legacy/unreviewed.
+- Optional output classifier and recovery eligibility. Missing entries never imply complete validation.
+
+`validateEffectiveToolInput(...)` returns validated input plus small diagnostics, or a typed failure. Execute the parsed result, including reviewed scalar transformations. Do not parse successfully and then execute the original object. This helper must not select feeds, rewrite date ranges, infer accounts or perform per-call remote lookups.
+
+Keep cross-field refinements in runtime contracts. The model-facing schema must remain convertible by current OpenAI/Gemini adapters. No Zod major-version change or provider-incompatible schema effects are needed.
+
+### 4.1 Fix argument schemas before semantic validation
+
+Evaluate field applicability with three states:
+
+1. **Known active:** fixed controllers select the field; expose it if editable and retain its requirement.
+2. **Known inactive:** omit it and do not inject its default.
+3. **Unknown until execution:** a controller is editable or an expression; expose dependent fields as optional and enforce requirements after resolution.
+
+Apply the same rule to dependent defaults. A stock feed, order side or order type must not appear as a model choice for an unrelated operation. Apply established defaults once after applicability is known. Track origins: model, schema/node default, configuration, expression, broker mapping or unspecified provider default.
+
+For reviewed Alpaca contracts, inspect meaningful raw arguments before stripping. For unsupported `timeframe`, say to use `interval`. Do not accept arbitrary raw fields or make every legacy tool globally strict. Maintain an explicit list of reviewed runtime-only fields such as pagination controls.
+
+If preserving `{input:{...}}` support, unwrap that transport envelope **before** parsing. Retain LangChain ToolCall ID/name/type and normalize only its arguments. Define conflicting inner/outer key behavior; do not reinterpret a real business field named `input`. Preserve the existing fallback schema deliberately instead of flattening arbitrary objects.
+
+### 4.2 Configuration, aliases and effective values
+
+Retain `parameterEntries` and `isConfiguredToolValue` semantics, including meaningful `false` and `0`. Blank saved fields do not erase generated values. Editor field-mode metadata remains excluded from executor parameters.
+
+Precedence: resolved configured value → model-supplied value → applicable existing default. A configured expression resolving to an invalid/missing required value is a **configuration failure**; the model must not replace it.
+
+Resolve alias groups with source-aware authority. A fixed `assetType` cannot be bypassed through generated `asset_type`, and a fixed crypto pair cannot be replaced through another symbol alias. Normalize reviewed aliases once; reject unresolved same-authority conflicts. Do not spread raw configuration back over validated results afterward.
+
+Call the effective validator after saved expressions and applicable non-indicator DataRefs resolve, before execution. Pass the same validated values to `normalizedNode.values`, executor input and the tool-context resolver snapshot. Never mutate the saved node.
+
+For unreviewed nodes, retain compatibility with an explicit field-only/legacy coverage marker. Apply only proven safe common checks. Missing metadata produces a trace diagnostic rather than false full-validation coverage.
+
+## 5. Alpaca pilot: input and endpoint contracts
+
+Implement `get_candle` and `get_latest_bar` first. Reuse broker identity resolution and `validateAlpacaCryptoSymbol`. Keep endpoint construction beside Alpaca operations.
+
+Guard the final mapper as well: later normalization must not alter validated meaning. Reuse pure contract rules at both boundaries where necessary; do not duplicate validators/default application. Preserve supported normal-workflow multi-symbol requests. Explicitly invalid scalar values must no longer get silent fallback.
+
+### 5.1 Endpoint matrix
+
+| Operation / asset | Endpoint | Request mapping |
+| --- | --- | --- |
+| Historical stock | `/v2/stocks/bars` | `symbol` → `symbols`; `interval` → `timeframe`; supported dates, limit, sort, stock feed, adjustment, currency and page token. |
+| Latest stock | `/v2/stocks/bars/latest` | Symbols, latest stock feed and currency; no requested aggregation/range. |
+| Historical crypto | `/v1beta3/crypto/us/bars` | Validated full pair → symbols; timeframe, dates, limit, sort and supported page token. No stock feed, adjustment or currency. |
+| Latest crypto | `/v1beta3/crypto/us/latest/bars` | Validated full pair → symbols; minute aggregation belongs to the endpoint. No stock-only or historical controls. |
+
+Official documentation checked on the review date lists historical stock feeds `sip`, `iex`, `otc`, `boats`; latest stock bars additionally list `delayed_sip`, `overnight`. Split operation-dependent choices/descriptions accordingly. Never translate `overnight` to `boats` or `delayed_sip` to `sip` silently. Feed enum membership does not prove entitlement.
+
+Existing nodes can retain hidden settings. For crypto/latest, omit irrelevant saved fields from the endpoint query and trace ignored field names while preserving workflow configuration. A newly supplied incompatible argument gets an actionable error. A crypto node must not fail merely because an old hidden stock default remains saved.
+
+### 5.2 Symbols, assets and intervals
+
+- Pilot assets: stock and crypto, with reviewed aliases and configured precedence.
+- Historical agent calls select one symbol/pair because one DataRef identifies one series. Multiple tickers require separate calls. Multi-series references are a separate feature.
+- Crypto UI uses `crypto_base`. Carry its validated canonical `symbol` through execution and output processing so series selection checks the actual requested pair. No fabricated fallback pair.
+- Historical intervals remain the node's supported `1Min`, `5Min`, `15Min`, `1Hour`, `1Day`. Do not broaden them just because Alpaca permits more.
+- Latest results describe a minute observation and its timestamp. Ignore stale saved historical intervals. Empty latest data is `no_data`; previous-session data may be valid without being current.
+
+### 5.3 Numeric and date rules
+
+- `limit` is page size. Accept an explicit finite integer from 1 through 10000, including a reviewed numeric-string form. Reject malformed text, booleans, objects, zero, negatives, fractions and non-finite values before HTTP.
+- Preserve Coreza's absent/blank limit default of 10000. Do not silently cap or default explicitly invalid values.
+- Accept API-supported YYYY-MM-DD dates and RFC-3339 timestamps with explicit timezone. Check actual calendar validity, not `Date.parse` alone or format-only regex. Preserve valid fractional-second precision and the represented instant.
+- Reject `start > end`. The endpoint documents inclusive bounds; do not impose the earlier blanket `start < end` requirement without verifying that equality is forbidden. Equal dates must not automatically expand into a full trading day.
+- Do not universally reject future ends, require both dates for every intraday call, or rewrite timezone boundaries. Omitted dates retain provider semantics and are reported as omitted/defaulted, not invented exact timestamps.
+- Preserve stock adjustment combinations already supported by the mapper, such as `split,spin-off`. The exposed select enum cannot represent that combination today. Permit a reviewed string form for the pilot or explicitly document its restriction; never reject valid saved combinations through a select-only second parse.
+
+### 5.4 Pagination and request budgets
+
+Retain current auto-pagination/defaults unless separately changed. Validate reviewed controls: boolean `auto_paginate`; bounded positive-integer `max_pages`. Proposed pilot ceiling: existing default of 100 pages. An absent value retains it; negative values must not silently mean one page.
+
+Expose supported controls in the tool schema even if absent from editor JSON. Preserve `pages_fetched`, `pagination_complete`, `has_more`/next-page availability in summaries. Keep opaque tokens out of logs; expose one only for a documented continuation contract.
+
+A page is part of one logical read, not a retry. A page ceiling with more data available means partial coverage, even if the selected symbol has no rows yet. Do not call that complete `no_data`. A later-page failure must not silently return earlier pages as complete success.
+
+No retry/date expansion belongs inside the pilot pagination loop. Check cancellation between pages and pass the agent signal to pilot Axios calls. Existing checks before/after executor execution do not establish prompt in-flight cancellation. Bound rows/memory through existing DataContext limits and report a resource limit distinctly rather than silently truncating arrays.
+
+## 6. Error contract: deliver actionable evidence to the agent
+
+Use one additive tool failure envelope. Preserve existing `success`, `type`, `summary`, `rowCount`, `cached` and DataRef fields where applicable. These are **tool-result outcomes**, not new canonical workflow `NodeResult.status` values.
+
+| Tool outcome | Evidence | Response policy |
+| --- | --- | --- |
+| `invalid_input` | Local reviewed contract failed. | Correct editable arguments; zero provider requests. |
+| `configuration_error` | Invalid/missing fixed setting or expression. | User fixes node; model cannot overwrite it. |
+| `provider_invalid_input` | Provider parameter rejection despite local acceptance. | Safe reason/field; record contract gap. |
+| `authentication_failed` | Verified authentication failure. | No same-request retry or replacement credentials. |
+| `permission_denied` / `feed_not_entitled` | Verified forbidden response; entitlement subtype needs provider evidence. | No feed/account substitution. |
+| `rate_limited` | Verified rate-limit response. | Optional later read recovery may honor safe delay. |
+| `upstream_error` / `timeout` | Transport/provider failure. | Distinct from empty data. |
+| `invalid_output` | Malformed response/candles or mismatched series. | No successful DataRef. |
+| `no_data` | Recognized valid response, zero observations, understood coverage. | Explain request; no identical automatic replay. |
+| `not_ready` | Existing indicator readiness needs more observations. | Preserve required/observed counts and current semantics. |
+| `success` | Valid usable result. | Completeness remains independent; success can contain partial coverage. |
+
+Implementation requirements:
+
+1. Handle schema failures outside `func` and semantic failures inside it. Use one invocation identity and final trace for either path. Preserve the original framework tool-call ID when returning a ToolMessage.
+2. Verify the lockfile/installed LangChain behavior. Extend the existing invoke boundary if it can safely return the expected failure result; otherwise use one supported tool-call error adapter. Do not add duplicate handlers or assume logging an exception allows correction.
+3. Preserve safe provider evidence before converting errors to text. Reuse existing `NodeResult.details`; stop replacing structured failures with `new Error(result.error)` in the agent adapter.
+4. Keep provider numeric codes, local string codes and HTTP status separate. A generic 403 does not prove a subscription issue. Model-facing text needs a bounded allowlist/sanitizer. `safeToolError` deliberately omits raw messages and is not itself an actionable error formatter.
+5. `retryable_by_agent` means an editable correction can help. It is false for fixed-field failures, entitlement failures and automatic mutation replays. Distinguish correcting arguments from transport retries.
+6. Cancellation propagates as cancellation. Listening/waiting/streaming states must not become completed successful fetches merely because their status is not `error`.
+7. Preserve order-status-unknown/reconciliation details. No order replay, idempotency redesign or whole-agent retry after a mutation is authorized by this plan.
+
+Example local rejection:
+
 ```json
 {
+  "success": false,
   "status": "invalid_input",
-  "tool": "alpaca",
+  "type": "tool_error",
   "operation": "get_candle",
-  "issues": [{"field":"limit","code":"invalid_positive_integer","message":"limit must be a positive integer (1..10000)"}],
+  "toolInvocationId": "<invocation>",
+  "issues": [{
+    "field": "limit",
+    "code": "invalid_positive_integer",
+    "source": "model",
+    "editable": true,
+    "message": "limit must be an integer from 1 through 10000"
+  }],
   "retryable_by_agent": true,
   "provider_request_sent": false
 }
 ```
 
-Example valid empty result:
+Do not echo rejected raw values, credentials, expressions or full provider responses. Bound issue count and field-path length. Track provider dispatch from the actual transport boundary, not just that the executor started.
+
+## 7. Output contracts, DataRefs and empty-data diagnostics
+
+Reuse `extractHistoricalCandles`, `normalizeCandles`, `ToolInvocationRefs` and DataContext lifecycle. They already protect immutable candles, reject invalid/mixed series, check symbol/timeframe provenance, and avoid successful historical references for zero rows.
+
+Do not duplicate OHLCV math, copy full candle arrays into the model context, or describe these existing protections as new fixes.
+
+Add an operation-aware output adapter:
+
+- Recognize actual historical operations and executor identity. The current list misses cases such as Schwab `get_price_history`; input validation alone will not produce a compatible DataRef. Inspect response shape before extending recognition.
+- Separate recognized empty bars from a missing/malformed container. Alpaca currently uses `raw?.bars ?? {}`, which can conceal a missing container. Validate shape before synthesizing emptiness.
+- Preserve requested symbol, asset, feed, interval, applicable adjustment/currency and supplied dates. Label unspecified provider defaults honestly. Server `requestedAt` does not establish exchange session state.
+- Keep first/last observation times, returned count, page count and completeness. Fewer rows than `limit` is not itself evidence of missing data.
+- Latest bars return a compact validated minute snapshot with its actual timestamp. Do not imply that one observation provides historical indicator warm-up.
+- Malformed containers, invalid candles, symbol mismatch or unresolved references are failures, not legitimate zero-data results.
+
+Example recognized empty historical result:
+
 ```json
 {
+  "success": false,
   "status": "no_data",
-  "operation": "get_candle",
-  "symbol": "RKLB",
-  "interval": "5Min",
-  "feed": "iex",
-  "returnedBarCount": 0,
-  "provider_request_sent": true,
+  "type": "market_data",
+  "rowCount": 0,
+  "cached": false,
+  "summary": {
+    "symbol": "RKLB",
+    "timeframe": "5Min",
+    "feed": "iex",
+    "requestedRange": { "start": null, "end": null },
+    "rangeSource": "provider_defaults",
+    "returnedBarCount": 0,
+    "paginationComplete": true,
+    "message": "No candles returned. Check the requested session and feed coverage."
+  },
   "retryable_by_agent": false,
-  "suggestion": "Verify the requested session and feed entitlement; no substitute dataset was used."
+  "provider_request_sent": true
 }
 ```
 
-## 7. Files expected to change
+Null dates above mean omitted arguments, not known missing observations. No entitlement conclusion follows from this result. Candidate causes must be labeled hypotheses unless confirmed by provider/calendar evidence.
 
-**Primary**
-- `coreza-backend/src/nodes/executors/AIAgentExecutor.ts` — invoke post-merge validation and translate failures.
-- New `coreza-backend/src/nodes/logic/effectiveToolInputValidation.ts` — small shared registry/error helper.
-- `coreza-backend/src/brokers/alpaca/http/operations.ts` and/or new adjacent Alpaca validator — enforce `get_candle` / `get_latest_bar` contract with one source of truth.
-- `coreza-backend/src/nodes/logic/toolOutputProcessor.ts` — enrich existing `no_data` metadata without changing DataRef semantics.
-- `coreza-backend/src/utils/toolExecutionLog.ts` — only if additional safe diagnostic fields are required.
+Add concise agent instructions naming `no_data` and `invalid_output`, requiring timestamps for current-market claims, and preserving explicit feed/date intent. Prompt guidance supplements runtime controls; it cannot guarantee truthful final answers. Market closure does not invalidate historical observations, and a successful latest request does not prove freshness.
 
-**Optional/later**
-- `src/nodes/Alpaca.json` — clarify validation metadata and descriptions only if needed.
-- Broker-specific validators and related node JSON for Schwab/Binance/Dhan.
-- Indicator input validators where existing readiness and dataRef checking is insufficient.
+## 8. Diagnostics and concurrency
 
-Avoid touching frontend/editor or workflow execution broadly unless a concrete incompatibility is discovered.
+Extend existing `toolExecutionLog.ts` traces. Generated/configured/effective snapshots, page/request counts, HTTP status, normalization timing and row counts already exist.
 
-## 8. Verification checklist before implementation is considered done
+Add only missing information:
 
-- Invalid dates, malformed timestamps, inverted ranges, invalid limit, unsupported combinations -> reject before broker request.
-- Agent-provided values and configured values follow intended precedence; post-merge validators catch bad fixed-expression values.
-- All legitimate tools with missing/optional metadata still run; no accidental schema stripping.
-- Stock vs crypto, explicit feed, closed market, empty session, pagination and entitlement error paths have correct classification.
-- Existing canonical candle normalization, DataRef and indicator tool chaining remain unchanged.
-- No tool reports success or indicator confirmation from zero valid candles.
-- Trade/cancel/close tools never auto-retry and never execute on validation failure.
-- Trace diagnostics are useful without leaking credentials or huge market payloads.
-- Confirm that the added hook doesn't materially increase per-tool execution latency.
+- Phase: schema/effective/broker mapping/output; contract ID/version and coverage.
+- Safe issue field/code/source/editability; actual provider dispatch.
+- Ignored field names, default origins, requested-versus-transmitted differences and page completeness.
+- Correction/recovery linkage only for an actual attempt; pages are separate from retries.
 
-## 9. Implementation order / deliverables
+Emit exactly one `tool_completed` per started invocation. Schema failures have zero HTTP requests. Preserve existing not-ready/activity behavior. Keep parallel-call state invocation-local; never put a last-request error or metadata field on a shared executor instance.
 
-1. **PR 1:** Shared validation hook + structured local validation errors, no broker behavior changes.
-2. **PR 2:** Alpaca market-data operation contracts and robust limits/date validation.
-3. **PR 3:** No-data diagnostics and safe logging.
-4. **PR 4 (optional):** Read-only historical-data recovery with explicit guardrails.
-5. **Follow-on PRs:** Schwab, Binance, Dhan and indicator-specific validators, prioritized from actual failed tool traces.
+Use existing redaction and bounded payload handling. No API keys, account/order IDs, opaque tokens, raw error objects, full candle arrays or unbounded expressions. Do not expose all response headers/details to retain one useful code.
 
-The first PRs should stay minimal and separately reviewable. This document is a plan only; no runtime code, tests, or migrations are changed by committing it.
+## 9. Recovery and last-N bars: separate follow-on work
+
+The pilot returns actionable errors and diagnostics. It adds no automatic transient retries or implicit historical-window expansion.
+
+### 9.1 Corrections and bounded execution
+
+Let the model correct editable parameters within its existing graph budget. `maxIterations` currently feeds LangGraph `recursionLimit`; it is not a guaranteed count of tool retries. Do not silently increase it.
+
+A later invocation-local duplicate policy may suppress equivalent repeated invalid/empty calls. Key it by node, operation and canonical effective parameters, with cleanup on teardown. Do not introduce global market-data suppression.
+
+### 9.2 Optional transient read retries
+
+After pilot acceptance, use one retry owner with an explicit allowlist of historical/latest reads and verified transient errors. Proposal: at most one additional attempt within a total request/time budget that includes pagination.
+
+Honor cancellation/rate limits. Do not stack framework, agent and broker retries. No retries for invalid inputs, authentication/permission failures, malformed output, emptiness or any trading/communication/state mutation. A mutation timeout may require reconciliation.
+
+### 9.3 Explicit last-N intent
+
+Never reinterpret `limit` as latest N bars; Coreza forwards page size, usually ascending with auto-pagination.
+
+If adding lookback later, represent requested count separately from a bounded range. Use a small reviewed broker/tool enhancement, not invisible generic date injection. It must:
+
+- Define stock sessions, holidays, half-days and DST versus 24/7 crypto.
+- Define inclusion of the current incomplete bar, end cutoff and feed delay.
+- Bound expansion, pages, rows, memory and elapsed time; sparse trading can prevent N observations.
+- Preserve explicit feed/symbol/interval/timestamps; never expand an explicitly bounded request.
+- Return requested and actual count, resolved range and completeness separately from page size.
+
+Until then, suggest an explicit historical session/range when needed. Do not silently substitute a prior day to answer a question explicitly about today.
+
+## 10. Coverage across converted nodes
+
+Every connected tool uses the shared boundary; operation validation expands incrementally. This review inventoried **73 frontend JSON definitions** and inspected the common agent path, Alpaca mapping, representative indicator execution, Tool/DataSource executors and result contracts. It did not execute or deeply audit every provider operation.
+
+Expansion must produce a checked-in coverage table per actually attachable tool and operation: definition/runtime identity, executor route, argument schema, effective checks, executor checks, output classification, risk and recovery. Include capability/static legacy aliases. JSON presence does not prove synchronous tool support.
+
+| Group | Definitions / identities to reconcile | Main review requirement |
+| --- | --- | --- |
+| Brokers | Alpaca, Binance, Schwab, Dhan, FinnHub | Provider operation/date/asset contracts; separate reads and mutations. |
+| Data/news/screeners | Market, YahooFinance, Polygon, FMP, FMPNews, AlpacaScreener, BinanceScreener, SchwabScreener, YahooFinanceScreener, FMPScreener | Different historical operation names/shapes; news/profile data are not candles. |
+| Indicators | ADX, ATR, BB, EMA, Ichimoku, MACD, OBV, RSI, Stoch, SupportResistance, VWAP, VolumeOscillator, InitializeIndicators | Scalar windows/relationships; preserve readiness/provenance; initialization can change state. |
+| Windows/state | Consolidator, RollingWindow, InMemory, Store, RedisStore | Read versus write/delete/publish, structured values and state scope. |
+| Logic/risk | Compute, Field, If, Loop, Switch, RiskEngine | Repeaters/objects/expressions, nested execution and state changes. |
+| Portfolio/backtest | Portfolio, BacktestInit, BacktestPortfolio, BacktestResults, BacktestTrade, OnBar | Operation-specific state/trade effects and runtime identity. |
+| Fetch/utilities/output | DocumentExtract, GoogleWebSearch, HttpRequest, Visualize | Required executable arguments, output shape, routing and method-dependent risk. |
+| Communication | Gmail, Telegram, WhatsApp | External sends are side effects; no generic replay. |
+| Agent/input/model/memory | AIAgent, ChatInput, OpenAI, OpenAIChatModel, GeminiChatModel, SimpleMemory, RedisChatMemory, PostgresChatMemory | Dependency handles versus executable tools; nested recursion/context/routing. |
+| Streams/subscriptions | AlpacaStreamData, AlpacaSubscribe, BinanceStreamData, BinanceSubscribe, DhanStreamData, DhanSubscribe, SchwabStreamData, SchwabSubscribe | Filename/runtime-name differences, lifecycle effects and synchronous eligibility. |
+| Triggers | GmailTrigger, RedisTrigger, Scheduler, TelegramTrigger, WebhookTrigger | Confirm tool support; listening/scheduled is not completed data. |
+
+Concrete expansion requirements:
+
+- **Schwab:** actual operation is `get_price_history`. Validate period/frequency combinations and executor date conversion; review DataRef output recognition with input rules.
+- **Binance/Dhan:** inspect actual timestamp units, intervals, instrument IDs and environment rules. Do not copy Alpaca feed/date assumptions.
+- **Indicators:** RSI/EMA expose `window`; ATR uses `period`; MACD uses `fastPeriod`, `slowPeriod`, `signalPeriod`; BB uses `period`, `std_dev_multiplier`. Preserve actual names, integer constraints where appropriate, period relationships, existing finite-value checks, exact refs and `not_ready` behavior. Do not duplicate indicator math/warm-up formulas.
+- **Metadata gaps:** GoogleWebSearch needs `query`; its executor expects context `user_id` while the agent path uses `userId`. Verify and normalize context at the adapter without letting the model author identity. Review `Field` repeaters and structured defaults instead of `String(default)` conversion.
+- **Identity/routing:** names such as “Bollinger Bands”/“Edit Fields,” aliases `BB`/`Field`, static entries `SMA`/`Date`, and capability-only trade/news names must resolve correctly. Do not assume all listed entries work today.
+- **Mutations:** preserve credential scope, configured account/environment and idempotency/reconciliation. The hook does not replace those controls. Strict mutation contracts need separate operation reviews; the pilot cannot claim complete mutation safety.
+
+## 11. Delivery slices and files
+
+Replace the old hook-only PR followed by separately delayed essential validation/diagnostics. An unused registry does not fix the reported issue. Each slice needs a visible acceptance result.
+
+| Slice | Deliverable | Main files |
+| --- | --- | --- |
+| 1: complete Alpaca pilot | Conditional schemas/envelopes; effective helper; historical/latest contracts; safe error delivery; endpoint mapping; empty/partial output context. Dependent commits may be separate, but ship together. | `AIAgentExecutor.ts`; new `effectiveToolInputValidation.ts`; adjacent Alpaca validation helper; Alpaca `http/operations.ts`; narrowly scoped `BrokerExecutor.ts`; `toolOutputProcessor.ts`; `src/nodes/Alpaca.json`. |
+| 2: inventory and expansion | Checked coverage table; resolve demonstrated metadata/routing gaps; indicator scalar checks and one broker at a time with its output adapter. | `toolDefinitions.ts`, relevant JSON/executors and broker helpers; coverage document. |
+| 3: optional recovery | One bounded transient-read retry owner; explicit last-N feature only if requested. | Existing read path plus a small policy helper; no generic replay mechanism. |
+
+Change `toolExecutionLog.ts` only for missing diagnostics. Normally keep `NodeResult` contract files unchanged: use existing `details`/`meta` and introduce tool-facing outcomes in the adapter. Carry only safe request/coverage metadata through result envelopes, never raw Axios objects.
+
+Shared mapper changes may affect manual/backtest/live callers. Separate intentional invalid-value rejection from agent-only restrictions such as a single historical series. No broad workflow-engine refactor is required.
+
+## 12. Verification and acceptance
+
+This revision changes documentation only. The checks below are future implementation requirements, not claims that tests or runtime fixes have been completed.
+
+Use focused offline checks with mocked transport/executors. No live order, subscription mutation or message send is needed. Verify the actual outgoing request and next agent observation, rather than mirroring the validator's implementation.
+
+| Scenario | Required evidence |
+| --- | --- |
+| Fixed account operation, editable operation and expression-selected operation | No unrelated pre-parse requirements; selected-operation contract runs afterward. |
+| Editable stock/crypto selection | Correct conditional requirements; no injected stock feed on crypto. |
+| Invalid model/configured-expression limit or date | Structured failure; zero HTTP calls; fixed failures are not model-correctable. |
+| Valid date-only/RFC-3339, equal bounds and combined adjustment | No unjustified rejection, timezone rewrite, precision loss or select-only reparse. |
+| Fixed configuration and generated alias override | Authority preserved in node values, executor input and transmitted query. |
+| Nested/flat arguments and unknown `timeframe` | Supported envelope survives pre-parse handling; wrong names produce useful diagnostics. |
+| Actual LangChain schema failure then corrected request | One correlated failure reaches the model; a correction works within the existing graph budget; one completion trace. |
+| Stock historical/latest feeds and crypto endpoints | Correct query allowlist; no feed substitution or irrelevant crypto parameters. |
+| Historical multi-symbol agent request | Reject before HTTP; ordinary broker multi-symbol requests remain supported. |
+| Per-page limit, multiple pages, page ceiling, later-page failure | Accurate row/page counts and completeness; partial is never complete no-data/success. |
+| 400/401/403/429/5xx/timeout and malformed 200 | Distinct safe classifications; provider evidence retained; missing bars is not fabricated emptiness. |
+| Empty historical/latest and stale latest observation | No false success/DataRef; correct minute interval and observation timestamp. |
+| Fetch → RSI/EMA/MACD/ATR; insufficient data and mismatched ref | Existing immutable refs/readiness/provenance survive; no invented indicator confirmation/previous value. |
+| Cancellation before execution and during HTTP/pagination | No new dispatch after cancellation; bounded termination and proper lifecycle cleanup. |
+| Unreviewed node and complex configured data | Honest coverage marker; arrays/objects remain compatible; no blanket UI reparse. |
+| Mutation timeout/order-status unknown | Existing reconciliation survives; no automatic mutation or whole-agent replay. |
+| Logs/model errors | No secrets/raw expressions/large payloads; safe issue diagnostics remain useful. |
+
+During implementation, run backend TypeScript build and relevant existing checks, including Alpaca adjustment coverage when mapping changes. Add focused regressions for schema-before-callback and request/output boundaries. No new test framework or broad benchmark project is needed. Measure local validation through existing traces; do not add remote validation calls per invocation.
+
+Pilot completion requires Slice 1 acceptance and a demonstrated corrective observation delivered to the model. Full converted-node coverage requires the separate inventory to contain no unexplained supported-operation gaps. The pilot must not be described as that broader result.
+
+## 13. References and unresolved evidence
+
+Pinned source:
+
+- [Agent tool construction, parsing, resolution and output handling](https://github.com/Coreza-io/coreza/blob/fbddc0dc328135ecb47b34c76a080ad3f78b389f/coreza-backend/src/nodes/executors/AIAgentExecutor.ts#L431)
+- [Broker parameter normalization](https://github.com/Coreza-io/coreza/blob/fbddc0dc328135ecb47b34c76a080ad3f78b389f/coreza-backend/src/nodes/executors/BrokerExecutor.ts#L223) and [error/pagination path](https://github.com/Coreza-io/coreza/blob/fbddc0dc328135ecb47b34c76a080ad3f78b389f/coreza-backend/src/nodes/executors/BrokerExecutor.ts#L520)
+- [Alpaca HTTP operations](https://github.com/Coreza-io/coreza/blob/fbddc0dc328135ecb47b34c76a080ad3f78b389f/coreza-backend/src/brokers/alpaca/http/operations.ts#L172), [capabilities](https://github.com/Coreza-io/coreza/blob/fbddc0dc328135ecb47b34c76a080ad3f78b389f/coreza-backend/src/brokers/alpaca/capabilities.ts), [node fields](https://github.com/Coreza-io/coreza/blob/fbddc0dc328135ecb47b34c76a080ad3f78b389f/src/nodes/Alpaca.json)
+- [Output/DataRef pipeline](https://github.com/Coreza-io/coreza/blob/fbddc0dc328135ecb47b34c76a080ad3f78b389f/coreza-backend/src/nodes/logic/toolOutputProcessor.ts#L315) and [candle normalization](https://github.com/Coreza-io/coreza/blob/fbddc0dc328135ecb47b34c76a080ad3f78b389f/coreza-backend/src/marketData/normalizeCandles.ts)
+- [Indicator input processing](https://github.com/Coreza-io/coreza/blob/fbddc0dc328135ecb47b34c76a080ad3f78b389f/coreza-backend/src/nodes/executors/IndicatorsExecutor.ts#L414), [tool definitions](https://github.com/Coreza-io/coreza/blob/fbddc0dc328135ecb47b34c76a080ad3f78b389f/coreza-backend/src/nodes/logic/toolDefinitions.ts)
+- [Result contract](https://github.com/Coreza-io/coreza/blob/fbddc0dc328135ecb47b34c76a080ad3f78b389f/coreza-backend/src/contracts/nodeResult.ts), [safe traces](https://github.com/Coreza-io/coreza/blob/fbddc0dc328135ecb47b34c76a080ad3f78b389f/coreza-backend/src/utils/toolExecutionLog.ts)
+- [GoogleWebSearch executor](https://github.com/Coreza-io/coreza/blob/fbddc0dc328135ecb47b34c76a080ad3f78b389f/coreza-backend/src/nodes/executors/ToolExecutor.ts#L57), [definition](https://github.com/Coreza-io/coreza/blob/fbddc0dc328135ecb47b34c76a080ad3f78b389f/src/nodes/GoogleWebSearch.json)
+
+External contracts checked on review date:
+
+- [Stock historical bars](https://docs.alpaca.markets/us/reference/stockbars), [stock latest bars](https://docs.alpaca.markets/us/reference/stocklatestbars-1)
+- [Crypto historical bars](https://docs.alpaca.markets/us/reference/cryptobars-1), [crypto latest bars](https://docs.alpaca.markets/us/reference/cryptolatestbars-1)
+- [Alpaca overnight feed rules](https://docs.alpaca.markets/us/docs/245-trading-for-trading-api)
+- [LangChain tool-call middleware](https://docs.langchain.com/oss/javascript/langchain/middleware/custom)
+
+Recheck endpoint contracts and the lockfile at implementation. Live feed entitlement, exact original IEX/SIP arguments, every node's attachment/runtime support and installed-framework parsing-error delivery remain verification items. They must not be reported as proven causes or completed fixes.

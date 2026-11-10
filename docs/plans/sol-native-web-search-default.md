@@ -2,7 +2,7 @@
 
 Date: 2026-11-10
 Target branch: dev
-Status: implementation plan only
+Status: implemented; runtime acceptance pending
 
 ## Problem and expected behavior
 
@@ -142,3 +142,33 @@ Users can disable search per model node immediately. For code rollback, remove n
 - Current implementation: coreza-backend/src/config/llmProviders.ts and coreza-backend/src/nodes/executors/AIAgentExecutor.ts
 
 Documentation confirms native Responses search and URL annotations; exact LangChain composition and annotation shapes remain implementation checks against the locked dependency versions.
+
+
+## Implementation record
+
+- Uses the locked `@langchain/openai` 1.2.4, `@langchain/core` 1.1.18 and `langchain` 1.2.16 without upgrades. Inspected `ReactAgent` (client tools filtered via `isClientTool`), `AgentNode.#bindTools` (complete tool list bound per turn), and OpenAI Responses tool reduction (built-in definitions preserved alongside converted functions).
+- Composes `{ type: "web_search" }` in the agent's complete tool collection after connected-tool discovery, including zero connected tools. Existing Responses configuration and reserved model kwargs remain unchanged. Capability resolution accepts absent/null/boolean and persisted `"true"`/`"false"`, rejects malformed Sol settings, and ignores this setting for other models/providers.
+- The installed adapter converts URL annotations to `content[].annotations` records with `type: citation`, `source: url_citation`, `startIndex` and `endIndex`; native responses are in `additional_kwargs.tool_outputs`. Extraction accepts those representations and raw URL annotations, maps block-local offsets to final JavaScript string offsets only when UTF-16 and code-point interpretations agree (ambiguous non-BMP ranges retain source-only links), bounds metadata, removes duplicates and retains source-only links for invalid ranges.
+- Result `data` remains the assistant string. `meta.agentResponse` holds exact text, citations and native enabled/observed call metadata. The portable result normalizer preserves arbitrary metadata, pins retain complete outputs, and OutputPanel exports the original complete result. Citation memory uses validated Markdown links and an instruction to reverify time-sensitive facts.
+- OutputPanel renders full untruncated answer text with safe inline source links and a source list. Its existing raw/reference panel remains accessible. Older results keep the prior renderer. Invalid/overlapping annotations do not remove answer text.
+- No test suites, mocked request fixtures or credentialed searches were run, retaining the user's earlier no-testing preference. Consequently the initial/subsequent outbound request sequence, live CAPR answer, Unicode provider offset semantics, and browser click/export acceptance are not reported as verified. Tool composition and annotation paths were inspected statically against installed source.
+- Backend compilation reports the same diagnostic signatures as the existing baseline (including the existing agent type-depth and schema-omit errors); none identifies the new citation module. Frontend type checking reports no diagnostics in the changed output-rendering files. The normal frontend build is blocked by five existing invalid node definitions (Binance, BinanceStreamData, BinanceSubscribe, DhanStreamData, FMPScreener); OpenAIChatModel validates successfully.
+
+Direct `vite build` succeeded after the normal build was blocked by the existing node-definition prebuild errors. This does not establish browser or live-provider acceptance.
+
+
+### End-to-end static review corrections
+
+- Persisted checkbox `"false"` now displays disabled, matching the backend resolver; model switching preserves explicit saved choices.
+- Distinct provider citations on an identical text range retain every inline link in both the output view and textual memory. Exact duplicates and other overlapping ranges remain deterministic.
+- Memory uses angle-delimited Markdown URLs, preserving IPv6 hosts and parentheses without breaking links.
+- The installed adapter forwards citation indices without documenting their Unicode unit. Ambiguous non-BMP ranges now retain validated source links rather than guessing inline attribution; persisted frontend ranges cannot split a UTF-16 surrogate pair. Live provider offset-unit acceptance is still pending.
+- Pins/export preserve complete metadata within the existing 256 KiB pinned-output size limit; oversized outputs continue to be omitted by the existing pin guard. This review does not claim unrestricted pin storage.
+
+Review validation: direct Vite production build passed again; backend compilation still reports the same 54 diagnostic lines, with no new diagnostic signatures. No tests, mocked transports, live searches or browser acceptance were run.
+
+User-requested adjustment: do not append search or historical-data instructions to the system prompt. Execution now passes `new SystemMessage(systemPrompt)` directly, preserving the node-authored prompt (and the existing fallback when absent). The original freshness-guidance section is superseded by this preference; native tool availability, citations and observability remain implemented independently.
+
+Second static review: confirmed that node-authored system prompts are passed directly, including an explicit empty string; mixed tools are rebound per model turn without prebinding; public result normalization and output export preserve metadata. Search usage is now collected only from current-invocation model-end callbacks, rather than scanning restored conversation history. This prevents earlier persisted native-tool metadata from being reported as newly observed usage. Native calls still execute on the provider, with no fabricated workflow-tool activity.
+
+Second-review validation: backend compilation reports 54 diagnostic lines, with no new diagnostic signatures versus the prior review. The change is confined to current-invocation search accounting and documentation; frontend code is unchanged from its successful direct Vite build. Tests and live/browser acceptance remain unrun.

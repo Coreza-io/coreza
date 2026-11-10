@@ -166,3 +166,5 @@ Direct `vite build` succeeded after the normal build was blocked by the existing
 - Pins/export preserve complete metadata within the existing 256 KiB pinned-output size limit; oversized outputs continue to be omitted by the existing pin guard. This review does not claim unrestricted pin storage.
 
 Review validation: direct Vite production build passed again; backend compilation still reports the same 54 diagnostic lines, with no new diagnostic signatures. No tests, mocked transports, live searches or browser acceptance were run.
+
+User-requested adjustment: do not append search or historical-data instructions to the system prompt. Execution now passes `new SystemMessage(systemPrompt)` directly, preserving the node-authored prompt (and the existing fallback when absent). The original freshness-guidance section is superseded by this preference; native tool availability, citations and observability remain implemented independently.

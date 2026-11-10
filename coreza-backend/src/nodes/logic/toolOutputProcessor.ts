@@ -335,6 +335,9 @@ export function processToolOutput(
     if (!bars.length) return { success: false, status: 'no_data', type: 'market_data', rowCount: 0,
       cached: false, summary: { message: 'No historical candles returned' } };
     if (!dataContext) throw new Error('Historical candles require a run-scoped DataContext');
+    if (dataContext.getStore().estimateSize(bars) > dataContext.getStats().maxSizeBytes) {
+      throw Object.assign(new Error('Historical candles exceed the run memory budget'), { code: 'RESOURCE_LIMIT' });
+    }
     
     if (bars && bars.length > 0) {
       // Generate unique key for this data - try output first, then toolInput

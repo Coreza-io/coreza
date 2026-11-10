@@ -624,12 +624,12 @@ export class AIAgentExecutor implements INodeExecutor {
               adapted?.input ?? unwrappedInput,
               trace,
             );
-          } catch {
-            status = 'invalid_output';
+          } catch (error: any) {
+            status = error?.code === 'RESOURCE_LIMIT' ? 'resource_limit' : 'invalid_output';
             if (span) activity?.end(span, 'failed');
             return JSON.stringify({ success: false, status, type: 'tool_error', operation, toolInvocationId,
               retryable_by_agent: false, provider_request_sent: requestCount > 0,
-              error: { message: 'Tool returned malformed or mismatched output; no data reference was created.' } });
+              error: { message: status === 'resource_limit' ? 'Historical candles exceed the run memory budget; request a smaller explicit range or fewer pages.' : 'Tool returned malformed or mismatched output; no data reference was created.' } });
           }
           if (adapted) processedOutput.summary = { ...processedOutput.summary, ...adapted.summary };
           if (processedOutput.dataRef) {

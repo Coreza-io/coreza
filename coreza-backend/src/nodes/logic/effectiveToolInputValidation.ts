@@ -29,7 +29,8 @@ export function fieldApplicability(field: any, values: Record<string, any>, fixe
 
 export function validateEffectiveToolInput(node: WorkflowNode, input: Record<string, any>, configured: Record<string, any>, raw: any, contract?: ToolInputContract) {
   const values = { ...input };
-  const fields = (node as any).fields ?? loadNodeDefinition(node.name || '')?.fields ?? [];
+  const nodeFields = (node as any).fields;
+  const fields = Array.isArray(nodeFields) && nodeFields.length ? nodeFields : loadNodeDefinition(node.name || '')?.fields ?? [];
   // Controllers precede dependent fields in node metadata. Only apply known-active defaults.
   for (const field of fields) {
     if (Object.prototype.hasOwnProperty.call(configured, field.key)) continue;

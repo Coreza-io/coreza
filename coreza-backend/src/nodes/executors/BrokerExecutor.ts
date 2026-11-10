@@ -622,7 +622,7 @@ export class BrokerExecutor implements INodeExecutor {
       normalized.details = { ...normalized.details,
         status: typeof httpStatus === 'number' ? httpStatus : undefined,
         code: typeof transportError?.code === 'string' && /^[A-Z_0-9]{1,64}$/.test(transportError.code) ? transportError.code : normalized.details?.code,
-        response: typeof providerCode === 'number' ? { providerCode } : undefined,
+        response: { ...normalized.details?.response, ...(typeof providerCode === 'number' ? { providerCode } : {}) },
       };
       return normalized;
     } finally {

@@ -208,7 +208,7 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
       if (input.page_token) params.page_token = input.page_token;
       return params;
     },
-    validateResponse: validateBarsResponse,
+    validateResponse: (raw, input) => validateBarsResponse(raw, { ...input, operation: 'get_candle' }),
     pagination: {
       enabled: true,
       tokenField: "next_page_token",
@@ -218,7 +218,7 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
     },
 
     transformResult: (raw: any, input: any) => {
-      validateBarsResponse(raw, input);
+      validateBarsResponse(raw, { ...input, operation: 'get_candle' });
       const barsObj = raw.bars;
 
       const BarSeries = Object.entries(barsObj).map(
@@ -264,7 +264,7 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
       return params;
     },
     transformResult: (raw: any, input: any) => {
-      validateBarsResponse(raw, input);
+      validateBarsResponse(raw, { ...input, operation: 'get_latest_bar' });
       const barsObj = raw.bars;
 
       const BarSeries = Object.entries(barsObj).map(

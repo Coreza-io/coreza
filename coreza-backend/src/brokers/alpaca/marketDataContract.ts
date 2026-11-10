@@ -49,7 +49,9 @@ export function validateAlpacaMarketData(input: Record<string, any>, configured?
     const fixed = keys.filter(key => own(configured, key));
     const supplied = keys.filter(key => raw && own(raw, key));
     const candidates = fixed.length ? fixed : supplied.length ? supplied : keys.filter(key => present(values[key]));
-    if (candidates.length > 1 && candidates.some(key => String(values[key]).trim() !== String(values[candidates[0]]).trim())) {
+    const comparable = (value: any) => typeof value === 'string' ? value.trim().toUpperCase()
+      : Array.isArray(value) && value.every(item => typeof item === 'string') ? value.join(',').toUpperCase() : value;
+    if (candidates.length > 1 && candidates.some(key => comparable(values[key]) !== comparable(values[candidates[0]]))) {
       issue(candidates[0], 'conflicting_aliases', 'Provide one consistent value for aliases');
     }
     values[canonical] = candidates.length ? values[candidates[0]] : fallback;
@@ -59,11 +61,16 @@ export function validateAlpacaMarketData(input: Record<string, any>, configured?
   if (!['stock', 'crypto'].includes(values.assetType)) issue(assetField, 'invalid_asset', 'assetType must be stock or crypto');
   delete values.asset_type;
   const crypto = values.assetType === 'crypto';
-  const symbolField = alias('symbol', crypto ? ['crypto_base', 'symbol', 'symbols'] : ['symbol', 'symbols']);
+  // crypto_base is the active editor field. A hidden saved stock symbol cannot conflict with it.
+  const hasExplicitPairAlias = ['symbol', 'symbols'].some(key =>
+    (own(configured, 'crypto_base') ? own(configured, key) : raw === undefined) &&
+    (typeof values[key] === 'string' ? values[key].includes('/') : Array.isArray(values[key])));
+  const cryptoFieldIsAuthoritative = (own(configured, 'crypto_base') || raw === undefined && present(values.crypto_base)) && !hasExplicitPairAlias;
+  const symbolField = alias('symbol', crypto ? cryptoFieldIsAuthoritative ? ['crypto_base'] : ['crypto_base', 'symbol', 'symbols'] : ['symbol', 'symbols']);
   let symbols: string[] = [];
   if (raw === undefined && Array.isArray(values.symbol) && values.symbol.every((symbol: any) => typeof symbol === 'string')) values.symbol = values.symbol.join(',');
-  if (typeof values.symbol === 'string') symbols = values.symbol.split(',').map((symbol: string) => symbol.trim()).filter(Boolean);
-  if (!symbols.length || (raw !== undefined && symbols.length !== 1)) issue(symbolField, 'invalid_symbol', 'Provide one symbol per agent market-data call');
+  if (typeof values.symbol === 'string') symbols = values.symbol.split(',').map((symbol: string) => symbol.trim());
+  if (!symbols.length || symbols.some(symbol => !symbol) || (raw !== undefined && symbols.length !== 1)) issue(symbolField, 'invalid_symbol', 'Provide one symbol per agent market-data call');
   try {
     values.symbol = symbols.map(symbol => crypto ? validateAlpacaCryptoSymbol(symbol) : symbol.toUpperCase()).join(',');
   } catch { issue(symbolField, 'invalid_crypto_pair', 'Provide a full crypto pair such as ETH/USD'); }
@@ -84,17 +91,24 @@ export function validateAlpacaMarketData(input: Record<string, any>, configured?
   }
   const integer = (key: string, maximum: number, fallback: number) => {
     const value = values[key];
-    if (!present(value) || (typeof value === 'string' && !value.trim())) { values[key] = fallback; return; }
+    if (!present(value) || (typeof value === 'string' && !value.trim())) {
+      if (own(configured, key)) issue(key, 'invalid_positive_integer', `${key} must resolve to an integer from 1 through ${maximum}`);
+      else values[key] = fallback;
+      return;
+    }
     const numeric = typeof value === 'number' || (typeof value === 'string' && /^\d+$/.test(value.trim()));
     if (!numeric || !Number.isInteger(Number(value)) || Number(value) < 1 || Number(value) > maximum) {
       issue(key, 'invalid_positive_integer', `${key} must be an integer from 1 through ${maximum}`);
     } else values[key] = Number(value);
   };
+  for (const key of ['currency', 'page_token']) {
+    if (present(values[key]) && (typeof values[key] !== 'string' || !values[key].trim())) issue(key, 'invalid_string', `${key} must be a non-empty string`);
+  }
   if (historical) {
     if (!intervals.includes(values.interval)) issue('interval', 'invalid_interval', `interval must be one of ${intervals.join(', ')}`);
     integer('limit', 10000, 10000);
     integer('max_pages', 100, 100);
-    if (values.auto_paginate === undefined) values.auto_paginate = true;
+    if (values.auto_paginate === undefined && !own(configured, 'auto_paginate')) values.auto_paginate = true;
     else if (typeof values.auto_paginate !== 'boolean') issue('auto_paginate', 'invalid_boolean', 'auto_paginate must be a boolean');
     for (const key of ['start', 'end']) {
       if (values[key] === '') delete values[key];
@@ -123,6 +137,7 @@ export const alpacaMarketDataContract: ToolInputContract = {
   schema: (shape, configured) => {
     if (configured.operation && !alpacaMarketDataContract.supports(configured.operation)) return shape;
     const result = { ...shape };
+    delete result.dataRef; // These endpoints fetch data; they do not consume historical references.
     // Aliases are accepted by the runtime contract; canonical requirements apply after resolution.
     for (const key of ['symbol', 'crypto_base', 'assetType']) if (result[key]) result[key] = z.string().optional();
     // Scalar semantics run after configuration resolution, without lossy coercion.
@@ -144,14 +159,20 @@ export const alpacaMarketDataContract: ToolInputContract = {
     const series = extractHistoricalCandles(output, { symbol: input.symbol, timeframe: requested.interval, assetType: input.assetType });
     const bars = latest ? normalizeCandles(series.bars) : series.bars;
     const complete = output.pagination_complete ?? !output.has_more;
+    // Historical input can be descending; summaries describe chronological bounds, like the stored DataRef.
+    let firstTime: number | undefined, lastTime: number | undefined;
+    for (const bar of bars) {
+      firstTime = firstTime === undefined ? bar.time : Math.min(firstTime, bar.time);
+      lastTime = lastTime === undefined ? bar.time : Math.max(lastTime, bar.time);
+    }
     const summary = { symbol: input.symbol, assetType: input.assetType, timeframe: requested.interval,
       feed: input.feed ?? null, adjustment: input.adjustment ?? null, currency: input.currency ?? null,
       requestedRange: { start: input.start ?? null, end: input.end ?? null },
       rangeSource: input.start && input.end ? 'explicit' : input.start || input.end ? 'mixed' : 'provider_defaults',
       pageSize: input.limit, pagesFetched: output.pages_fetched ?? 1, paginationComplete: complete,
       hasMore: !!output.has_more, returnedBarCount: bars.length,
-      firstTimestamp: bars[0] ? new Date(bars[0].time).toISOString() : null,
-      lastTimestamp: bars.length ? new Date(bars[bars.length - 1].time).toISOString() : null };
+      firstTimestamp: firstTime !== undefined ? new Date(firstTime).toISOString() : null,
+      lastTimestamp: lastTime !== undefined ? new Date(lastTime).toISOString() : null };
     if (!bars.length || latest) return { input: requested, summary,
       result: { success: bars.length > 0, ...(!bars.length ? { status: complete ? 'no_data' as const : 'partial_data' as const } : {}),
         type: 'market_data', cached: false, rowCount: bars.length,

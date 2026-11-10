@@ -285,7 +285,7 @@ export class InMemoryStore {
     }
   }
 
-  private estimateSize(data: any): number {
+  estimateSize(data: any): number {
     if (data === null || data === undefined) return 8;
     if (typeof data === 'boolean') return 4;
     if (typeof data === 'number') return 8;

@@ -9,7 +9,7 @@ export function toolFailure(result: NodeResult, providerRequestSent: boolean) {
   const status = code === 'RESOURCE_LIMIT' ? 'resource_limit'
     : code === 'INVALID_OUTPUT' ? 'invalid_output'
     : code === 'ORDER_STATUS_UNKNOWN' ? 'reconciliation_required'
-    : httpStatus === 401 ? 'authentication_failed'
+    : httpStatus === 401 || code === 'OAUTH_RECONNECT_REQUIRED' || code === 'OAUTH_REFRESH_FAILED' ? 'authentication_failed'
     : httpStatus === 403 ? 'permission_denied'
     : httpStatus === 429 ? 'rate_limited'
     : httpStatus === 400 || httpStatus === 422 ? 'provider_invalid_input'

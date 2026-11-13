@@ -70,7 +70,10 @@ export class BacktestSession {
   private barsProcessed = 0;
   private currentSymbolIndex = 0;
   private stepping = false;
-  get isExecuting(): boolean { return this.stepping; }
+  private initializing = false;
+  get isExecuting(): boolean {
+    return this.stepping || this.initializing;
+  }
   private finalization: Promise<void> | null = null;
   private compiledPlan: CompiledPlan | null = null;
   private readonly reusableBarInput: { data: any } = { data: null };
@@ -120,7 +123,7 @@ export class BacktestSession {
     private readonly entryNodeIds: string[],
     private readonly backtestInitResult: Record<string, any>,
     private readonly bars: MultiBarEvent[],
-    private readonly executionId: string,
+    public readonly executionId: string,
     stateManager?: IndicatorStateManager,
     private readonly rollingWindowSeed?: RollingWindowSeed,
     private readonly indicatorWarmupSeed?: IndicatorWarmupSeed,
@@ -322,6 +325,15 @@ export class BacktestSession {
 
   async initialize(): Promise<void> {
     if (this.phase !== "initializing") return;
+    this.initializing = true;
+    try {
+      await this.initializeState();
+    } finally {
+      this.initializing = false;
+    }
+  }
+
+  private async initializeState(): Promise<void> {
     await this.run.initialize();
     if (this.warmupMode === "workflow_replay" && this.indicatorWarmupSeed) {
       throw new Error(
@@ -1007,9 +1019,19 @@ export class BacktestSession {
   }
 
   async reset(): Promise<void> {
-    if (this.stepping)
+    if (this.isExecuting || (this.persistResults && this.status === "running"))
       throw new Error("Cannot reset a running backtest session");
     if (this.finalization && this.persistResults) throw new Error("Start a new backtest to reset a finalized session");
+    this.stepping = true;
+    try {
+      if (this.finalization) await this.finalization;
+      await this.resetState();
+    } finally {
+      this.stepping = false;
+    }
+  }
+
+  private async resetState(): Promise<void> {
     if (!this.persistResults) this.finalization = null;
     this.currentIndex = 0;
     this.currentSymbolIndex = 0;

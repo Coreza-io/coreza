@@ -51,7 +51,7 @@ export class BacktestSessionManager {
     indicatorInitialization?: IndicatorInitialization,
     persistResults = true,
   ): BacktestSession {
-    const scopeKey = `${userId}:${workflowId}:${nodeId}`;
+    const scopeKey = `${userId}:${workflowId}:${nodeId}:${persistResults ? "database" : runId}`;
     const existingBacktestId = this.scopeIndex.get(scopeKey);
 
     if (existingBacktestId) {
@@ -101,7 +101,7 @@ export class BacktestSessionManager {
     this.editorExpiry.delete(backtestId);
     session.cleanup();
     this.sessions.delete(backtestId);
-    const scopeKey = `${session.userId}:${session.workflowId}:${session.nodeId}`;
+    const scopeKey = `${session.userId}:${session.workflowId}:${session.nodeId}:${session.persistResults ? "database" : session.executionId}`;
     if (this.scopeIndex.get(scopeKey) === backtestId) {
       this.scopeIndex.delete(scopeKey);
     }

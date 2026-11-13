@@ -280,7 +280,9 @@ export class BacktestExecutor implements INodeExecutor {
       const userId = context?.userId;
       // Only a trusted persistent-run entry point can opt into reporting writes.
       persistBacktest = context?.persistence === "database";
-      const workflowId = persistBacktest ? context?.workflowId : context?.workflowSessionId || randomUUID();
+      const workflowId = context?.workflowId || (persistBacktest
+        ? undefined
+        : context?.workflowSessionId || randomUUID());
       if (!userId || !workflowId) {
         return createErrorOutput("User ID and Workflow ID required for backtest");
       }
@@ -542,14 +544,6 @@ export class BacktestExecutor implements INodeExecutor {
         warmupMode === "workflow_replay" || rollingWindowSize === undefined
           ? undefined
           : { size: rollingWindowSize, interval, symbols, warmupBarsBySymbol };
-      const rollingWindowsInitialized = rollingWindowSeed
-        ? seedRollingWindows({
-            ...rollingWindowSeed,
-            userId,
-            workflowId,
-            executionId,
-          })
-        : 0;
 
       const {
         nodes: strategyNodes,
@@ -622,6 +616,16 @@ export class BacktestExecutor implements INodeExecutor {
           : undefined,
         persistBacktest,
       );
+
+      // Replacing a session destroys its execution context; seed only after replacement.
+      const rollingWindowsInitialized = rollingWindowSeed
+        ? seedRollingWindows({
+            ...rollingWindowSeed,
+            userId,
+            workflowId,
+            executionId,
+          })
+        : 0;
 
       let ownedNodeResults: Record<string, NodeResult> | undefined;
       if (!isManual) {

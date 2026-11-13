@@ -330,7 +330,7 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
     if (!started || abortSignal?.aborted) throw new Error("Backtest run cancelled before startup");
 
     const backtestExecutor = new BacktestExecutor();
-    const context = { userId, workflowId, runId, nodes, edges, abortSignal };
+    const context = { userId, workflowId, runId, nodes, edges, abortSignal, persistence: "database" as const };
     const input = backtestInitNode?.values || {};
 
     const result = await backtestExecutor.execute(backtestInitNode, input, context);

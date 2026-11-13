@@ -93,6 +93,9 @@ function explicitRestingOrderPrice(
 }
 
 export class SimBroker {
+  /** Authenticated owner of a memory-only editor simulation; absent for persisted runs. */
+  editorOwnerId?: string;
+
   private warmingUp = false;
   private backtestId: string;
   private config: SimBrokerConfig;

@@ -305,6 +305,9 @@ export class PortfolioExecutor implements INodeExecutor {
         );
     }
 
+    if (simBroker.editorOwnerId && simBroker.editorOwnerId !== _context?.userId) {
+      return createErrorOutput("Editor backtest session not found or expired");
+    }
     const operation = params.operation || "get_portfolio";
     const symbol = params.symbol?.trim().toUpperCase();
     const currentBar = parseBar(params.currentBar);

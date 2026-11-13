@@ -70,6 +70,10 @@ export class BacktestSession {
   private barsProcessed = 0;
   private currentSymbolIndex = 0;
   private stepping = false;
+  private initializing = false;
+  get isExecuting(): boolean {
+    return this.stepping || this.initializing;
+  }
   private finalization: Promise<void> | null = null;
   private compiledPlan: CompiledPlan | null = null;
   private readonly reusableBarInput: { data: any } = { data: null };
@@ -113,19 +117,20 @@ export class BacktestSession {
     public readonly backtestId: string,
     public readonly workflowId: string,
     public readonly nodeId: string,
-    private readonly userId: string,
+    public readonly userId: string,
     private readonly nodes: WorkflowNode[],
     private readonly edges: WorkflowEdge[],
     private readonly entryNodeIds: string[],
     private readonly backtestInitResult: Record<string, any>,
     private readonly bars: MultiBarEvent[],
-    private readonly executionId: string,
+    public readonly executionId: string,
     stateManager?: IndicatorStateManager,
     private readonly rollingWindowSeed?: RollingWindowSeed,
     private readonly indicatorWarmupSeed?: IndicatorWarmupSeed,
     private readonly warmupMode: WarmupMode = "seed",
     private readonly warmupEvents: MultiBarEvent[] = [],
     private readonly indicatorInitialization?: IndicatorInitialization,
+    public readonly persistResults = true,
   ) {
     this.abortController = new AbortController();
     this.stateManager = stateManager;
@@ -320,6 +325,15 @@ export class BacktestSession {
 
   async initialize(): Promise<void> {
     if (this.phase !== "initializing") return;
+    this.initializing = true;
+    try {
+      await this.initializeState();
+    } finally {
+      this.initializing = false;
+    }
+  }
+
+  private async initializeState(): Promise<void> {
     await this.run.initialize();
     if (this.warmupMode === "workflow_replay" && this.indicatorWarmupSeed) {
       throw new Error(
@@ -1005,9 +1019,20 @@ export class BacktestSession {
   }
 
   async reset(): Promise<void> {
-    if (this.stepping || this.status === "running")
+    if (this.isExecuting || (this.persistResults && this.status === "running"))
       throw new Error("Cannot reset a running backtest session");
-    if (this.finalization) throw new Error("Start a new backtest to reset a finalized session");
+    if (this.finalization && this.persistResults) throw new Error("Start a new backtest to reset a finalized session");
+    this.stepping = true;
+    try {
+      if (this.finalization) await this.finalization;
+      await this.resetState();
+    } finally {
+      this.stepping = false;
+    }
+  }
+
+  private async resetState(): Promise<void> {
+    if (!this.persistResults) this.finalization = null;
     this.currentIndex = 0;
     this.currentSymbolIndex = 0;
     this.barsProcessed = 0;
@@ -1087,6 +1112,7 @@ export class BacktestSession {
   }
 
   private async reportProgress(): Promise<void> {
+    if (!this.persistResults) return;
     const percent =
       this.totalBars > 0
         ? Math.round((this.barsProcessed / this.totalBars) * 100)
@@ -1121,6 +1147,7 @@ export class BacktestSession {
       this.perf.finalizeMs += performance.now() - t0;
     }
 
+    if (!this.persistResults) return;
     const timing = this.run.getNodeTiming();
     const redis = getRedisCache();
     t0 = performance.now();

@@ -1535,7 +1535,6 @@ const WorkflowEditorContent = () => {
 
   const activeExecutorRef = useRef<WorkflowExecutor | null>(null);
   const preparationRef = useRef(0);
-  const [pendingExecution, setPendingExecution] = useState<{ workflowId: string; nodeId?: string; generation: number } | null>(null);
   const createAcceptedExecutor = useCallback((sessionId: string) => {
     const currentNodes = nodesRef.current;
     const currentEdges = canonicalEdgesRef.current;
@@ -1557,7 +1556,7 @@ const WorkflowEditorContent = () => {
   }, [workflowSessionId]);
   useEffect(() => () => { preparationRef.current += 1; }, []);
 
-  const ensureBacktestExecutionReady = useCallback(async (): Promise<boolean | string> => {
+  const ensureBacktestExecutionReady = useCallback(async (): Promise<boolean> => {
     const preparationSession = currentWorkflowSessionRef.current;
     if (!session || !authUser) {
       toast({
@@ -1568,14 +1567,6 @@ const WorkflowEditorContent = () => {
       return false;
     }
 
-    if (!workflowId) {
-      toast({
-        title: "Error",
-        description: "Workflow ID is missing. Please save the workflow first.",
-        variant: "destructive",
-      });
-      return false;
-    }
     if (invalidClusterEntries.length > 0) {
       toast({
         title: "Cluster metadata needs attention",
@@ -1585,55 +1576,8 @@ const WorkflowEditorContent = () => {
       return false;
     }
 
-    const requiresSave =
-      !hasPersistedRef.current || hasUnsavedChanges(nodes, edges, workflowName, clusters);
-
-    if (!requiresSave) {
-      return true;
-    }
-
-    const saveResult = await saveWorkflow(workflowId, workflowName, nodes, edges, {
-      isNew: !hasPersistedRef.current,
-      clusters,
-    });
-
-    if (currentWorkflowSessionRef.current !== preparationSession) return false;
-    if (!saveResult.success) {
-      toast({
-        title: "Error",
-        description: "Could not save workflow — please try again",
-        variant: "destructive",
-      });
-      return false;
-    }
-
-    if (!hasPersistedRef.current) {
-      hasPersistedRef.current = true;
-      const savedWorkflowId = saveResult.newId;
-      if (!savedWorkflowId) return false;
-      setWorkflowId(savedWorkflowId);
-      const workflowPath = `/dashboard/workflow/${savedWorkflowId}`;
-      const newUrl = projectId ? `${workflowPath}?project=${projectId}` : workflowPath;
-      navigate(newUrl, { replace: true });
-      return savedWorkflowId;
-    }
-
-    return true;
-  }, [
-    session,
-    authUser,
-    workflowId,
-    hasUnsavedChanges,
-    nodes,
-    edges,
-    workflowName,
-    clusters,
-    saveWorkflow,
-    toast,
-    projectId,
-    navigate,
-    invalidClusterEntries.length,
-  ]);
+    return currentWorkflowSessionRef.current === preparationSession;
+  }, [session, authUser, toast, invalidClusterEntries.length]);
 
   const hasBacktestInitNode = useCallback(
     (candidateNodes: Node[]) =>
@@ -1658,17 +1602,12 @@ const WorkflowEditorContent = () => {
     try {
       const candidates = nodesRef.current;
       if (!candidates.length || (nodeId && !candidates.some(node => node.id === nodeId))) return;
-      const needsSave = nodeId
+      const needsBacktestPreparation = nodeId
         ? (candidates.find(node => node.id === nodeId)?.data?.definition as any)?.name === "BacktestInit"
         : hasBacktestInitNode(candidates);
-      if (needsSave) {
+      if (needsBacktestPreparation) {
         const ready = await ensureBacktestExecutionReady();
         if (!ready || generation !== preparationRef.current) return;
-        if (typeof ready === "string") {
-          // Saving a new workflow installs a new session. Release this lock before accepting there.
-          setPendingExecution({ workflowId: ready, nodeId, generation });
-          return;
-        }
       }
       if (generation !== preparationRef.current || currentWorkflowSessionRef.current !== acceptedSession) return;
       if (!nodeId) {
@@ -1696,20 +1635,10 @@ const WorkflowEditorContent = () => {
     }
   }, [workflowSessionId, createAcceptedExecutor, ensureBacktestExecutionReady, hasBacktestInitNode, loading, persistLoading, hasLoadedWorkflowId, workflowLoadKey, canMutateDocument]);
 
-  useEffect(() => {
-    if (!pendingExecution) return;
-    if (pendingExecution.generation !== preparationRef.current) { setPendingExecution(null); return; }
-    if (loading || persistLoading || hasLoadedWorkflowId !== workflowLoadKey) return;
-    if (workflowId !== pendingExecution.workflowId) { setPendingExecution(null); return; }
-    if (nodes.some(node => node.data.workflowSessionId !== workflowSessionId)) return;
-    setPendingExecution(null);
-    void executeAcceptedRun(pendingExecution.nodeId);
-  }, [pendingExecution, workflowId, workflowSessionId, nodes, executeAcceptedRun, loading, persistLoading, hasLoadedWorkflowId, workflowLoadKey]);
-
   const executeAllNodes = useCallback(() => executeAcceptedRun(), [executeAcceptedRun]);
+
   const handleStopExecution = useCallback(() => {
     preparationRef.current += 1;
-    setPendingExecution(null);
     if (!activeExecutorRef.current) setIsAutoExecuting(false);
     activeExecutorRef.current?.stop();
   }, []);
@@ -2956,7 +2885,7 @@ const WorkflowEditorContent = () => {
             </ConnectionDragContext.Provider>
             <div className="pointer-events-auto absolute bottom-6 left-1/2 z-20 -translate-x-1/2">
               <ExecuteAllControl
-                isExecuting={isAutoExecuting || pendingExecution !== null}
+                isExecuting={isAutoExecuting}
                 disabled={loading || nodes.length === 0 || clusterExecution.isExecutionActive}
                 onExecute={executeAllNodes}
                 onStop={handleStopExecution}

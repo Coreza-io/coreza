@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { aggregateDailyEquity } from "../reporting/equityOhlc";
 import { finiteMetrics, reportingTradeId } from "../reporting/persistence";
 import { resultSuccess } from "../contracts/nodeResult";
@@ -70,6 +71,7 @@ interface BacktestInitContext {
   edges?: WorkflowEdge[];
   resolveNodeParameters?: (node: WorkflowNode, input: NodeInput) => NodeInput;
   abortSignal?: AbortSignal;
+  persistence?: "memory" | "database";
 }
 
 function extractStrategySubgraph(
@@ -136,6 +138,15 @@ export class BacktestExecutor implements INodeExecutor {
     );
   }
 
+  private assertEditorOwner(backtestId: string, userId?: string): void {
+    if (!backtestId.startsWith("editor-")) return;
+    const broker = BacktestExecutor.getSimBrokerForBacktest(backtestId);
+    if (!userId || broker?.editorOwnerId !== userId) {
+      throw new Error("Editor backtest session not found or expired");
+    }
+    BacktestSessionManager.getInstance().getSession(backtestId);
+  }
+
   public static cleanupBacktestResources(backtestId: string): void {
     const key = `${SIM_BROKER_KEY_PREFIX}${backtestId}`;
     BacktestExecutor.simBrokerCache.delete(key);
@@ -151,6 +162,7 @@ export class BacktestExecutor implements INodeExecutor {
 
     const config = existing.getConfig();
     const freshSimBroker = new SimBroker(backtestId, config);
+    freshSimBroker.editorOwnerId = existing.editorOwnerId;
     BacktestExecutor.simBrokerCache.set(key, freshSimBroker);
     BacktestExecutor.backtestStartTimes.delete(backtestId);
   }
@@ -256,6 +268,7 @@ export class BacktestExecutor implements INodeExecutor {
     context?: BacktestInitContext,
   ): Promise<NodeResult> {
     let createdBacktestId: string | undefined;
+    let persistBacktest = false;
     let initialized = false;
     let failedOwnedNodeResults: Record<string, NodeResult> | undefined;
     let failedOwnedExecutionOrder: string[] | undefined;
@@ -265,7 +278,9 @@ export class BacktestExecutor implements INodeExecutor {
         : { ...node.values, ...input };
 
       const userId = context?.userId;
-      const workflowId = context?.workflowId;
+      // Only a trusted persistent-run entry point can opt into reporting writes.
+      persistBacktest = context?.persistence === "database";
+      const workflowId = persistBacktest ? context?.workflowId : context?.workflowSessionId || randomUUID();
       if (!userId || !workflowId) {
         return createErrorOutput("User ID and Workflow ID required for backtest");
       }
@@ -281,58 +296,62 @@ export class BacktestExecutor implements INodeExecutor {
           params.allow_short === "true" || params.allow_short === true,
       };
 
-      const supabaseClient = supabase;
-      const { data: workflow, error: workflowLookupError } =
-        await supabaseClient
-          .from("workflows")
+      let backtestId = `editor-${randomUUID()}`;
+      if (persistBacktest) {
+        const supabaseClient = supabase;
+        const { data: workflow, error: workflowLookupError } =
+          await supabaseClient
+            .from("workflows")
+            .select("id")
+            .eq("id", workflowId)
+            .eq("user_id", userId)
+            .maybeSingle();
+
+        if (workflowLookupError) {
+          return createErrorOutput(
+              `Failed to validate workflow before backtest: ${workflowLookupError.message}`,
+            );
+        }
+
+        if (!workflow) {
+          return createErrorOutput(
+              "Workflow not found. Please save the workflow before running a backtest.",
+            );
+        }
+
+        const { data: backtest, error: insertError } = await supabaseClient
+          .from("backtests")
+          .insert({
+            user_id: userId,
+            workflow_id: workflowId,
+            name: params.name || `Backtest ${new Date().toISOString()}`,
+            description: params.description || null,
+            status: "running",
+            initial_capital: config.initialCapital,
+            commission_rate: config.commissionValue,
+            slippage_rate: config.slippageValue,
+            start_date:
+              params.start_date || new Date().toISOString().split("T")[0],
+            end_date: params.end_date || new Date().toISOString().split("T")[0],
+            started_at: new Date().toISOString(),
+          } as any)
           .select("id")
-          .eq("id", workflowId)
-          .eq("user_id", userId)
-          .maybeSingle();
+          .single();
 
-      if (workflowLookupError) {
-        return createErrorOutput(
-            `Failed to validate workflow before backtest: ${workflowLookupError.message}`,
-          );
+        if (insertError || !backtest) {
+          return createErrorOutput(
+              `Failed to create backtest: ${insertError?.message}`,
+            );
+        }
+
+        backtestId = (backtest as { id: string }).id;
       }
-
-      if (!workflow) {
-        return createErrorOutput(
-            "Workflow not found. Please save the workflow before running a backtest.",
-          );
-      }
-
-      const { data: backtest, error: insertError } = await supabaseClient
-        .from("backtests")
-        .insert({
-          user_id: userId,
-          workflow_id: workflowId,
-          name: params.name || `Backtest ${new Date().toISOString()}`,
-          description: params.description || null,
-          status: "running",
-          initial_capital: config.initialCapital,
-          commission_rate: config.commissionValue,
-          slippage_rate: config.slippageValue,
-          start_date:
-            params.start_date || new Date().toISOString().split("T")[0],
-          end_date: params.end_date || new Date().toISOString().split("T")[0],
-          started_at: new Date().toISOString(),
-        } as any)
-        .select("id")
-        .single();
-
-      if (insertError || !backtest) {
-        return createErrorOutput(
-            `Failed to create backtest: ${insertError?.message}`,
-          );
-      }
-
-      const backtestId = (backtest as { id: string }).id;
       createdBacktestId = backtestId;
       const executionId =
         context?.runId ?? context?.workflowSessionId ?? backtestId;
       BacktestExecutor.backtestStartTimes.set(backtestId, Date.now());
       const simBroker = this.getSimBroker(backtestId, config);
+      if (!persistBacktest) simBroker.editorOwnerId = userId;
       simBroker.initializePortfolio();
 
       const broker = String(params.broker || "").toLowerCase();
@@ -601,6 +620,7 @@ export class BacktestExecutor implements INodeExecutor {
         warmupMode === "workflow_replay"
           ? { interval, symbols, indicators: discoveredIndicators }
           : undefined,
+        persistBacktest,
       );
 
       let ownedNodeResults: Record<string, NodeResult> | undefined;
@@ -630,6 +650,7 @@ export class BacktestExecutor implements INodeExecutor {
           backtest_id: backtestId,
           execution_id: executionId,
           mode: isManual ? "manual" : "batch",
+          persistence: persistBacktest ? "database" : "memory",
           total_bars: barEvents.length,
           initial_capital: config.initialCapital,
           start_date: params.start_date,
@@ -711,15 +732,17 @@ export class BacktestExecutor implements INodeExecutor {
       if (context?.userId && createdBacktestId && !initialized) {
         BacktestSessionManager.getInstance().deleteSession(createdBacktestId);
         BacktestExecutor.cleanupBacktestResources(createdBacktestId);
-        const { error } = await (supabase.from("backtests") as any)
-          .update({
-            status: context.abortSignal?.aborted ? "cancelled" : "failed",
-            completed_at: new Date().toISOString(),
-            error_message: context.abortSignal?.aborted ? "Workflow cancelled by user" : "Backtest execution or persistence failed",
-          })
-          .eq("id", createdBacktestId).eq("user_id", context.userId)
-          .in("status", ["pending", "running"]).select("id").maybeSingle();
-        if (error) throw new Error(`Failed to record backtest failure: ${error.message}`);
+        if (persistBacktest) {
+          const { error } = await (supabase.from("backtests") as any)
+            .update({
+              status: context.abortSignal?.aborted ? "cancelled" : "failed",
+              completed_at: new Date().toISOString(),
+              error_message: context.abortSignal?.aborted ? "Workflow cancelled by user" : "Backtest execution or persistence failed",
+            })
+            .eq("id", createdBacktestId).eq("user_id", context.userId)
+            .in("status", ["pending", "running"]).select("id").maybeSingle();
+          if (error) throw new Error(`Failed to record backtest failure: ${error.message}`);
+        }
       }
     }
   }
@@ -845,6 +868,7 @@ export class BacktestExecutor implements INodeExecutor {
       }
 
       // Get SimBroker instance from executor cache - SYNCHRONOUS
+      this.assertEditorOwner(backtestId, context?.userId);
       const simBroker = this.getSimBroker(backtestId);
 
       // Position-aware liquidation: SimBroker computes the signed target itself.
@@ -1012,6 +1036,7 @@ export class BacktestExecutor implements INodeExecutor {
       }
 
       // Get SimBroker from executor cache - SYNCHRONOUS
+      this.assertEditorOwner(backtestId, context?.userId);
       const simBroker = this.getSimBroker(backtestId);
 
       const metrics = simBroker.getMetrics();
@@ -1059,6 +1084,7 @@ export class BacktestExecutor implements INodeExecutor {
   }
 
   private portfolioFinalize(simBroker: SimBroker, backtestId: string, signal?: AbortSignal): Promise<void> {
+    if (simBroker.editorOwnerId) return Promise.resolve();
     let finalization = BacktestExecutor.finalizations.get(simBroker);
     if (!finalization) {
       finalization = this.persistPortfolio(simBroker, backtestId, signal).catch(error => {
@@ -1243,6 +1269,7 @@ export class BacktestExecutor implements INodeExecutor {
 
   async finalizeBacktestById(backtestId: string, signal?: AbortSignal): Promise<void> {
     const simBroker = this.getSimBroker(backtestId);
+    if (simBroker.editorOwnerId) simBroker.releaseAllReservations();
     await this.portfolioFinalize(simBroker, backtestId, signal);
   }
   // ============== BACKTEST PORTFOLIO ==============
@@ -1261,6 +1288,7 @@ export class BacktestExecutor implements INodeExecutor {
         return resultFailure("backtest_id is required");
       }
 
+      this.assertEditorOwner(backtestId, context?.userId);
       const simBroker = this.getSimBroker(backtestId);
       const operation = params.operation || "get_portfolio";
       const currentBar = parseBar(params.current_bar);

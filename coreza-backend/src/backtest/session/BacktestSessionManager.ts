@@ -12,6 +12,18 @@ export class BacktestSessionManager {
   private static instance: BacktestSessionManager;
   private readonly sessions = new Map<string, BacktestSession>();
   private readonly scopeIndex = new Map<string, string>();
+  private readonly editorExpiry = new Map<string, ReturnType<typeof setTimeout>>();
+
+  private renewEditorSession(backtestId: string): void {
+    clearTimeout(this.editorExpiry.get(backtestId));
+    const timer = setTimeout(() => {
+      const session = this.sessions.get(backtestId);
+      if (session?.isExecuting) this.renewEditorSession(backtestId);
+      else this.deleteSession(backtestId);
+    }, 30 * 60 * 1000);
+    timer.unref();
+    this.editorExpiry.set(backtestId, timer);
+  }
 
   static getInstance(): BacktestSessionManager {
     if (!BacktestSessionManager.instance) {
@@ -37,17 +49,13 @@ export class BacktestSessionManager {
     warmupMode: WarmupMode = "seed",
     warmupEvents: MultiBarEvent[] = [],
     indicatorInitialization?: IndicatorInitialization,
+    persistResults = true,
   ): BacktestSession {
-    const scopeKey = `${workflowId}:${nodeId}`;
+    const scopeKey = `${userId}:${workflowId}:${nodeId}`;
     const existingBacktestId = this.scopeIndex.get(scopeKey);
 
     if (existingBacktestId) {
-      const oldSession = this.sessions.get(existingBacktestId);
-      if (oldSession) {
-        oldSession.cleanup();
-      }
-      this.sessions.delete(existingBacktestId);
-      this.scopeIndex.delete(scopeKey);
+      this.deleteSession(existingBacktestId);
     }
 
     const session = new BacktestSession(
@@ -67,16 +75,20 @@ export class BacktestSessionManager {
       warmupMode,
       warmupEvents,
       indicatorInitialization,
+      persistResults,
     );
 
     this.sessions.set(backtestId, session);
     this.scopeIndex.set(scopeKey, backtestId);
+    if (!persistResults) this.renewEditorSession(backtestId);
 
     return session;
   }
 
   getSession(backtestId: string): BacktestSession | undefined {
-    return this.sessions.get(backtestId);
+    const session = this.sessions.get(backtestId);
+    if (session && !session.persistResults) this.renewEditorSession(backtestId);
+    return session;
   }
 
   deleteSession(backtestId: string): void {
@@ -85,9 +97,11 @@ export class BacktestSessionManager {
       return;
     }
 
+    clearTimeout(this.editorExpiry.get(backtestId));
+    this.editorExpiry.delete(backtestId);
     session.cleanup();
     this.sessions.delete(backtestId);
-    const scopeKey = `${session.workflowId}:${session.nodeId}`;
+    const scopeKey = `${session.userId}:${session.workflowId}:${session.nodeId}`;
     if (this.scopeIndex.get(scopeKey) === backtestId) {
       this.scopeIndex.delete(scopeKey);
     }

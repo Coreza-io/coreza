@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { resultSuccess, resultFailure } from "../contracts/nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
@@ -55,15 +56,12 @@ router.post("/init", async (req: Request, res: Response) => {
       asset_type,
       feed,
       warmup_period,
+      limit,
       adjustment,
       warmup_mode,
       nodes,
       edges,
     } = req.body;
-
-    if (!workflowId) {
-      return res.status(400).json(resultFailure("workflowId is required", { data: null }));
-    }
 
     const result = await backtestExecutor.execute(
       {
@@ -88,12 +86,13 @@ router.post("/init", async (req: Request, res: Response) => {
           asset_type,
           feed,
           warmup_period,
+          limit,
           adjustment,
           warmup_mode,
         },
       } as any,
       {},
-      { userId, workflowSessionId, workflowId, nodes, edges },
+      { userId, workflowSessionId: workflowSessionId || randomUUID(), workflowId, nodes, edges, persistence: "memory" },
     );
 
     if (result.status === "error") {
@@ -122,7 +121,7 @@ router.post("/onbar", async (req: Request, res: Response) => {
 
     const session =
       BacktestSessionManager.getInstance().getSession(backtest_id);
-    if (!session) {
+    if (!session || session.userId !== userId) {
       return res
         .status(404)
         .json(resultFailure("No active session. Run BacktestInit first.", { data: null }));
@@ -162,16 +161,17 @@ router.post("/run", async (req: Request, res: Response) => {
 
     const session =
       BacktestSessionManager.getInstance().getSession(backtest_id);
-    if (!session) {
+    if (!session || session.userId !== userId) {
       return res.status(404).json({ error: "No active session" });
     }
 
     session
       .runAll()
       .catch((err) => console.error("[Backtest] runAll failed:", err))
-      .finally(() =>
-        BacktestSessionManager.getInstance().deleteSession(backtest_id),
-      );
+      .finally(() => {
+        // Editor results remain readable until reset, replacement or idle expiry.
+        if (session.persistResults) BacktestSessionManager.getInstance().deleteSession(backtest_id);
+      });
 
     return res.json({ success: true, status: "running" });
   } catch (error) {
@@ -195,7 +195,7 @@ router.post("/reset", async (req: Request, res: Response) => {
 
     const session =
       BacktestSessionManager.getInstance().getSession(backtest_id);
-    if (!session) {
+    if (!session || session.userId !== userId) {
       return res.status(404).json({ error: "No active session" });
     }
 
@@ -381,6 +381,13 @@ router.delete("/:id", async (req: Request, res: Response) => {
     }
 
     const { id } = req.params;
+    if (id.startsWith("editor-")) {
+      const manager = BacktestSessionManager.getInstance();
+      const session = manager.getSession(id);
+      if (!session || session.userId !== userId) return res.status(404).json({ error: "Editor backtest session not found" });
+      manager.deleteSession(id);
+      return res.json({ success: true, message: "Editor backtest cleared" });
+    }
 
     // Verify ownership
     const { data: backtest, error: fetchError } = await supabase

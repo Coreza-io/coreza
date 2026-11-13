@@ -352,20 +352,12 @@
           "name": "IEX - Investors Exchange"
         },
         {
-          "id": "delayed_sip",
-          "name": "Delayed SIP (15 min)"
-        },
-        {
           "id": "otc",
           "name": "OTC - Over-the-counter"
         },
         {
           "id": "boats",
           "name": "BOATS - Blue Ocean"
-        },
-        {
-          "id": "overnight",
-          "name": "Overnight Data"
         }
       ],
       "default": "sip",

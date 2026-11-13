@@ -1,4 +1,4 @@
-import { validateAlpacaMarketData } from "../marketDataContract";
+import { ALPACA_DEFAULT_BAR_PAGE_SIZE, validateAlpacaMarketData } from "../marketDataContract";
 import { normalizeCandles } from "../../../marketData/normalizeCandles";
 import { convertToISO8601 } from "../../../utils/dates";
 import { BrokerOperation } from "../../types";
@@ -211,7 +211,7 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
     validateResponse: (raw, input) => validateBarsResponse(raw, { ...input, operation: 'get_candle' }),
     pagination: {
       enabled: true,
-      pageSize: 1000,
+      pageSize: ALPACA_DEFAULT_BAR_PAGE_SIZE,
       tokenField: "next_page_token",
       paramField: "page_token",
       dataField: "bars",

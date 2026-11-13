@@ -97,7 +97,7 @@ export class HistoricalDataService {
     const providerPageSize = getBrokerConfig(request.provider)?.operations.get_candle?.pagination?.pageSize;
     const suppliedPageSize = typeof request.pageSize === "string" && !request.pageSize.trim() ? undefined : request.pageSize;
     // Only providers declaring this capability consume the editable page-size setting.
-    const pageSize = providerPageSize === undefined ? 50000 : suppliedPageSize ?? providerPageSize;
+    const pageSize = providerPageSize === undefined ? "50000" : suppliedPageSize ?? providerPageSize;
     const input: NodeInput = {
       operation: "get_candle",
       symbol: request.symbol,
@@ -108,7 +108,8 @@ export class HistoricalDataService {
       feed: request.feed,
       adjustment: request.adjustment,
       credential_id: request.credentialId,
-      limit: String(pageSize),
+      // Preserve the supplied type so broker validation cannot accept an array such as [1000] as "1000".
+      limit: pageSize,
     };
     const node: WorkflowNode = {
       id: `broker:${request.provider}:get_candle:${request.symbol}`,

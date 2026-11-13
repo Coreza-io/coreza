@@ -3,6 +3,8 @@ import type { InventoryQuantityResolver } from "../portfolio/fillAccounting";
 
 export interface PaginationConfig {
   enabled: boolean;
+  /** Preferred page size for internal historical-data callers. */
+  pageSize?: number;
   tokenField: string;       // Response field containing next token (e.g., 'next_page_token')
   paramField: string;       // Request param to send token (e.g., 'page_token')
   dataField: string;        // Response field containing data (e.g., 'bars')

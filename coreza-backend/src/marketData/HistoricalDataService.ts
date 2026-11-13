@@ -9,6 +9,7 @@
  */
 
 import { NodeResultError } from "../contracts/nodeResult";
+import { getBrokerConfig } from "../brokers";
 import { BrokerExecutor } from "../nodes/executors/BrokerExecutor";
 import type { Bar } from "../brokers/types";
 import type { NodeInput, WorkflowNode } from "../nodes/types";
@@ -92,6 +93,7 @@ export class HistoricalDataService {
       ? request.start.toISOString()
       : request.start;
     const end = request.end instanceof Date ? request.end.toISOString() : request.end;
+    const pageSize = getBrokerConfig(request.provider)?.operations.get_candle?.pagination?.pageSize ?? 50000;
     const input: NodeInput = {
       operation: "get_candle",
       symbol: request.symbol,
@@ -102,7 +104,7 @@ export class HistoricalDataService {
       feed: request.feed,
       adjustment: request.adjustment,
       credential_id: request.credentialId,
-      limit: "50000",
+      limit: String(pageSize),
     };
     const node: WorkflowNode = {
       id: `broker:${request.provider}:get_candle:${request.symbol}`,

@@ -30,6 +30,7 @@ interface HistoricalRequestBase {
   feed?: string;
   adjustment?: string;
   credentialId?: string;
+  pageSize?: unknown;
 }
 
 export interface HistoricalRangeRequest extends HistoricalRequestBase {
@@ -93,7 +94,10 @@ export class HistoricalDataService {
       ? request.start.toISOString()
       : request.start;
     const end = request.end instanceof Date ? request.end.toISOString() : request.end;
-    const pageSize = getBrokerConfig(request.provider)?.operations.get_candle?.pagination?.pageSize ?? 50000;
+    const providerPageSize = getBrokerConfig(request.provider)?.operations.get_candle?.pagination?.pageSize;
+    const suppliedPageSize = typeof request.pageSize === "string" && !request.pageSize.trim() ? undefined : request.pageSize;
+    // Only providers declaring this capability consume the editable page-size setting.
+    const pageSize = providerPageSize === undefined ? 50000 : suppliedPageSize ?? providerPageSize;
     const input: NodeInput = {
       operation: "get_candle",
       symbol: request.symbol,
@@ -122,6 +126,11 @@ export class HistoricalDataService {
     if (result.status !== "success") {
       throw new NodeResultError({ ...result,
         error: `Historical data request failed (provider=${request.provider}, symbol=${request.symbol}, interval=${request.interval}, range=${input.start}..${input.end}): ${result.error}`,
+      });
+    }
+    if (result.data?.pagination_complete === false || result.data?.has_more === true) {
+      throw new NodeResultError({ ...result, status: "error", data: null,
+        error: `Historical data pagination is incomplete (provider=${request.provider}, symbol=${request.symbol}). Increase Page Size or reduce the requested range before running the backtest.`,
       });
     }
     const bars = result.data?.BarSeries?.[0]?.bars;

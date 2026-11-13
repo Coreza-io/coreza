@@ -106,7 +106,7 @@ export function validateAlpacaMarketData(input: Record<string, any>, configured?
   }
   if (historical) {
     if (!intervals.includes(values.interval)) issue('interval', 'invalid_interval', `interval must be one of ${intervals.join(', ')}`);
-    integer('limit', 10000, 10000);
+    integer('limit', 10000, 1000);
     integer('max_pages', 100, 100);
     if (values.auto_paginate === undefined && !own(configured, 'auto_paginate')) values.auto_paginate = true;
     else if (typeof values.auto_paginate !== 'boolean') issue('auto_paginate', 'invalid_boolean', 'auto_paginate must be a boolean');

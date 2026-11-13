@@ -211,7 +211,7 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
     validateResponse: (raw, input) => validateBarsResponse(raw, { ...input, operation: 'get_candle' }),
     pagination: {
       enabled: true,
-      pageSize: 10000,
+      pageSize: 1000,
       tokenField: "next_page_token",
       paramField: "page_token",
       dataField: "bars",

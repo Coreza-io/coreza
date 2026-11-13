@@ -329,6 +329,16 @@
       }
     },
     {
+      "key": "limit",
+      "label": "Page Size",
+      "type": "text",
+      "default": "1000",
+      "placeholder": "e.g. 1000",
+      "required": false,
+      "description": "Bars per response page (1-10000). Defaults to 1000. Automatic pagination loads further pages for both the backtest range and pre-start warm-up; this is not the total number of bars.",
+      "displayOptions": { "show": { "broker": ["alpaca"] } }
+    },
+    {
       "key": "feed",
       "label": "Data Feed",
       "type": "select",
@@ -342,20 +352,12 @@
           "name": "IEX - Investors Exchange"
         },
         {
-          "id": "delayed_sip",
-          "name": "Delayed SIP (15 min)"
-        },
-        {
           "id": "otc",
           "name": "OTC - Over-the-counter"
         },
         {
           "id": "boats",
           "name": "BOATS - Blue Ocean"
-        },
-        {
-          "id": "overnight",
-          "name": "Overnight Data"
         }
       ],
       "default": "sip",

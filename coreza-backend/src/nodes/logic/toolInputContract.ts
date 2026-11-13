@@ -11,7 +11,8 @@ export interface ToolInputIssue {
 
 export class ToolInputError extends Error {
   constructor(readonly issues: ToolInputIssue[]) {
-    super('Tool input validation failed');
+    const summary = issues.slice(0, 3).map(issue => issue.message.slice(0, 240)).join('; ');
+    super(summary ? `Tool input validation failed: ${summary}` : 'Tool input validation failed');
   }
 }
 

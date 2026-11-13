@@ -283,7 +283,7 @@
       "key": "limit",
       "label": "Page Size",
       "type": "text",
-      "placeholder": "e.g. 100",
+      "placeholder": "e.g. 1000",
       "required": false,
       "displayOptions": {
         "show": {
@@ -293,7 +293,7 @@
           ]
         }
       },
-      "description": "Maximum rows per response page (1-10000), for every timeframe. Does not expand the date range: without start, only the current day's available data is searched and no bars may exist before trading or on non-trading days. Auto-pagination may return more rows in total."
+      "description": "Maximum rows per response page (1-10000), for every timeframe. Historical bars default to 1000 when omitted; news retains its provider default. Does not expand the date range: without start, only the current day's available data is searched and no bars may exist before trading or on non-trading days. Auto-pagination may return more rows in total."
     },
     {
       "key": "feed",

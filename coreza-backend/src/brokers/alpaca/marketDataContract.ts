@@ -3,6 +3,8 @@ import { ToolInputError, type ToolInputContract, type ToolInputIssue } from '../
 import { validateAlpacaCryptoSymbol } from './cryptoOrderSymbol';
 import { extractHistoricalCandles, normalizeCandles } from '../../marketData/normalizeCandles';
 
+export const ALPACA_DEFAULT_BAR_PAGE_SIZE = 1000;
+
 const historicalFeeds = ['sip', 'iex', 'otc', 'boats'];
 const latestFeeds = [...historicalFeeds, 'delayed_sip', 'overnight'];
 const intervals = ['1Min', '5Min', '15Min', '1Hour', '1Day'];
@@ -106,7 +108,7 @@ export function validateAlpacaMarketData(input: Record<string, any>, configured?
   }
   if (historical) {
     if (!intervals.includes(values.interval)) issue('interval', 'invalid_interval', `interval must be one of ${intervals.join(', ')}`);
-    integer('limit', 10000, 10000);
+    integer('limit', 10000, ALPACA_DEFAULT_BAR_PAGE_SIZE);
     integer('max_pages', 100, 100);
     if (values.auto_paginate === undefined && !own(configured, 'auto_paginate')) values.auto_paginate = true;
     else if (typeof values.auto_paginate !== 'boolean') issue('auto_paginate', 'invalid_boolean', 'auto_paginate must be a boolean');

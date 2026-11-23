@@ -246,5 +246,15 @@ export interface Database {
 
 
     };
+    Functions: {
+      write_backtest_bar_result_part: {
+        Args: { p_row: Record<string, unknown>; p_part_index: number; p_payload: string | null; p_final: boolean };
+        Returns: undefined;
+      };
+      recover_backtest_run: {
+        Args: { p_run_id: string; p_started_at: string; p_status: string };
+        Returns: boolean;
+      };
+    };
   };
 }

@@ -68,6 +68,7 @@ import RunSyncService from "./workers/RunSyncService";
 import { WorkflowRunnerManager } from "./services/workflowRunnerManager";
 import { closeActivationConnections } from "./variables/ActivationRegistry";
 import streamingCleanupService from "./workers/StreamingCleanupService";
+import { drainBacktestActivations } from "./backtest/BacktestRunControl";
 import { workflowRecoveryService } from "./workers/WorkflowRecoveryService";
 import FillSyncWorker from "./workers/FillSyncWorker";
 
@@ -201,6 +202,12 @@ async function startServer() {
     logger.info("🔄 Running workflow recovery...");
     const recoveryStats = await workflowRecoveryService.recoverStaleRuns();
     logger.info({ stats: recoveryStats }, "Workflow recovery complete");
+    let backtestRecovery: Promise<void> | undefined;
+    const recoverBacktests = () => backtestRecovery ??= workflowRecoveryService.recoverStaleBacktests()
+      .catch(err => { logger.error({ err }, "Backtest recovery failed"); })
+      .finally(() => { backtestRecovery = undefined; });
+    await recoverBacktests();
+    const backtestRecoveryTimer = setInterval(() => { void recoverBacktests(); }, 30_000);
 
     // Clean up orphaned Redis data from interrupted loops
     const orphanedKeysCleanedUp =
@@ -265,6 +272,10 @@ async function startServer() {
 
       // Stop StreamingCleanupService
       streamingCleanupService.stop();
+
+      clearInterval(backtestRecoveryTimer);
+      await drainBacktestActivations();
+      await backtestRecovery;
 
       // Stop RunSyncService and flush remaining runs
       await WorkflowRunnerManager.getInstance().stopAll();

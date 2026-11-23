@@ -1,14 +1,10 @@
 import { WorkflowEdge, WorkflowNode, type NodeResult } from "../nodes/types";
 import { bullMqJobQueue as jobQueue } from "../infra/jobQueue/jobQueueManager";
+import { runWithBacktestLease, signalBacktestCancellation } from "./BacktestRunControl";
 
 export class BacktestLifecycleAdapter {
-  private static readonly active = new Map<string, { controller: AbortController; execution: Promise<NodeResult> }>();
-
-  cancelRun(runId: string): Promise<void> | undefined {
-    const run = BacktestLifecycleAdapter.active.get(runId);
-    if (!run) return;
-    run.controller.abort();
-    return run.execution.then(() => {}, () => {});
+  cancelRun(runId: string): void {
+    signalBacktestCancellation(runId);
   }
 
   async startBacktest(
@@ -18,14 +14,12 @@ export class BacktestLifecycleAdapter {
     nodes: WorkflowNode[],
     edges: WorkflowEdge[],
     triggerNode: WorkflowNode,
+    claim: () => Promise<void>,
   ): Promise<NodeResult> {
-    const controller = new AbortController();
-    const execution = jobQueue.startBacktest(runId, workflowId, userId, nodes, edges, triggerNode, controller.signal);
-    BacktestLifecycleAdapter.active.set(runId, { controller, execution });
-    try {
-      return await execution;
-    } finally {
-      BacktestLifecycleAdapter.active.delete(runId);
-    }
+    return runWithBacktestLease(runId, async (signal) => {
+      if (signal.aborted) throw signal.reason ?? new Error("Backtest cancelled before startup");
+      await claim();
+      return jobQueue.startBacktest(runId, workflowId, userId, nodes, edges, triggerNode, signal);
+    });
   }
 }

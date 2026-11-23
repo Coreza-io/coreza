@@ -122,6 +122,7 @@ export const RedisKeys = {
   registryFillsActive: (): string => "registry:fills:active",
   registrySnapshotsActive: (): string => "registry:snapshots:active",
 
+  backtestLease: (runId: string): string => `backtest:runId:${runId}:lease`,
   backtestProgress: (userId: string, backtestId: string): string =>
     `backtest:userId:${userId}:backtestId:${backtestId}:progress`,
 };

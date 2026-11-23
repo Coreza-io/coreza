@@ -1,7 +1,7 @@
 -- Read-only installer preflight and post-install contract inventory.
 WITH required_tables(name) AS (
   VALUES ('users'), ('projects'), ('workflows'), ('workflow_versions'),
-    ('workflow_runs'), ('user_credentials'), ('backtests'),
+    ('workflow_runs'), ('workflow_bar_result_parts'), ('user_credentials'), ('backtests'),
     ('live_fills'), ('coreza_chat_history'), ('live_strategies'), ('trades'), ('portfolio')
 ), required_columns(table_name, column_name) AS (
   VALUES ('users','selected_markets'), ('workflows','revision'),
@@ -21,6 +21,7 @@ WITH required_tables(name) AS (
     ('save_workflow_document(uuid,uuid,bigint,text,jsonb,jsonb,jsonb,uuid,integer)'),
     ('guard_nested_workflow_writer()'), ('cluster_hierarchy_write_ready()'),
     ('validate_reporting_scope()'), ('mirror_backtest_reporting()'),
+    ('write_backtest_bar_result_part(jsonb,integer,text,boolean)'), ('recover_backtest_run(uuid,timestamptz,text)'),
     ('claim_reporting_activation(uuid,uuid,uuid)'),
     ('complete_reporting_activation(uuid,uuid,uuid,text)'),
     ('reporting_trade_aggregate(uuid)'), ('mark_reporting_changes()'),

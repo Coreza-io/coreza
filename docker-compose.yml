@@ -11,11 +11,13 @@ services:
       target: production
     container_name: coreza-backend
     restart: unless-stopped
+    stop_grace_period: 2m
     ports:
       - "8000:8000"
       - "8081:8081"  # WebSocket port
     environment:
       - NODE_ENV=production
+      - BACKTEST_EXECUTION_HISTORY_ENABLED=${BACKTEST_EXECUTION_HISTORY_ENABLED:-false}
       - PORT=8000
       - WEBSOCKET_PORT=8081
       - REDIS_QUEUE_URL=redis://redis-queue:6379

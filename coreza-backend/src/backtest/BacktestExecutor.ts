@@ -585,7 +585,7 @@ export class BacktestExecutor implements INodeExecutor {
         || entryNodeIds.some((id) => !strategyNodes.some((candidate) => candidate.id === id)))) {
         throw new Error("Backtest strategy requires valid connected entry nodes");
       }
-      if (context?.abortSignal?.aborted) throw new Error("Workflow cancelled by user");
+      if (context?.abortSignal?.aborted) throw context.abortSignal.reason ?? new Error("Workflow cancelled by user");
       const session = BacktestSessionManager.getInstance().createSession(
         backtestId,
         workflowId,
@@ -630,13 +630,13 @@ export class BacktestExecutor implements INodeExecutor {
 
       let ownedNodeResults: Record<string, NodeResult> | undefined;
       if (!isManual) {
-        const cancelOwnedSession = () => session.cancel();
+        const cancelOwnedSession = () => session.cancel(context?.abortSignal?.reason);
         context?.abortSignal?.addEventListener("abort", cancelOwnedSession, { once: true });
         try {
           if (context?.abortSignal?.aborted) cancelOwnedSession();
           await session.initialize();
           await session.runAll();
-          if (context?.abortSignal?.aborted) throw new Error("Workflow cancelled by user");
+          if (context?.abortSignal?.aborted) throw context.abortSignal.reason ?? new Error("Workflow cancelled by user");
           ownedNodeResults = session.getLatestNodeSnapshots();
         } catch (error) {
           const snapshots = session.getLatestNodeSnapshots();

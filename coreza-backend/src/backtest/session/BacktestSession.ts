@@ -360,7 +360,9 @@ export class BacktestSession {
       const { mode, totalStart, warmup, ...strategyAccumulators } = this.perf;
       try {
         for (const event of this.warmupEvents) {
-          if (this.abortController.signal.aborted) throw new Error("Workflow cancelled by user");
+          if (this.abortController.signal.aborted) {
+            throw this.abortController.signal.reason ?? new Error("Workflow cancelled by user");
+          }
           await this.executeTimestampAsync(event);
         }
       } finally {
@@ -610,8 +612,8 @@ export class BacktestSession {
       }
       this.perf.contextBuildMs += performance.now() - t0;
 
-      if (this.barHistory && this.phase === "running") {
-        if (this.abortController.signal.aborted) break;
+      if (this.barHistory && this.phase === "running" && this.abortController.signal.aborted) break;
+      if (this.barHistory && this.phase === "running" && !this.barHistory.failure) {
         await this.executeCapturedBar(this.barHistory, symbolEvent, event.timestamp);
       } else if (this.compiledPlan) {
         t0 = performance.now();
@@ -688,8 +690,8 @@ export class BacktestSession {
       }
       this.perf.contextBuildMs += performance.now() - t0;
 
-      if (this.barHistory && this.phase === "running") {
-        if (this.abortController.signal.aborted) break;
+      if (this.barHistory && this.phase === "running" && this.abortController.signal.aborted) break;
+      if (this.barHistory && this.phase === "running" && !this.barHistory.failure) {
         await this.executeCapturedBar(this.barHistory, symbolEvent, event.timestamp);
       } else if (this.compiledPlan) {
         t0 = performance.now();
@@ -750,8 +752,13 @@ export class BacktestSession {
     }
 
     const cancelled = this.abortController.signal.aborted;
-    if (cancelled) {
-      strategyError ??= { code: "CANCELLED", message: "Workflow cancelled by user", phase: "execute" };
+    if (cancelled && (!strategyError || strategyError.code === "CANCELLED")) {
+      const reason = this.abortController.signal.reason;
+      strategyError = {
+        code: "CANCELLED",
+        message: reason instanceof Error ? reason.message : "Workflow cancelled by user",
+        phase: "execute",
+      };
     }
     const status = cancelled ? "cancelled" : strategyError ? "failed" : "success";
     await history.record(event.barIndex, event.symbol, barTime, capture, status, strategyError);
@@ -899,7 +906,23 @@ export class BacktestSession {
   }
 
   async runAll(): Promise<void> {
-    if (this.abortController.signal.aborted) throw new Error("Workflow cancelled by user");
+    try {
+      await this.runBatch();
+    } catch (error) {
+      const historyFailure = this.barHistory?.failure;
+      if (historyFailure) {
+        const executionError = error instanceof Error ? error.message : String(error);
+        throw new Error(`${historyFailure.message}. Backtest: ${executionError}`, { cause: error });
+      }
+      throw error;
+    }
+    if (this.barHistory?.failure) throw this.barHistory.failure;
+  }
+
+  private async runBatch(): Promise<void> {
+    if (this.abortController.signal.aborted) {
+      throw this.abortController.signal.reason ?? new Error("Workflow cancelled by user");
+    }
     if (this.status === "finished") {
       await this.finalize();
       return;
@@ -1047,7 +1070,9 @@ export class BacktestSession {
       }
     }
 
-    if (this.abortController.signal.aborted) throw new Error("Workflow cancelled by user");
+    if (this.abortController.signal.aborted) {
+      throw this.abortController.signal.reason ?? new Error("Workflow cancelled by user");
+    }
     if (this.bars.length === 0) {
       this.status = "finished";
       this.phase = "finished";
@@ -1160,8 +1185,8 @@ export class BacktestSession {
     this.run.destroy();
   }
 
-  cancel(): void {
-    this.abortController.abort();
+  cancel(reason?: unknown): void {
+    this.abortController.abort(reason);
   }
 
   private async reportProgress(): Promise<void> {

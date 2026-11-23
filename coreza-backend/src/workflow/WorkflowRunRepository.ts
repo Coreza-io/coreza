@@ -19,7 +19,7 @@ export class WorkflowRunRepository {
     if (error) throw createError("Failed to finalize backtest run", 500);
     if (data) return true;
     const now = new Date().toISOString();
-    const { data: cancelled, error: cancelError } = await supabase.from("workflow_runs")
+    const { data: cancelled, error: cancelError } = await supabase.schema("public").from("workflow_runs")
       .update({
         status: "cancelled", completed_at: now, cancel_acknowledged_at: now,
         error_message: errorMessage ?? "Run cancelled by user",
@@ -94,7 +94,17 @@ export class WorkflowRunRepository {
     const { data, error } = await supabase.from("workflow_runs").select("id,status,scope_snapshot")
       .eq("id", runId).eq("workflow_id", workflowId).eq("initiated_by", userId).is("parent_run_id", null).single();
     if (error || !data) throw createError("Workflow run not found", 404);
-    return data as { id: string; status: string; scope_snapshot: { memberNodeIds?: unknown } | null };
+    return data as { id: string; status: string; scope_snapshot: { memberNodeIds?: unknown; executionMode?: string } | null };
+  }
+
+  async waitForBacktestCancellation(userId: string, workflowId: string, runId: string) {
+    const deadline = performance.now() + 5_000;
+    let run = await this.getOwnedRun(userId, workflowId, runId);
+    while (run.status === "cancelling" && performance.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+      run = await this.getOwnedRun(userId, workflowId, runId);
+    }
+    return run;
   }
 
   async requestCancellation(runId: string): Promise<void> {
@@ -102,14 +112,6 @@ export class WorkflowRunRepository {
       status: "cancelling", cancel_requested_at: new Date().toISOString(), error_message: null,
     }).eq("id", runId).is("parent_run_id", null).in("status", ["pending", "queued", "running"]);
     if (error) throw createError("Failed to request workflow cancellation", 500);
-  }
-
-  async markRunCancelled(runId: string): Promise<void> {
-    const now = new Date().toISOString();
-    const { error } = await (supabase.from("workflow_runs") as any).update({
-      status: "cancelled", cancel_acknowledged_at: now, completed_at: now, error_message: "Run cancelled by user",
-    }).eq("id", runId).is("parent_run_id", null).eq("status", "cancelling");
-    if (error) throw createError("Failed to cancel workflow run", 500);
   }
 
   async finalizeQueuedCancellation(runId: string, memberNodeIds: readonly string[]): Promise<void> {

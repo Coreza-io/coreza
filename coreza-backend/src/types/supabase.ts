@@ -191,6 +191,7 @@ export interface Database {
           id: string;
           user_id: string;
           workflow_id: string;
+          workflow_run_id: string | null;
           name: string;
           description: string | null;
           start_date: string;
@@ -209,6 +210,7 @@ export interface Database {
           id?: string;
           user_id: string;
           workflow_id: string;
+          workflow_run_id?: string | null;
           name: string;
           description?: string | null;
           start_date: string;
@@ -227,6 +229,7 @@ export interface Database {
           id?: string;
           user_id?: string;
           workflow_id?: string;
+          workflow_run_id?: string | null;
           name?: string;
           description?: string | null;
           start_date?: string;
@@ -251,9 +254,26 @@ export interface Database {
         Args: { p_row: Record<string, unknown>; p_part_index: number; p_payload: string | null; p_final: boolean };
         Returns: undefined;
       };
-      recover_backtest_run: {
-        Args: { p_run_id: string; p_started_at: string; p_status: string };
+      write_backtest_bar_batch: {
+        Args: { p_run_id: string; p_rows: Database["public"]["Tables"]["workflow_runs"]["Insert"][] };
+        Returns: undefined;
+      };
+      start_backtest_run: {
+        Args: { p_run_id: string; p_workflow_id: string; p_user_id: string };
         Returns: boolean;
+      };
+      finalize_backtest_run: {
+        Args: {
+          p_run_id: string;
+          p_workflow_id: string;
+          p_user_id: string;
+          p_status: "success" | "failed";
+          p_error_message: string | null;
+          p_result: Record<string, unknown> | null;
+          p_expected_started_at?: string;
+          p_expected_status?: string;
+        };
+        Returns: string | null;
       };
     };
   };

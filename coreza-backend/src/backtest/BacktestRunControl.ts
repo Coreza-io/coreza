@@ -1,7 +1,8 @@
+import type Redis from "ioredis";
+import { createBoundedQueueRedisConnection } from "../config/redis";
 import { supabase } from "../config/supabase";
 import { RedisKeys } from "../infra/redisKeys";
 import { createError } from "../middleware/errorHandler";
-import { withActivationRedis } from "../variables/ActivationRegistry";
 import logger from "../utils/logger";
 
 export const BACKTEST_LEASE_SECONDS = 90;
@@ -11,6 +12,25 @@ const LEASE_RENEW_MS = 10_000;
 const activations = new Set<Promise<unknown>>();
 const controllers = new Map<string, AbortController>();
 let draining = false;
+let leaseRedis: Redis | undefined;
+let connectingRedis: Promise<Redis> | undefined;
+
+async function getLeaseRedis(): Promise<Redis> {
+  if (leaseRedis?.status === "ready") return leaseRedis;
+  if (!connectingRedis) {
+    leaseRedis?.disconnect();
+    const redis = createBoundedQueueRedisConnection();
+    connectingRedis = redis.connect().then(() => {
+      leaseRedis = redis;
+      return redis;
+    }, (error: unknown) => {
+      redis.disconnect();
+      throw error;
+    }).finally(() => { connectingRedis = undefined; });
+  }
+  return connectingRedis;
+}
+
 
 export function trackBacktestActivation<T>(activate: () => Promise<T>): Promise<T> {
   if (draining) return Promise.reject(createError("Backend is shutting down", 503));
@@ -30,7 +50,7 @@ export function signalBacktestCancellation(runId: string): void {
 }
 
 export async function hasBacktestLease(runId: string): Promise<boolean> {
-  return (await withActivationRedis(redis => redis.exists(RedisKeys.backtestLease(runId)))) === 1;
+  return (await (await getLeaseRedis()).exists(RedisKeys.backtestLease(runId))) === 1;
 }
 
 export async function runWithBacktestLease<T>(
@@ -44,7 +64,7 @@ export async function runWithBacktestLease<T>(
   let finished = false;
   try {
     const key = RedisKeys.backtestLease(runId);
-    const acquired = await withActivationRedis(redis => redis.set(key, "running", "EX", BACKTEST_LEASE_SECONDS, "NX"));
+    const acquired = await (await getLeaseRedis()).set(key, "running", "EX", BACKTEST_LEASE_SECONDS, "NX");
     if (!acquired) throw new Error("Backtest run already has an execution lease");
     let lastRenewal = performance.now();
 
@@ -52,7 +72,7 @@ export async function runWithBacktestLease<T>(
       try {
         if (performance.now() - lastRenewal >= LEASE_RENEW_MS) {
           try {
-            const renewed = await withActivationRedis(redis => redis.expire(key, BACKTEST_LEASE_SECONDS));
+            const renewed = await (await getLeaseRedis()).expire(key, BACKTEST_LEASE_SECONDS);
             if (!renewed) controller.abort(new Error("Backtest execution lease expired"));
             else lastRenewal = performance.now();
           } catch (error) {

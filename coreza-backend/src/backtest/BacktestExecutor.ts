@@ -326,6 +326,7 @@ export class BacktestExecutor implements INodeExecutor {
           .insert({
             user_id: userId,
             workflow_id: workflowId,
+            workflow_run_id: context?.runId,
             name: params.name || `Backtest ${new Date().toISOString()}`,
             description: params.description || null,
             status: "running",

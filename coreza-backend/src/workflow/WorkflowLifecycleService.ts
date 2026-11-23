@@ -167,9 +167,7 @@ export class WorkflowLifecycleService {
     );
 
     const runId = (run as any).id;
-    let claimed = false;
-    let completed = false;
-    let updated: any;
+    let failure: { error: unknown; message: string } | undefined;
     let result: WorkflowExecutionResult | undefined;
 
     try {
@@ -180,10 +178,6 @@ export class WorkflowLifecycleService {
         workflow.nodes,
         workflow.edges,
         triggerNode,
-        async () => {
-          await this.workflowRepo.claimBacktestActivation(userId, workflow.id, runId);
-          claimed = true;
-        },
       );
       const { control, ...initOutput } = output;
       const nodeResults = serializeNodeResults({ [triggerNode.id]: initOutput, ...control?.ownedNodeResults });
@@ -199,19 +193,16 @@ export class WorkflowLifecycleService {
         } } : {}),
       };
       if (output.status !== "success") throw new Error(result.error!.message);
-      completed = await this.runRepo.finishBacktestRun(userId, workflow.id, runId, "success", null, result);
     } catch (error: unknown) {
-      await this.runRepo.finishBacktestRun(userId, workflow.id, runId, "failed",
-        error instanceof Error ? error.message : "Backtest initialization failed",
-        result ? { ...result, success: false, error: {
-          code: "BACKTEST_FAILED", message: error instanceof Error ? error.message : "Backtest failed", phase: "execute",
-        } } : undefined);
-      throw error;
-    } finally {
-      if (claimed) updated = await this.workflowRepo.releaseBacktestActivation(userId, workflow.id, runId);
+      failure = { error, message: error instanceof Error ? error.message : "Backtest initialization failed" };
     }
+
+    const completed = await this.runRepo.finishBacktestRun(
+      userId, workflow.id, runId, failure ? "failed" : "success", failure?.message ?? null, result,
+    );
+    if (completed && failure) throw failure.error;
     return {
-      workflow: updated,
+      workflow: await this.workflowRepo.getOwnedWorkflow(userId, workflow.id),
       next_run_at: null, message: completed ? "Backtest completed" : "Backtest cancelled",
     };
   }
@@ -223,11 +214,9 @@ export class WorkflowLifecycleService {
   ): Promise<ActivationResult> {
     const reportingId = workflow.active_execution_id && await LiveStrategiesRepository.status(workflow.active_execution_id)
       ? workflow.active_execution_id : undefined;
-    if (trigger.kind === "backtest" && !reportingId) {
-      const runId = typeof workflow.active_execution_id === "string" ? workflow.active_execution_id : null;
-      if (!workflow.is_active) {
-        return { workflow, next_run_at: null, message: "Workflow deactivated" };
-      }
+    if (!workflow.is_active) return { workflow, next_run_at: null, message: "Workflow deactivated" };
+    const runId = typeof workflow.active_execution_id === "string" ? workflow.active_execution_id : null;
+    if (!reportingId && (trigger.kind === "backtest" || (runId && await this.runRepo.hasBacktestRun(userId, workflow.id, runId)))) {
       if (runId) {
         await this.runRepo.requestCancellation(runId);
         this.backtest.cancelRun(runId);
@@ -239,7 +228,6 @@ export class WorkflowLifecycleService {
       const updated = await this.workflowRepo.releaseBacktestActivation(userId, workflow.id, runId);
       return { workflow: updated, next_run_at: null, message: "Workflow deactivated" };
     }
-    if (!workflow.is_active) return { workflow, next_run_at: null, message: "Workflow deactivated" };
     const stopToken = randomUUID();
     if (reportingId && !await LiveStrategiesRepository.claimStop(userId, workflow.id, reportingId, stopToken)) {
       return { workflow: await this.workflowRepo.getOwnedWorkflow(userId, workflow.id), next_run_at: null, message: "Workflow deactivated" };
@@ -298,7 +286,10 @@ export class WorkflowLifecycleService {
       if (workflow.active_execution_id && await LiveStrategiesRepository.status(workflow.active_execution_id) === "pending") {
         throw createError("Activation is still starting; retry deletion after startup settles", 409);
       }
-      await this.deactivate(workflow, trigger, userId);
+      const deactivated = await this.deactivate(workflow, trigger, userId);
+      if (deactivated.workflow.is_active) {
+        throw createError("Backtest cancellation is still in progress", 409);
+      }
     }
 
     await this.streaming.fullCleanup(

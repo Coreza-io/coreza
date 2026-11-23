@@ -22,6 +22,12 @@ import { supabase } from "../config/supabase";
 const router = Router();
 const backtestExecutor = new BacktestExecutor();
 
+function getOwnedEditorSession(backtestId: unknown, userId: string) {
+  if (typeof backtestId !== "string" || !backtestId.startsWith("editor-")) return;
+  const session = BacktestSessionManager.getInstance().getSession(backtestId);
+  if (session && !session.persistResults && session.userId === userId) return session;
+}
+
 // Apply auth to all routes
 router.use(requireAuth);
 
@@ -119,9 +125,8 @@ router.post("/onbar", async (req: Request, res: Response) => {
       return res.status(400).json(resultFailure("backtest_id is required", { data: null }));
     }
 
-    const session =
-      BacktestSessionManager.getInstance().getSession(backtest_id);
-    if (!session || session.userId !== userId) {
+    const session = getOwnedEditorSession(backtest_id, userId);
+    if (!session) {
       return res
         .status(404)
         .json(resultFailure("No active session. Run BacktestInit first.", { data: null }));
@@ -159,19 +164,13 @@ router.post("/run", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "backtest_id is required" });
     }
 
-    const session =
-      BacktestSessionManager.getInstance().getSession(backtest_id);
-    if (!session || session.userId !== userId) {
+    const session = getOwnedEditorSession(backtest_id, userId);
+    if (!session) {
       return res.status(404).json({ error: "No active session" });
     }
 
-    session
-      .runAll()
-      .catch((err) => console.error("[Backtest] runAll failed:", err))
-      .finally(() => {
-        // Editor results remain readable until reset, replacement or idle expiry.
-        if (session.persistResults) BacktestSessionManager.getInstance().deleteSession(backtest_id);
-      });
+    if (session.isExecuting) return res.status(409).json({ error: "Step already in progress" });
+    void session.runAll().catch((err) => console.error("[Backtest] runAll failed:", err));
 
     return res.json({ success: true, status: "running" });
   } catch (error) {
@@ -193,9 +192,8 @@ router.post("/reset", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "backtest_id is required" });
     }
 
-    const session =
-      BacktestSessionManager.getInstance().getSession(backtest_id);
-    if (!session || session.userId !== userId) {
+    const session = getOwnedEditorSession(backtest_id, userId);
+    if (!session) {
       return res.status(404).json({ error: "No active session" });
     }
 
@@ -239,6 +237,10 @@ router.post("/trade", async (req: Request, res: Response) => {
 
     if (tradeOperation === "place_order" && (!side || !quantity)) {
       return res.status(400).json(resultFailure("side and quantity are required for place_order", { data: null }));
+    }
+
+    if (!getOwnedEditorSession(backtest_id, userId)) {
+      return res.status(404).json(resultFailure("Editor backtest session not found", { data: null }));
     }
 
     const result = await backtestExecutor.execute(
@@ -286,6 +288,10 @@ router.post("/results", async (req: Request, res: Response) => {
       return res.status(400).json(resultFailure("backtest_id is required", { data: null }));
     }
 
+    if (!getOwnedEditorSession(backtest_id, userId)) {
+      return res.status(404).json(resultFailure("Editor backtest session not found", { data: null }));
+    }
+
     const result = await backtestExecutor.execute(
       {
         id: "api-results",
@@ -320,6 +326,10 @@ router.post("/portfolio", async (req: Request, res: Response) => {
 
     if (!backtest_id) {
       return res.status(400).json(resultFailure("backtest_id is required", { data: null }));
+    }
+
+    if (!getOwnedEditorSession(backtest_id, userId)) {
+      return res.status(404).json(resultFailure("Editor backtest session not found", { data: null }));
     }
 
     const result = await backtestExecutor.execute(
@@ -382,23 +392,25 @@ router.delete("/:id", async (req: Request, res: Response) => {
 
     const { id } = req.params;
     if (id.startsWith("editor-")) {
-      const manager = BacktestSessionManager.getInstance();
-      const session = manager.getSession(id);
-      if (!session || session.userId !== userId) return res.status(404).json({ error: "Editor backtest session not found" });
-      manager.deleteSession(id);
+      if (!getOwnedEditorSession(id, userId)) return res.status(404).json({ error: "Editor backtest session not found" });
+      BacktestSessionManager.getInstance().deleteSession(id);
       return res.json({ success: true, message: "Editor backtest cleared" });
     }
 
     // Verify ownership
-    const { data: backtest, error: fetchError } = await supabase
+    const { data: backtest, error: fetchError } = await supabase.schema("public")
       .from("backtests")
-      .select("id")
+      .select("id,status")
       .eq("id", id)
       .eq("user_id", userId)
       .single();
 
     if (fetchError || !backtest) {
       return res.status(404).json({ error: "Backtest not found" });
+    }
+
+    if (["pending", "running"].includes(backtest.status)) {
+      return res.status(409).json({ error: "Backtest is still running" });
     }
 
     // Cleanup Redis state
@@ -409,7 +421,8 @@ router.delete("/:id", async (req: Request, res: Response) => {
     const { error: deleteError } = await supabase
       .from("backtests")
       .delete()
-      .eq("id", id);
+      .eq("id", id)
+      .eq("user_id", userId);
 
     if (deleteError) {
       return res.status(500).json({ error: "Failed to delete backtest" });

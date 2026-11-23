@@ -11,6 +11,7 @@
 import { Queue, Worker, Job, FlowProducer } from "bullmq";
 import { v4 as uuidv4 } from "uuid";
 import { supabase } from "../../config/supabase";
+import { createError } from "../../middleware/errorHandler";
 import { getRedisQueue } from "../../config/redis";
 import {
   IWorkflowJobQueue,
@@ -319,15 +320,13 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
     backtestInitNode: any,
     abortSignal?: AbortSignal,
   ): Promise<NodeResult> {
-    const { data: started, error: startError } = await (supabase.from("workflow_runs") as any)
-      .update({
-        status: "running",
-        started_at: new Date().toISOString(),
-      })
-      .eq("id", runId).eq("workflow_id", workflowId).eq("initiated_by", userId).is("parent_run_id", null)
-      .eq("status", "queued").select("id").maybeSingle();
+    if (abortSignal?.aborted) throw abortSignal.reason ?? new Error("Backtest cancelled before startup");
+    const { data: started, error: startError } = await supabase.schema("public").rpc("start_backtest_run", {
+      p_run_id: runId, p_workflow_id: workflowId, p_user_id: userId,
+    }).abortSignal(AbortSignal.timeout(15_000));
     if (startError) throw new Error(`Failed to start backtest run: ${startError.message}`);
-    if (!started || abortSignal?.aborted) throw new Error("Backtest run cancelled before startup");
+    if (!started) throw createError("Workflow is already active or the backtest was cancelled", 409);
+    if (abortSignal?.aborted) throw abortSignal.reason ?? new Error("Backtest cancelled before startup");
 
     const backtestExecutor = new BacktestExecutor();
     const context = { userId, workflowId, runId, nodes, edges, abortSignal, persistence: "database" as const };
@@ -486,6 +485,7 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
     const activeBacktests = await (supabase.from("backtests") as any)
       .select("id")
       .eq("workflow_id", workflowId)
+      .is("workflow_run_id", null)
       .eq("status", "running");
 
     for (const backtest of activeBacktests.data || []) {

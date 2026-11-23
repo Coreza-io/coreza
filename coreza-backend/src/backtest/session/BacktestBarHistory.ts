@@ -58,7 +58,8 @@ export class BacktestBarCapture {
 export class BacktestBarHistory {
   private sequence = 0;
   private rows: BarRow[] = [];
-  private batchBytes = 2; // JSON array brackets
+  private readonly emptyBatchBytes: number;
+  private batchBytes: number;
   private writeError?: Error;
 
   get failure(): Error | undefined {
@@ -69,7 +70,10 @@ export class BacktestBarHistory {
     private readonly parentRunId: string,
     private readonly workflowId: string,
     private readonly userId: string,
-  ) {}
+  ) {
+    this.emptyBatchBytes = Buffer.byteLength(JSON.stringify({ p_run_id: parentRunId, p_rows: [] }));
+    this.batchBytes = this.emptyBatchBytes;
+  }
 
   async record(
     barIndex: number, symbol: string, barTime: string, capture: BacktestBarCapture,
@@ -95,7 +99,7 @@ export class BacktestBarHistory {
       const rowBytes = Buffer.byteLength(JSON.stringify(row)) + 1; // separator
       if (this.batchBytes + rowBytes > MAX_BATCH_BYTES) await this.flush();
       if (this.failure) return;
-      if (2 + rowBytes > MAX_BATCH_BYTES) {
+      if (this.emptyBatchBytes + rowBytes > MAX_BATCH_BYTES) {
         await this.writeLargeResult(row);
         return;
       }
@@ -144,12 +148,12 @@ export class BacktestBarHistory {
     if (!this.rows.length) return;
     const rows = this.rows;
     this.rows = [];
-    this.batchBytes = 2;
+    this.batchBytes = this.emptyBatchBytes;
 
     try {
-      await writeWithRetry(() => supabase.schema("public").from("workflow_runs")
-        .upsert(rows, { onConflict: "parent_run_id,bar_sequence", ignoreDuplicates: true })
-        .abortSignal(AbortSignal.timeout(15_000)));
+      await writeWithRetry(() => supabase.schema("public").rpc("write_backtest_bar_batch", {
+        p_run_id: this.parentRunId, p_rows: rows,
+      }).abortSignal(AbortSignal.timeout(15_000)));
     } catch (error) {
       this.recordFailure(error);
     }

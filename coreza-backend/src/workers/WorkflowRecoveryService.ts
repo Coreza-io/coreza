@@ -134,7 +134,7 @@ export class WorkflowRecoveryService {
     let afterId: string | undefined;
     for (;;) {
       let query = supabase.schema("public").from("workflow_runs")
-        .select("id,status,started_at")
+        .select("id,workflow_id,initiated_by,status,started_at")
         .is("parent_run_id", null)
         .contains("scope_snapshot", { executionMode: "backtest" })
         .in("status", ["queued", "running", "cancelling"])
@@ -145,8 +145,11 @@ export class WorkflowRecoveryService {
       for (const run of data ?? []) {
         try {
           if (await hasBacktestLease(run.id)) continue;
-          const { error: recoveryError } = await supabase.schema("public").rpc("recover_backtest_run", {
-            p_run_id: run.id, p_started_at: run.started_at, p_status: run.status,
+          const { error: recoveryError } = await supabase.schema("public").rpc("finalize_backtest_run", {
+            p_run_id: run.id, p_workflow_id: run.workflow_id, p_user_id: run.initiated_by,
+            p_status: "failed", p_result: null,
+            p_error_message: "Backtest worker stopped before completion. Bar history may be incomplete.",
+            p_expected_started_at: run.started_at, p_expected_status: run.status,
           }).abortSignal(AbortSignal.timeout(5_000));
           if (recoveryError) throw new Error(recoveryError.message);
         } catch (err) {

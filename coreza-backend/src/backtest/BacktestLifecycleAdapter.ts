@@ -14,12 +14,8 @@ export class BacktestLifecycleAdapter {
     nodes: WorkflowNode[],
     edges: WorkflowEdge[],
     triggerNode: WorkflowNode,
-    claim: () => Promise<void>,
   ): Promise<NodeResult> {
-    return runWithBacktestLease(runId, async (signal) => {
-      if (signal.aborted) throw signal.reason ?? new Error("Backtest cancelled before startup");
-      await claim();
-      return jobQueue.startBacktest(runId, workflowId, userId, nodes, edges, triggerNode, signal);
-    });
+    return runWithBacktestLease(runId, signal =>
+      jobQueue.startBacktest(runId, workflowId, userId, nodes, edges, triggerNode, signal));
   }
 }

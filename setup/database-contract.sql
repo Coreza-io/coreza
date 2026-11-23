@@ -11,6 +11,8 @@ WITH required_tables(name) AS (
     ('workflow_runs','scope_cluster_id'), ('workflow_runs','scope_snapshot'),
     ('workflow_runs','idempotency_key'), ('workflow_runs','request_fingerprint'),
     ('workflow_runs','cancel_requested_at'), ('workflow_runs','cancel_acknowledged_at'),
+    ('workflow_runs','parent_run_id'), ('workflow_runs','bar_sequence'), ('workflow_runs','bar_index'),
+    ('workflow_runs','bar_symbol'), ('workflow_runs','bar_time'),
     ('live_fills','algo_id'), ('live_fills','timeInForce'), ('portfolio','equity_open'), ('portfolio','equity_high'),
     ('portfolio','equity_low'), ('portfolio','equity_close'), ('portfolio','equity_sample_count')
 ), required_functions(signature) AS (
@@ -98,7 +100,7 @@ WITH required_tables(name) AS (
         AND i.indisunique AND i.indisvalid AND NOT i.indnullsnotdistinct
         AND pg_catalog.pg_get_expr(i.indpred,i.indrelid)='(schedule_key IS NOT NULL)')
   UNION ALL
-  SELECT 'Realtime:public.' || r.name FROM (VALUES ('workflows'),('live_strategies'),('trades'),('portfolio')) r(name)
+  SELECT 'Realtime:public.' || r.name FROM (VALUES ('workflows'),('workflow_runs'),('live_strategies'),('trades'),('portfolio')) r(name)
     WHERE NOT EXISTS (SELECT 1 FROM pg_catalog.pg_publication_tables p
       WHERE p.pubname='supabase_realtime' AND p.schemaname='public' AND p.tablename=r.name)
 )

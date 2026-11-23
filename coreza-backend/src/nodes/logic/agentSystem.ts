@@ -483,6 +483,7 @@ export class AgentSystem {
         .from("workflow_runs")
         .select("*")
         .eq("id", params.runId)
+        .is("parent_run_id", null)
         .single();
 
       if (error) {

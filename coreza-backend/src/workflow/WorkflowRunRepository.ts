@@ -14,14 +14,21 @@ export class WorkflowRunRepository {
       .update({ status, completed_at: new Date().toISOString(), error_message: errorMessage,
         ...(result ? { result: serializeWorkflowRunResult(result) } : {}),
       })
-      .eq("id", runId).eq("workflow_id", workflowId).eq("initiated_by", userId)
+      .eq("id", runId).eq("workflow_id", workflowId).eq("initiated_by", userId).is("parent_run_id", null)
       .in("status", ["queued", "running"]).select("id").maybeSingle();
     if (error) throw createError("Failed to finalize backtest run", 500);
     if (data) return true;
-    const run = await this.getOwnedRun(userId, workflowId, runId);
-    if (!["cancelling", "cancelled"].includes(run.status)) {
-      throw createError("Backtest run is no longer executable", 409);
-    }
+    const now = new Date().toISOString();
+    const { data: cancelled, error: cancelError } = await supabase.from("workflow_runs")
+      .update({
+        status: "cancelled", completed_at: now, cancel_acknowledged_at: now,
+        error_message: errorMessage ?? "Run cancelled by user",
+        ...(result ? { result: serializeWorkflowRunResult(result) } : {}),
+      })
+      .eq("id", runId).eq("workflow_id", workflowId).eq("initiated_by", userId).is("parent_run_id", null)
+      .in("status", ["cancelling", "cancelled"]).select("id").maybeSingle();
+    if (cancelError) throw createError("Failed to finalize backtest cancellation", 500);
+    if (!cancelled) throw createError("Backtest run is no longer executable", 409);
     return false;
   }
 
@@ -85,7 +92,7 @@ export class WorkflowRunRepository {
 
   async getOwnedRun(userId: string, workflowId: string, runId: string) {
     const { data, error } = await supabase.from("workflow_runs").select("id,status,scope_snapshot")
-      .eq("id", runId).eq("workflow_id", workflowId).eq("initiated_by", userId).single();
+      .eq("id", runId).eq("workflow_id", workflowId).eq("initiated_by", userId).is("parent_run_id", null).single();
     if (error || !data) throw createError("Workflow run not found", 404);
     return data as { id: string; status: string; scope_snapshot: { memberNodeIds?: unknown } | null };
   }
@@ -93,7 +100,7 @@ export class WorkflowRunRepository {
   async requestCancellation(runId: string): Promise<void> {
     const { error } = await (supabase.from("workflow_runs") as any).update({
       status: "cancelling", cancel_requested_at: new Date().toISOString(), error_message: null,
-    }).eq("id", runId).in("status", ["pending", "queued", "running"]);
+    }).eq("id", runId).is("parent_run_id", null).in("status", ["pending", "queued", "running"]);
     if (error) throw createError("Failed to request workflow cancellation", 500);
   }
 
@@ -101,7 +108,7 @@ export class WorkflowRunRepository {
     const now = new Date().toISOString();
     const { error } = await (supabase.from("workflow_runs") as any).update({
       status: "cancelled", cancel_acknowledged_at: now, completed_at: now, error_message: "Run cancelled by user",
-    }).eq("id", runId).eq("status", "cancelling");
+    }).eq("id", runId).is("parent_run_id", null).eq("status", "cancelling");
     if (error) throw createError("Failed to cancel workflow run", 500);
   }
 
@@ -121,7 +128,7 @@ export class WorkflowRunRepository {
         nodeOutcomes,
         error: { code: "CANCELLED", message: "Run cancelled by user", phase: "queue", retryable: false },
       },
-    }).eq("id", runId).eq("status", "cancelling");
+    }).eq("id", runId).is("parent_run_id", null).eq("status", "cancelling");
     if (error) throw createError("Failed to finalize workflow cancellation", 500);
   }
 
@@ -132,7 +139,7 @@ export class WorkflowRunRepository {
         completed_at: new Date().toISOString(),
         error_message: errorMessage,
       })
-      .eq("id", runId);
+      .eq("id", runId).is("parent_run_id", null);
 
     if (error) {
       throw createError("Failed to update workflow run status", 500);
@@ -144,6 +151,7 @@ export class WorkflowRunRepository {
       .from("workflow_runs")
       .select("*")
       .eq("workflow_id", workflowId)
+      .is("parent_run_id", null)
       .order("started_at", { ascending: false });
 
     if (error) {
@@ -187,6 +195,7 @@ export class WorkflowRunRepository {
         error_message: "Workflow deactivated by user",
       })
       .eq("workflow_id", workflowId)
+      .is("parent_run_id", null)
       .in("status", ["running", "queued"])
       .select("id");
 

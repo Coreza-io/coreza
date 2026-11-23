@@ -84,6 +84,11 @@ export interface Database {
           cancel_acknowledged_at: string | null;
           node_count: number | null;
           edge_count: number | null;
+          parent_run_id: string | null;
+          bar_sequence: number | null;
+          bar_index: number | null;
+          bar_symbol: string | null;
+          bar_time: string | null;
         };
         Insert: {
           id?: string;
@@ -109,6 +114,11 @@ export interface Database {
           cancel_acknowledged_at?: string | null;
           node_count?: number | null;
           edge_count?: number | null;
+          parent_run_id?: string | null;
+          bar_sequence?: number | null;
+          bar_index?: number | null;
+          bar_symbol?: string | null;
+          bar_time?: string | null;
         };
         Update: {
           id?: string;
@@ -134,6 +144,11 @@ export interface Database {
           cancel_acknowledged_at?: string | null;
           node_count?: number | null;
           edge_count?: number | null;
+          parent_run_id?: string | null;
+          bar_sequence?: number | null;
+          bar_index?: number | null;
+          bar_symbol?: string | null;
+          bar_time?: string | null;
         };
       };
       user_credentials: {

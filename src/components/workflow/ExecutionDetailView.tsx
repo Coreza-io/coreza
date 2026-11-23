@@ -1,3 +1,4 @@
+import { formatInTimeZone } from "date-fns-tz";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -66,6 +67,7 @@ const executionEdgeTypes = {
 
 interface ExecutionDetailViewProps {
   execution: ExecutionRun;
+  timezone: string;
   nodes: Node[];
   edges: Edge[];
   nodeExecutions: NodeExecutionLog[];
@@ -75,6 +77,7 @@ interface ExecutionDetailViewProps {
 
 export function ExecutionDetailView({
   execution,
+  timezone,
   nodes,
   edges,
   nodeExecutions,
@@ -310,6 +313,11 @@ export function ExecutionDetailView({
             >
               Recorded node time: {recordedNodeTime}
             </div>
+            {execution.bar_time && (
+              <div className="text-xs text-muted-foreground">
+                Historical bar · {execution.bar_symbol} · {formatInTimeZone(execution.bar_time, timezone, "MMM d, yyyy HH:mm:ss zzz")}
+              </div>
+            )}
             <div className="text-xs text-muted-foreground">
               {format(
                 new Date(execution.started_at),

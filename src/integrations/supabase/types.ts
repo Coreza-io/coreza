@@ -338,6 +338,11 @@ export type Database = {
           cancel_requested_at: string | null
           completed_at: string | null
           edge_count: number | null
+          parent_run_id: string | null
+          bar_sequence: number | null
+          bar_index: number | null
+          bar_symbol: string | null
+          bar_time: string | null
           edges: Json | null
           error_message: string | null
           execution_id: string | null
@@ -363,6 +368,11 @@ export type Database = {
           cancel_requested_at?: string | null
           completed_at?: string | null
           edge_count?: number | null
+          parent_run_id?: string | null
+          bar_sequence?: number | null
+          bar_index?: number | null
+          bar_symbol?: string | null
+          bar_time?: string | null
           edges?: Json | null
           error_message?: string | null
           execution_id?: string | null
@@ -388,6 +398,11 @@ export type Database = {
           cancel_requested_at?: string | null
           completed_at?: string | null
           edge_count?: number | null
+          parent_run_id?: string | null
+          bar_sequence?: number | null
+          bar_index?: number | null
+          bar_symbol?: string | null
+          bar_time?: string | null
           edges?: Json | null
           error_message?: string | null
           execution_id?: string | null
@@ -409,6 +424,13 @@ export type Database = {
           workflow_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "workflow_runs_bar_parent_fkey"
+            columns: ["parent_run_id", "workflow_id", "initiated_by"]
+            isOneToOne: false
+            referencedRelation: "workflow_runs"
+            referencedColumns: ["id", "workflow_id", "initiated_by"]
+          },
           {
             foreignKeyName: "workflow_runs_initiated_by_fkey"
             columns: ["initiated_by"]

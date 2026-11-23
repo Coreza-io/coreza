@@ -50,6 +50,7 @@ export class BacktestSessionManager {
     warmupEvents: MultiBarEvent[] = [],
     indicatorInitialization?: IndicatorInitialization,
     persistResults = true,
+    parentRunId?: string,
   ): BacktestSession {
     const scopeKey = `${userId}:${workflowId}:${nodeId}:${persistResults ? "database" : runId}`;
     const existingBacktestId = this.scopeIndex.get(scopeKey);
@@ -76,6 +77,7 @@ export class BacktestSessionManager {
       warmupEvents,
       indicatorInitialization,
       persistResults,
+      parentRunId,
     );
 
     this.sessions.set(backtestId, session);

@@ -210,6 +210,7 @@ export class GracefulShutdownHandler {
           const { error } = await (supabase.from("workflow_runs") as any)
             .update(updatePayload)
             .eq("id", runId)
+            .is("parent_run_id", null)
             .in("status", ["running", "queued"]);
 
           if (!error) {

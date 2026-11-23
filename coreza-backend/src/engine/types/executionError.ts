@@ -12,6 +12,8 @@ export interface ExecutionError {
   cause?: unknown;
 }
 
+export type NodeResultObserver = (nodeId: string, result: NodeResult, elapsedMs: number) => void;
+
 export interface WorkflowExecutionResult {
   success: boolean;
   /** True once this envelope contains the worker's final available snapshots. */

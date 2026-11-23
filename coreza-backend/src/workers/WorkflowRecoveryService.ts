@@ -74,6 +74,7 @@ export class WorkflowRecoveryService {
       const { data: staleRuns, error } = await supabase
         .from("workflow_runs")
         .select("id, workflow_id, status, started_at")
+        .is("parent_run_id", null)
         .in("status", ["running", "queued"])
         .lt("started_at", thresholdTime)
         .order("started_at", { ascending: true });

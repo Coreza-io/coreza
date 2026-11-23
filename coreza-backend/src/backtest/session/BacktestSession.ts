@@ -5,6 +5,8 @@ import { IndicatorStateManager } from "../../engine/indicatorStateManager";
 import { DataContextManager } from "../../engine/DataContext";
 import { WorkflowPlan } from "../../engine/workflowPlan";
 import { WorkflowRun } from "../../engine/workflowRun";
+import { toExecutionError, type ExecutionError } from "../../engine/types";
+import { BacktestBarCapture, BacktestBarHistory } from "./BacktestBarHistory";
 import { compilePlan, runBar, CompiledPlan } from "../compiled";
 import { resolveCategory } from "../compiled/adapters";
 import { getNodeExecutor } from "../../nodes/registry";
@@ -64,6 +66,7 @@ export class BacktestSession {
   public phase: BacktestPhase = "initializing";
 
   private readonly plan: WorkflowPlan;
+  private readonly barHistory?: BacktestBarHistory;
   private run: WorkflowRun;
   private readonly stateManager?: IndicatorStateManager;
   private readonly abortController: AbortController;
@@ -131,7 +134,11 @@ export class BacktestSession {
     private readonly warmupEvents: MultiBarEvent[] = [],
     private readonly indicatorInitialization?: IndicatorInitialization,
     public readonly persistResults = true,
+    parentRunId?: string,
   ) {
+    if (persistResults && parentRunId && process.env.BACKTEST_EXECUTION_HISTORY_ENABLED === "true") {
+      this.barHistory = new BacktestBarHistory(parentRunId, workflowId, userId);
+    }
     this.abortController = new AbortController();
     this.stateManager = stateManager;
     this.plan = WorkflowPlan.compile(this.nodes, this.edges, "backtest");
@@ -603,7 +610,10 @@ export class BacktestSession {
       }
       this.perf.contextBuildMs += performance.now() - t0;
 
-      if (this.compiledPlan) {
+      if (this.barHistory && this.phase === "running") {
+        if (this.abortController.signal.aborted) break;
+        await this.executeCapturedBar(this.barHistory, symbolEvent, event.timestamp);
+      } else if (this.compiledPlan) {
         t0 = performance.now();
         this.reusableBarInput.data = symbolEvent;
         await runBar(this.compiledPlan, this.reusableBarInput, true);
@@ -678,7 +688,10 @@ export class BacktestSession {
       }
       this.perf.contextBuildMs += performance.now() - t0;
 
-      if (this.compiledPlan) {
+      if (this.barHistory && this.phase === "running") {
+        if (this.abortController.signal.aborted) break;
+        await this.executeCapturedBar(this.barHistory, symbolEvent, event.timestamp);
+      } else if (this.compiledPlan) {
         t0 = performance.now();
         await runBar(this.compiledPlan, { data: symbolEvent }, true);
         this.perf.executeLoopMs += performance.now() - t0;
@@ -707,6 +720,42 @@ export class BacktestSession {
       this.backtestId,
     )?.recordEquitySnapshot(snapshotTimestamp);
     this.perf.equitySnapshotMs += performance.now() - t0;
+  }
+
+  private async executeCapturedBar(
+    history: BacktestBarHistory, event: BarEvent, barTime: string,
+  ): Promise<void> {
+    const capture = new BacktestBarCapture();
+    const startedAt = performance.now();
+    let strategyError: ExecutionError | undefined;
+    try {
+      if (this.compiledPlan) {
+        this.reusableBarInput.data = event;
+        await runBar(this.compiledPlan, this.reusableBarInput, true, capture.observe);
+      } else {
+        this.run.resetForNextBar();
+        this.perf.storeClearMs += this.run.lastStoreClearMs;
+        this.run.setNodeResultObserver(capture.observe);
+        const result = await this.run.executeFromEntries({ data: event }, this.entryNodeIds);
+        this.perf.buildResultMs += this.run.lastBuildResultMs;
+        if (!result.success) {
+          strategyError = result.error ?? { code: "BACKTEST_FAILED", message: "Backtest strategy failed", phase: "execute" };
+        }
+      }
+    } catch (error) {
+      strategyError = toExecutionError(error, "execute");
+    } finally {
+      if (!this.compiledPlan) this.run.setNodeResultObserver();
+      this.perf.executeLoopMs += performance.now() - startedAt;
+    }
+
+    const cancelled = this.abortController.signal.aborted;
+    if (cancelled) {
+      strategyError ??= { code: "CANCELLED", message: "Workflow cancelled by user", phase: "execute" };
+    }
+    const status = cancelled ? "cancelled" : strategyError ? "failed" : "success";
+    await history.record(event.barIndex, event.symbol, barTime, capture, status, strategyError);
+    if (strategyError) throw new Error(strategyError.message);
   }
 
   async step(): Promise<Record<string, any>> {
@@ -991,7 +1040,11 @@ export class BacktestSession {
         }
       }
     } finally {
-      this.stepping = false;
+      try {
+        if (this.barHistory) await this.barHistory.flush();
+      } finally {
+        this.stepping = false;
+      }
     }
 
     if (this.abortController.signal.aborted) throw new Error("Workflow cancelled by user");

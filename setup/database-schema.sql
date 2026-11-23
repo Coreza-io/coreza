@@ -98,6 +98,27 @@ CREATE TABLE IF NOT EXISTS public.workflow_runs (
   request_fingerprint text,
   cancel_requested_at timestamptz,
   cancel_acknowledged_at timestamptz,
+  parent_run_id uuid,
+  bar_sequence integer,
+  bar_index integer,
+  bar_symbol text,
+  bar_time timestamptz,
+  CONSTRAINT workflow_runs_bar_sequence_key UNIQUE (parent_run_id, bar_sequence),
+  CONSTRAINT workflow_runs_parent_owner_key UNIQUE (id, workflow_id, initiated_by),
+  CONSTRAINT workflow_runs_bar_parent_fkey
+    FOREIGN KEY (parent_run_id, workflow_id, initiated_by)
+    REFERENCES public.workflow_runs (id, workflow_id, initiated_by) ON DELETE CASCADE,
+  CONSTRAINT workflow_runs_bar_fields_check CHECK (
+    CASE WHEN parent_run_id IS NULL THEN
+      bar_sequence IS NULL AND bar_index IS NULL AND bar_symbol IS NULL AND bar_time IS NULL
+    ELSE
+      parent_run_id <> id AND initiated_by IS NOT NULL
+      AND bar_sequence IS NOT NULL AND bar_sequence >= 0
+      AND bar_index IS NOT NULL AND bar_index >= 0
+      AND bar_symbol IS NOT NULL AND bar_time IS NOT NULL
+      AND completed_at IS NOT NULL AND status IN ('success', 'failed', 'cancelled')
+    END
+  ),
   CONSTRAINT workflow_runs_scope_kind_check CHECK (scope_kind IN ('workflow', 'cluster'))
 );
 
@@ -175,6 +196,27 @@ CREATE TABLE IF NOT EXISTS public.live_fills (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_workflow_runs_schedule_key_unique
 ON public.workflow_runs (workflow_id, schedule_key) WHERE schedule_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_workflow_runs_workflow_id ON public.workflow_runs(workflow_id);
+CREATE INDEX IF NOT EXISTS workflow_runs_history_start_idx
+  ON public.workflow_runs (workflow_id, started_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS workflow_runs_bar_time_idx
+  ON public.workflow_runs (workflow_id, bar_time DESC, id DESC) WHERE bar_time IS NOT NULL;
+CREATE INDEX IF NOT EXISTS workflow_runs_bar_symbol_time_idx
+  ON public.workflow_runs (workflow_id, bar_symbol, bar_time DESC, id DESC) WHERE bar_time IS NOT NULL;
+
+-- Publish parent run changes only. UPDATE and DELETE filters require replica identity.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
+    ALTER TABLE public.workflow_runs REPLICA IDENTITY FULL;
+    IF EXISTS (
+      SELECT 1 FROM pg_publication_tables
+      WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'workflow_runs'
+    ) THEN
+      ALTER PUBLICATION supabase_realtime DROP TABLE public.workflow_runs;
+    END IF;
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.workflow_runs WHERE (parent_run_id IS NULL);
+  END IF;
+END $$;
 CREATE UNIQUE INDEX IF NOT EXISTS workflow_runs_manual_idempotency ON public.workflow_runs(workflow_id, initiated_by, idempotency_key) WHERE idempotency_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS workflow_runs_active_cluster_lookup ON public.workflow_runs(workflow_id, initiated_by, scope_cluster_id, started_at DESC) WHERE scope_kind = 'cluster' AND status IN ('pending', 'queued', 'running', 'cancelling');
 CREATE INDEX IF NOT EXISTS workflow_runs_cancellation_pending ON public.workflow_runs(cancel_requested_at) WHERE cancel_requested_at IS NOT NULL AND cancel_acknowledged_at IS NULL;

@@ -12,7 +12,7 @@ WITH required_tables(name) AS (
     ('workflow_runs','idempotency_key'), ('workflow_runs','request_fingerprint'),
     ('workflow_runs','cancel_requested_at'), ('workflow_runs','cancel_acknowledged_at'),
     ('workflow_runs','parent_run_id'), ('workflow_runs','bar_sequence'), ('workflow_runs','bar_index'),
-    ('workflow_runs','bar_symbol'), ('workflow_runs','bar_time'), ('backtests','workflow_run_id'),
+    ('workflow_runs','bar_symbol'), ('workflow_runs','bar_time'),
     ('live_fills','algo_id'), ('live_fills','timeInForce'), ('portfolio','equity_open'), ('portfolio','equity_high'),
     ('portfolio','equity_low'), ('portfolio','equity_close'), ('portfolio','equity_sample_count')
 ), required_functions(signature) AS (
@@ -23,7 +23,7 @@ WITH required_tables(name) AS (
     ('validate_reporting_scope()'), ('mirror_backtest_reporting()'),
     ('write_backtest_bar_batch(uuid,jsonb)'), ('write_backtest_bar_result_part(jsonb,integer,text,boolean)'),
     ('start_backtest_run(uuid,uuid,uuid)'), ('finalize_backtest_run(uuid,uuid,uuid,text,text,jsonb,timestamptz,text)'),
-    ('validate_backtest_run_link()'),
+    ('create_backtest_report(uuid,jsonb)'),
     ('claim_reporting_activation(uuid,uuid,uuid)'),
     ('complete_reporting_activation(uuid,uuid,uuid,text)'),
     ('reporting_trade_aggregate(uuid)'), ('mark_reporting_changes()'),
@@ -36,7 +36,7 @@ WITH required_tables(name) AS (
   VALUES ('auth','users','on_auth_user_created'),
     ('public','workflows','guard_nested_workflow_writer'),
     ('public','workflow_runs','workflow_runs_validate_contract'),
-    ('public','backtests','backtest_reporting_lifecycle'), ('public','backtests','backtests_validate_run_link'),
+    ('public','backtests','backtest_reporting_lifecycle'),
     ('public','live_strategies','reporting_header_scope'),
     ('public','trades','reporting_trade_scope'),
     ('public','portfolio','reporting_portfolio_scope'),

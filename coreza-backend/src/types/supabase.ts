@@ -191,7 +191,6 @@ export interface Database {
           id: string;
           user_id: string;
           workflow_id: string;
-          workflow_run_id: string | null;
           name: string;
           description: string | null;
           start_date: string;
@@ -210,7 +209,6 @@ export interface Database {
           id?: string;
           user_id: string;
           workflow_id: string;
-          workflow_run_id?: string | null;
           name: string;
           description?: string | null;
           start_date: string;
@@ -229,7 +227,6 @@ export interface Database {
           id?: string;
           user_id?: string;
           workflow_id?: string;
-          workflow_run_id?: string | null;
           name?: string;
           description?: string | null;
           start_date?: string;
@@ -250,6 +247,10 @@ export interface Database {
 
     };
     Functions: {
+      create_backtest_report: {
+        Args: { p_run_id: string; p_report: Record<string, unknown> };
+        Returns: string;
+      };
       write_backtest_bar_result_part: {
         Args: { p_row: Record<string, unknown>; p_part_index: number; p_payload: string | null; p_final: boolean };
         Returns: undefined;

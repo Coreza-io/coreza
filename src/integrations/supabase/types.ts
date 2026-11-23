@@ -36,7 +36,6 @@ export type Database = {
           status: string
           user_id: string
           workflow_id: string
-          workflow_run_id: string | null
         }
         Insert: {
           commission_rate?: number | null
@@ -55,7 +54,6 @@ export type Database = {
           status?: string
           user_id: string
           workflow_id: string
-          workflow_run_id?: string | null
         }
         Update: {
           commission_rate?: number | null
@@ -74,16 +72,8 @@ export type Database = {
           status?: string
           user_id?: string
           workflow_id?: string
-          workflow_run_id?: string | null
         }
         Relationships: [
-          {
-            foreignKeyName: "backtests_workflow_run_fkey"
-            columns: ["workflow_run_id", "workflow_id", "user_id"]
-            isOneToOne: false
-            referencedRelation: "workflow_runs"
-            referencedColumns: ["id", "workflow_id", "initiated_by"]
-          },
           {
             foreignKeyName: "backtests_workflow_id_fkey"
             columns: ["workflow_id"]

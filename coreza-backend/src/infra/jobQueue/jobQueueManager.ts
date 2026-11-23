@@ -481,20 +481,6 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
       cancelledCount++;
     }
 
-    const backtestManager = BacktestSessionManager.getInstance();
-    const activeBacktests = await (supabase.from("backtests") as any)
-      .select("id")
-      .eq("workflow_id", workflowId)
-      .is("workflow_run_id", null)
-      .eq("status", "running");
-
-    for (const backtest of activeBacktests.data || []) {
-      if (backtestManager.isRunning(backtest.id)) {
-        await backtestManager.stopBacktest(backtest.id);
-        cancelledCount++;
-      }
-    }
-
     console.log(
       `✅ Cancelled ${cancelledCount} jobs for workflow ${workflowId}`,
     );

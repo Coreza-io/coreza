@@ -43,35 +43,37 @@ BEGIN
   END IF;
 END $$;
 
-ALTER TABLE public.backtests
-  ADD COLUMN workflow_run_id uuid,
-  ADD CONSTRAINT backtests_workflow_run_key UNIQUE (workflow_run_id),
-  ADD CONSTRAINT backtests_workflow_run_fkey
-    FOREIGN KEY (workflow_run_id, workflow_id, user_id)
-    REFERENCES public.workflow_runs (id, workflow_id, initiated_by)
-    ON DELETE SET NULL (workflow_run_id);
-
--- Hold the parent open while its reporting row is first created.
-CREATE FUNCTION public.validate_backtest_run_link()
-RETURNS trigger
+-- Save the reporting ID in the existing parent metadata in the same transaction.
+CREATE FUNCTION public.create_backtest_report(p_run_id uuid, p_report jsonb)
+RETURNS uuid
 LANGUAGE plpgsql
 SET search_path = pg_catalog, public
 AS $$
+DECLARE
+  report public.backtests%ROWTYPE := jsonb_populate_record(NULL::public.backtests, p_report);
+  report_id uuid;
 BEGIN
-  IF NEW.workflow_run_id IS NOT NULL THEN
-    PERFORM 1 FROM public.workflow_runs
-      WHERE id = NEW.workflow_run_id AND workflow_id = NEW.workflow_id AND initiated_by = NEW.user_id
-        AND parent_run_id IS NULL AND status = 'running'
-        AND scope_snapshot @> '{"executionMode":"backtest"}'
-      FOR SHARE;
-    IF NOT FOUND THEN RAISE EXCEPTION 'backtest reporting parent is no longer active'; END IF;
-  END IF;
-  RETURN NEW;
+  SELECT (scope_snapshot->>'backtestId')::uuid INTO report_id FROM public.workflow_runs
+    WHERE id = p_run_id AND workflow_id = report.workflow_id AND initiated_by = report.user_id
+      AND parent_run_id IS NULL AND status = 'running'
+      AND scope_snapshot @> '{"executionMode":"backtest"}'
+    FOR NO KEY UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'backtest reporting parent is no longer active'; END IF;
+  IF report_id IS NOT NULL THEN RETURN report_id; END IF;
+
+  INSERT INTO public.backtests
+    (workflow_id, user_id, name, description, status, initial_capital, commission_rate, slippage_rate,
+     start_date, end_date, started_at)
+    VALUES (report.workflow_id, report.user_id, report.name, report.description, 'running', report.initial_capital,
+      report.commission_rate, report.slippage_rate, report.start_date, report.end_date, now())
+    RETURNING id INTO report_id;
+  UPDATE public.workflow_runs
+    SET scope_snapshot = scope_snapshot || jsonb_build_object('backtestId', report_id)
+    WHERE id = p_run_id;
+  RETURN report_id;
 END $$;
-REVOKE ALL ON FUNCTION public.validate_backtest_run_link() FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.validate_backtest_run_link() TO service_role;
-CREATE TRIGGER backtests_validate_run_link BEFORE INSERT OR UPDATE OF workflow_run_id ON public.backtests
-  FOR EACH ROW EXECUTE FUNCTION public.validate_backtest_run_link();
+REVOKE ALL ON FUNCTION public.create_backtest_report(uuid,jsonb) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.create_backtest_report(uuid,jsonb) TO service_role;
 
 -- Lock the parent once per batch so recovery and finalization cannot race inserts.
 CREATE FUNCTION public.write_backtest_bar_batch(p_run_id uuid, p_rows jsonb)
@@ -197,11 +199,12 @@ AS $$
 DECLARE
   prior_status text;
   final_status text;
+  report_id uuid;
   diagnostic text := p_error_message;
 BEGIN
   IF p_status IS NULL OR p_status NOT IN ('success', 'failed') THEN RAISE EXCEPTION 'invalid backtest outcome'; END IF;
 
-  SELECT status INTO prior_status FROM public.workflow_runs
+  SELECT status, (scope_snapshot->>'backtestId')::uuid INTO prior_status, report_id FROM public.workflow_runs
     WHERE id = p_run_id AND workflow_id = p_workflow_id AND initiated_by = p_user_id
       AND parent_run_id IS NULL AND scope_snapshot @> '{"executionMode":"backtest"}'
       AND (p_expected_started_at IS NULL OR started_at = p_expected_started_at)
@@ -229,7 +232,8 @@ BEGIN
   IF final_status IN ('failed', 'cancelled') THEN
     UPDATE public.backtests
       SET status = final_status, completed_at = now(), error_message = diagnostic
-      WHERE workflow_run_id = p_run_id AND status IN ('pending', 'running');
+      WHERE id = report_id AND workflow_id = p_workflow_id AND user_id = p_user_id
+        AND status IN ('pending', 'running');
   END IF;
 
   UPDATE public.workflows

@@ -321,33 +321,27 @@ export class BacktestExecutor implements INodeExecutor {
             );
         }
 
-        const { data: backtest, error: insertError } = await supabaseClient
-          .from("backtests")
-          .insert({
-            user_id: userId,
-            workflow_id: workflowId,
-            workflow_run_id: context?.runId,
-            name: params.name || `Backtest ${new Date().toISOString()}`,
-            description: params.description || null,
-            status: "running",
-            initial_capital: config.initialCapital,
-            commission_rate: config.commissionValue,
-            slippage_rate: config.slippageValue,
-            start_date:
-              params.start_date || new Date().toISOString().split("T")[0],
-            end_date: params.end_date || new Date().toISOString().split("T")[0],
-            started_at: new Date().toISOString(),
-          } as any)
-          .select("id")
-          .single();
+        if (!context?.runId) return createErrorOutput("Saved backtest run ID is required");
+        const { data: reportId, error: insertError } = await supabaseClient.schema("public")
+          .rpc("create_backtest_report", {
+            p_run_id: context.runId,
+            p_report: {
+              user_id: userId,
+              workflow_id: workflowId,
+              name: params.name || `Backtest ${new Date().toISOString()}`,
+              description: params.description || null,
+              initial_capital: config.initialCapital,
+              commission_rate: config.commissionValue,
+              slippage_rate: config.slippageValue,
+              start_date: params.start_date || new Date().toISOString().split("T")[0],
+              end_date: params.end_date || new Date().toISOString().split("T")[0],
+            },
+          }).abortSignal(AbortSignal.timeout(15_000));
 
-        if (insertError || !backtest) {
-          return createErrorOutput(
-              `Failed to create backtest: ${insertError?.message}`,
-            );
+        if (insertError || typeof reportId !== "string") {
+          return createErrorOutput(`Failed to create backtest: ${insertError?.message ?? "missing report ID"}`);
         }
-
-        backtestId = (backtest as { id: string }).id;
+        backtestId = reportId;
       }
       createdBacktestId = backtestId;
       const executionId =

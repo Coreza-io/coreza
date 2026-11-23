@@ -15,7 +15,10 @@ import { normalizePersistedNodeResult } from "@/utils/persistedNodeResult";
 
 const PAGE_SIZE = 20;
 const MAX_CACHED_EXECUTIONS = 200;
-const SUMMARY_COLUMNS = "id,workflow_id,status,started_at,completed_at,error_message,initiated_by,node_count,edge_count,parent_run_id,bar_symbol,bar_time";
+const BAR_PARENT = "scope_snapshot->>backtestParentRunId";
+const BAR_SYMBOL = "scope_snapshot->>backtestBarSymbol";
+const BAR_TIME = "scope_snapshot->>backtestBarTime";
+const SUMMARY_COLUMNS = `id,workflow_id,status,started_at,completed_at,error_message,initiated_by,node_count,edge_count,parent_run_id:${BAR_PARENT},bar_symbol:${BAR_SYMBOL},bar_time:${BAR_TIME}`;
 export type ExecutionSummary = Omit<ExecutionRun, "result" | "nodes" | "edges" | "node_clusters">;
 
 export type ExecutionStatus =
@@ -182,11 +185,20 @@ function applyFiltersToQuery(workflowId: string, filters: ExecutionFilters) {
     );
   }
 
-  if (filtersBars(filters)) query = query.not("bar_time", "is", null);
-  if (filters.barSymbol) query = query.eq("bar_symbol", filters.barSymbol);
-  if (filters.barFrom) query = query.gte("bar_time", filters.barFrom);
-  if (filters.barTo) query = query.lte("bar_time", filters.barTo);
+  if (filtersBars(filters)) query = query.not(BAR_TIME, "is", null);
+  if (filters.barSymbol) query = query.eq(BAR_SYMBOL, filters.barSymbol);
+  if (filters.barFrom) query = query.gte(BAR_TIME, filters.barFrom);
+  if (filters.barTo) query = query.lte(BAR_TIME, filters.barTo);
   return query;
+}
+
+function barMetadata(snapshot: unknown) {
+  const fields = isRecord(snapshot) ? snapshot : {};
+  return {
+    parent_run_id: typeof fields.backtestParentRunId === "string" ? fields.backtestParentRunId : null,
+    bar_symbol: typeof fields.backtestBarSymbol === "string" ? fields.backtestBarSymbol : null,
+    bar_time: typeof fields.backtestBarTime === "string" ? fields.backtestBarTime : null,
+  };
 }
 
 const toSummary = (run: ExecutionSummary): ExecutionSummary => ({
@@ -262,6 +274,7 @@ export function useExecutionHistory(
   const detailFlight = useRef<{ id: string; promise: Promise<void>; queued: boolean } | null>(null);
   const normalizedFilters = useMemo(() => ({ status, dateFrom: dateFrom === undefined ? undefined : new Date(dateFrom), dateTo: dateTo === undefined ? undefined : new Date(dateTo), barSymbol, barFrom, barTo }), [status, dateFrom, dateTo, barSymbol, barFrom, barTo]);
   const timeColumn: HistoryTime = filtersBars(normalizedFilters) ? "bar_time" : "started_at";
+  const timeQueryColumn = timeColumn === "bar_time" ? BAR_TIME : timeColumn;
   const isCurrent = useCallback(() => currentScope.current === scope, [scope]);
 
   const loadDetail = useCallback((runId: string, force = false): Promise<void> => {
@@ -277,11 +290,11 @@ export function useExecutionHistory(
           .select("*").eq("workflow_id", scope.workflowId!).eq("id", runId).single();
         if (!isCurrent() || request !== detailRequest.current || selection.current !== runId) return;
         if (queryError) throw queryError;
-        let next = data as ExecutionRun;
+        let next: ExecutionRun = { ...(data as Omit<ExecutionRun, keyof ReturnType<typeof barMetadata>>), ...barMetadata(data?.scope_snapshot) };
         if (next.parent_run_id) {
           const { data: graph, error: graphError } = await supabase.from("workflow_runs")
             .select("nodes,edges,node_clusters")
-            .eq("workflow_id", scope.workflowId!).eq("id", next.parent_run_id).is("parent_run_id", null)
+            .eq("workflow_id", scope.workflowId!).eq("id", next.parent_run_id).is(BAR_PARENT, null)
             .maybeSingle();
           if (!isCurrent() || request !== detailRequest.current || selection.current !== runId) return;
           if (graphError || !graph || !Array.isArray(graph.nodes) || !Array.isArray(graph.edges)) {
@@ -335,7 +348,7 @@ export function useExecutionHistory(
     setLoading(true); setError(null);
     try {
       const { data, error: queryError } = await applyFiltersToQuery(workflowId, normalizedFilters)
-        .order(timeColumn, { ascending: false }).order("id", { ascending: false }).limit(PAGE_SIZE);
+        .order(timeQueryColumn, { ascending: false }).order("id", { ascending: false }).limit(PAGE_SIZE);
       if (!isCurrent() || firstFlight.current !== flight) return;
       if (queryError) throw queryError;
       const rows = (data ?? []) as unknown as ExecutionSummary[];
@@ -368,7 +381,7 @@ export function useExecutionHistory(
     } finally {
       if (isCurrent() && firstFlight.current === flight) { firstFlight.current = null; setLoading(false); }
     }
-  }, [enabled, workflowId, scope.owner, normalizedFilters, timeColumn, isCurrent, loadDetail]);
+  }, [enabled, workflowId, scope.owner, normalizedFilters, timeColumn, timeQueryColumn, isCurrent, loadDetail]);
 
   const loadMore = useCallback(async () => {
     if (!isCurrent() || !enabled || !workflowId || !scope.owner || !hasMore || pageFlight.current || firstFlight.current || !cursor.current) return;
@@ -378,8 +391,8 @@ export function useExecutionHistory(
     try {
       const afterTime = after[timeColumn];
       const { data, error: queryError } = await applyFiltersToQuery(workflowId, normalizedFilters)
-        .or(`${timeColumn}.lt.${afterTime},and(${timeColumn}.eq.${afterTime},id.lt.${after.id})`)
-        .order(timeColumn, { ascending: false }).order("id", { ascending: false }).limit(PAGE_SIZE);
+        .or(`${timeQueryColumn}.lt.${afterTime},and(${timeQueryColumn}.eq.${afterTime},id.lt.${after.id})`)
+        .order(timeQueryColumn, { ascending: false }).order("id", { ascending: false }).limit(PAGE_SIZE);
       if (!isCurrent() || pageFlight.current !== flight) return;
       if (queryError) throw queryError;
       const rows = (data ?? []) as unknown as ExecutionSummary[];
@@ -392,7 +405,7 @@ export function useExecutionHistory(
     } finally {
       if (isCurrent() && pageFlight.current === flight) { pageFlight.current = null; setLoadingMore(false); }
     }
-  }, [enabled, workflowId, scope.owner, hasMore, normalizedFilters, timeColumn, isCurrent]);
+  }, [enabled, workflowId, scope.owner, hasMore, normalizedFilters, timeColumn, timeQueryColumn, isCurrent]);
 
   useEffect(() => {
     currentScope.current = scope;
@@ -435,8 +448,9 @@ export function useExecutionHistory(
         return;
       }
       // Retain only summary fields from full realtime payloads.
-      const summary = toSummary(payload.new as ExecutionRun);
-      if (summary.parent_run_id) return;
+      const bar = barMetadata(payload.new.scope_snapshot);
+      if (bar.parent_run_id) return;
+      const summary = toSummary({ ...payload.new as ExecutionRun, ...bar });
       if (payload.eventType === "UPDATE" && payload.new.scope_snapshot?.barHistory === true
         && summary.completed_at && !summaryTimer) {
         summaryTimer = setTimeout(refreshAfterBatch, 300);

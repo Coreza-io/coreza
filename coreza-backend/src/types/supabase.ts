@@ -84,11 +84,6 @@ export interface Database {
           cancel_acknowledged_at: string | null;
           node_count: number | null;
           edge_count: number | null;
-          parent_run_id: string | null;
-          bar_sequence: number | null;
-          bar_index: number | null;
-          bar_symbol: string | null;
-          bar_time: string | null;
         };
         Insert: {
           id?: string;
@@ -114,11 +109,6 @@ export interface Database {
           cancel_acknowledged_at?: string | null;
           node_count?: number | null;
           edge_count?: number | null;
-          parent_run_id?: string | null;
-          bar_sequence?: number | null;
-          bar_index?: number | null;
-          bar_symbol?: string | null;
-          bar_time?: string | null;
         };
         Update: {
           id?: string;
@@ -144,11 +134,6 @@ export interface Database {
           cancel_acknowledged_at?: string | null;
           node_count?: number | null;
           edge_count?: number | null;
-          parent_run_id?: string | null;
-          bar_sequence?: number | null;
-          bar_index?: number | null;
-          bar_symbol?: string | null;
-          bar_time?: string | null;
         };
       };
       user_credentials: {
@@ -245,16 +230,6 @@ export interface Database {
 
 
 
-    };
-    Functions: {
-      write_backtest_bar_result_part: {
-        Args: { p_row: Record<string, unknown>; p_part_index: number; p_payload: string | null; p_final: boolean };
-        Returns: undefined;
-      };
-      write_backtest_bar_batch: {
-        Args: { p_run_id: string; p_rows: Database["public"]["Tables"]["workflow_runs"]["Insert"][] };
-        Returns: undefined;
-      };
     };
   };
 }

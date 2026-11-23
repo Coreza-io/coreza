@@ -86,7 +86,7 @@ const Dashboard = () => {
             workflows!inner(user_id)
           `)
           .eq('workflows.user_id', user.id)
-          .is('parent_run_id', null);
+          .is('scope_snapshot->>backtestParentRunId', null);
 
         const [{ data: workflows, error: workflowsError }, { data: workflowRunsStats, error: runsError }] = await Promise.all([
           workflowsQuery,
@@ -162,7 +162,7 @@ const Dashboard = () => {
           workflows!inner(name, user_id)
         `)
         .eq('workflows.user_id', user.id)
-        .is('parent_run_id', null)
+        .is('scope_snapshot->>backtestParentRunId', null)
         .order('started_at', { ascending: false })
         .limit(50);
 

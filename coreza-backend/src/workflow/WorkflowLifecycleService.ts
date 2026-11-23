@@ -147,7 +147,13 @@ export class WorkflowLifecycleService {
           workflow.edges,
           workflow.node_clusters,
           workflow.revision,
-          { scopeKind: "workflow", scopeSnapshot: { executionMode: "backtest" } },
+          {
+            scopeKind: "workflow",
+            scopeSnapshot: {
+              executionMode: "backtest",
+              barHistory: process.env.BACKTEST_EXECUTION_HISTORY_ENABLED === "true",
+            },
+          },
         );
 
         const runId = (run as any).id;

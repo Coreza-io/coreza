@@ -19,11 +19,17 @@ export class WorkflowRunRepository {
     if (error) throw createError("Failed to finalize backtest run", 500);
     if (data) return true;
     const now = new Date().toISOString();
+    const cancellationMessage = errorMessage ?? "Run cancelled by user";
+    const cancelledResult = result && serializeWorkflowRunResult({
+      ...result,
+      success: false,
+      error: result.error ?? { code: "CANCELLED", message: cancellationMessage, phase: "execute" },
+    });
     const { data: cancelled, error: cancelError } = await supabase.schema("public").from("workflow_runs")
       .update({
         status: "cancelled", completed_at: now, cancel_acknowledged_at: now,
-        error_message: errorMessage ?? "Run cancelled by user",
-        ...(result ? { result: serializeWorkflowRunResult(result) } : {}),
+        error_message: cancellationMessage,
+        ...(cancelledResult ? { result: cancelledResult } : {}),
       })
       .eq("id", runId).eq("workflow_id", workflowId).eq("initiated_by", userId).is("parent_run_id", null)
       .in("status", ["cancelling", "cancelled"]).select("id").maybeSingle();

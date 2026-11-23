@@ -274,15 +274,21 @@ export function useExecutionHistory(
     const promise = (async () => {
       try {
         const { data, error: queryError } = await supabase.from("workflow_runs")
-          .select("*,parent:workflow_runs!workflow_runs_bar_parent_fkey(nodes,edges,node_clusters)")
-          .eq("workflow_id", scope.workflowId!).eq("id", runId).single();
+          .select("*").eq("workflow_id", scope.workflowId!).eq("id", runId).single();
         if (!isCurrent() || request !== detailRequest.current || selection.current !== runId) return;
         if (queryError) throw queryError;
-        const { parent, ...row } = data as unknown as ExecutionRun & {
-          parent: Pick<ExecutionRun, "nodes" | "edges" | "node_clusters"> | null;
-        };
-        if (row.parent_run_id && !parent) throw new Error("The backtest graph snapshot is unavailable");
-        const next = { ...row, ...(row.parent_run_id ? parent : null) };
+        let next = data as ExecutionRun;
+        if (next.parent_run_id) {
+          const { data: graph, error: graphError } = await supabase.from("workflow_runs")
+            .select("nodes,edges,node_clusters")
+            .eq("workflow_id", scope.workflowId!).eq("id", next.parent_run_id).is("parent_run_id", null)
+            .maybeSingle();
+          if (!isCurrent() || request !== detailRequest.current || selection.current !== runId) return;
+          if (graphError || !graph || !Array.isArray(graph.nodes) || !Array.isArray(graph.edges)) {
+            throw new Error("The backtest graph snapshot is unavailable");
+          }
+          next = { ...next, nodes: graph.nodes, edges: graph.edges, node_clusters: graph.node_clusters };
+        }
         if (!matchesExecutionFilters(next, normalizedFilters)) {
           details.current.delete(runId);
           setExecutions(previous => previous.filter(run => run.id !== runId));
@@ -431,7 +437,7 @@ export function useExecutionHistory(
       // Retain only summary fields from full realtime payloads.
       const summary = toSummary(payload.new as ExecutionRun);
       if (summary.parent_run_id) return;
-      if (payload.eventType === "UPDATE" && payload.new.scope_snapshot?.executionMode === "backtest"
+      if (payload.eventType === "UPDATE" && payload.new.scope_snapshot?.barHistory === true
         && summary.completed_at && !summaryTimer) {
         summaryTimer = setTimeout(refreshAfterBatch, 300);
       }

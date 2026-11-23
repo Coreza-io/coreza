@@ -376,7 +376,14 @@ const WorkflowEditorContent = () => {
   const [dateToInput, setDateToInput] = useState<Date | null>(null);
   const [dateFromFilter, setDateFromFilter] = useState<Date | null>(null);
   const [dateToFilter, setDateToFilter] = useState<Date | null>(null);
-  const { timezone } = useUserPreferences();
+  const { timezone: preferredTimezone } = useUserPreferences();
+  const timezone = useMemo(() => {
+    try {
+      return new Intl.DateTimeFormat(undefined, { timeZone: preferredTimezone }).resolvedOptions().timeZone;
+    } catch {
+      return "UTC";
+    }
+  }, [preferredTimezone]);
   const [barFilterInput, setBarFilterInput] = useState<BarHistoryFilters>({ symbol: "", from: "", to: "" });
   const [barFilters, setBarFilters] = useState(barFilterInput);
   const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
@@ -413,17 +420,21 @@ const WorkflowEditorContent = () => {
     return () => clearTimeout(timeout);
   }, [barFilterInput]);
 
-  const executionFilters = useMemo(
-    () => ({
+  const executionFilters = useMemo(() => {
+    const toUtc = (value: string) => {
+      if (!value) return undefined;
+      const date = fromZonedTime(value, timezone);
+      return Number.isFinite(date.getTime()) ? date.toISOString() : undefined;
+    };
+    return {
       status: statusFilter,
       dateFrom: dateFromFilter,
       dateTo: dateToFilter,
       barSymbol: barFilters.symbol.trim().toUpperCase(),
-      barFrom: barFilters.from ? fromZonedTime(barFilters.from, timezone).toISOString() : undefined,
-      barTo: barFilters.to ? fromZonedTime(barFilters.to, timezone).toISOString() : undefined,
-    }),
-    [statusFilter, dateFromFilter, dateToFilter, barFilters, timezone],
-  );
+      barFrom: toUtc(barFilters.from),
+      barTo: toUtc(barFilters.to),
+    };
+  }, [statusFilter, dateFromFilter, dateToFilter, barFilters, timezone]);
 
   // Execution history hook
   const {

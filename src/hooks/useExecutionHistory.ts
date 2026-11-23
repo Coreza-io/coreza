@@ -15,7 +15,10 @@ import { normalizePersistedNodeResult } from "@/utils/persistedNodeResult";
 
 const PAGE_SIZE = 20;
 const MAX_CACHED_EXECUTIONS = 200;
-const SUMMARY_COLUMNS = "id,workflow_id,status,started_at,completed_at,error_message,initiated_by,node_count,edge_count";
+const BAR_PARENT = "scope_snapshot->>backtestParentRunId";
+const BAR_SYMBOL = "scope_snapshot->>backtestBarSymbol";
+const BAR_TIME = "scope_snapshot->>backtestBarTime";
+const SUMMARY_COLUMNS = `id,workflow_id,status,started_at,completed_at,error_message,initiated_by,node_count,edge_count,parent_run_id:${BAR_PARENT},bar_symbol:${BAR_SYMBOL},bar_time:${BAR_TIME}`;
 export type ExecutionSummary = Omit<ExecutionRun, "result" | "nodes" | "edges" | "node_clusters">;
 
 export type ExecutionStatus =
@@ -30,6 +33,9 @@ export interface ExecutionFilters {
   status?: ExecutionStatus;
   dateFrom?: Date | null;
   dateTo?: Date | null;
+  barSymbol?: string;
+  barFrom?: string;
+  barTo?: string;
 }
 
 export interface NodeExecutionLog {
@@ -80,6 +86,9 @@ export interface ExecutionRun {
   node_clusters: unknown;
   node_count: number | null;
   edge_count: number | null;
+  parent_run_id: string | null;
+  bar_symbol: string | null;
+  bar_time: string | null;
 }
 
 // Compare only the selected run on refresh, with a bounded traversal of persisted JSON.
@@ -98,7 +107,7 @@ function sameExecution(previous: ExecutionRun, next: ExecutionRun): boolean {
   };
   const fields: (keyof ExecutionRun)[] = [
     "id", "workflow_id", "status", "started_at", "completed_at", "error_message",
-    "result", "initiated_by", "nodes", "edges", "node_clusters", "node_count", "edge_count",
+    "result", "initiated_by", "nodes", "edges", "node_clusters", "node_count", "edge_count", "parent_run_id", "bar_symbol", "bar_time",
   ];
   return fields.every(field => equal(previous[field], next[field]));
 }
@@ -112,6 +121,10 @@ function toExclusiveDateTo(date: Date): Date {
   end.setHours(0, 0, 0, 0);
   end.setDate(end.getDate() + 1);
   return end;
+}
+
+function filtersBars(filters: ExecutionFilters): boolean {
+  return Boolean(filters.barSymbol || filters.barFrom || filters.barTo);
 }
 
 function matchesExecutionFilters(
@@ -142,6 +155,12 @@ function matchesExecutionFilters(
     }
   }
 
+  if (filtersBars(filters)) {
+    if (!execution.bar_time || (filters.barSymbol && execution.bar_symbol !== filters.barSymbol)) return false;
+    const barTime = Date.parse(execution.bar_time);
+    if (filters.barFrom && barTime < Date.parse(filters.barFrom)) return false;
+    if (filters.barTo && barTime > Date.parse(filters.barTo)) return false;
+  }
   return true;
 }
 
@@ -166,23 +185,48 @@ function applyFiltersToQuery(workflowId: string, filters: ExecutionFilters) {
     );
   }
 
+  if (filtersBars(filters)) query = query.not(BAR_TIME, "is", null);
+  if (filters.barSymbol) query = query.eq(BAR_SYMBOL, filters.barSymbol);
+  if (filters.barFrom) query = query.gte(BAR_TIME, filters.barFrom);
+  if (filters.barTo) query = query.lte(BAR_TIME, filters.barTo);
   return query;
+}
+
+function barMetadata(snapshot: unknown) {
+  const fields = isRecord(snapshot) ? snapshot : {};
+  return {
+    parent_run_id: typeof fields.backtestParentRunId === "string" ? fields.backtestParentRunId : null,
+    bar_symbol: typeof fields.backtestBarSymbol === "string" ? fields.backtestBarSymbol : null,
+    bar_time: typeof fields.backtestBarTime === "string" ? fields.backtestBarTime : null,
+  };
 }
 
 const toSummary = (run: ExecutionSummary): ExecutionSummary => ({
   id: run.id, workflow_id: run.workflow_id, status: run.status, started_at: run.started_at,
   completed_at: run.completed_at, error_message: run.error_message, initiated_by: run.initiated_by,
   node_count: run.node_count, edge_count: run.edge_count,
+  parent_run_id: run.parent_run_id, bar_symbol: run.bar_symbol, bar_time: run.bar_time,
 });
 
-function mergeSummaries(current: ExecutionSummary[], incoming: ExecutionSummary[]): ExecutionSummary[] {
+type HistoryTime = "started_at" | "bar_time";
+
+function compareSummaries(a: ExecutionSummary, b: ExecutionSummary, timeColumn: HistoryTime): number {
+  const aTime = a[timeColumn] ?? "";
+  const bTime = b[timeColumn] ?? "";
+  if (aTime !== bTime) return aTime > bTime ? -1 : 1;
+  return b.id.localeCompare(a.id);
+}
+
+function mergeSummaries(
+  current: ExecutionSummary[], incoming: ExecutionSummary[], timeColumn: HistoryTime,
+): ExecutionSummary[] {
   const byId = new Map(current.map(run => [run.id, run]));
   for (const run of incoming) {
     const previous = byId.get(run.id);
     const next = toSummary(run);
     byId.set(run.id, previous && Object.keys(next).every(key => previous[key as keyof ExecutionSummary] === next[key as keyof ExecutionSummary]) ? previous : next);
   }
-  return [...byId.values()].sort((a, b) => b.started_at.localeCompare(a.started_at) || b.id.localeCompare(a.id));
+  return [...byId.values()].sort((a, b) => compareSummaries(a, b, timeColumn));
 }
 
 function getItemCount(data: unknown): number {
@@ -212,22 +256,25 @@ export function useExecutionHistory(
   const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const status = filters.status;
+  const { status, barSymbol, barFrom, barTo } = filters;
   const dateFrom = filters.dateFrom?.getTime();
   const dateTo = filters.dateTo?.getTime();
-  const dataScope = useMemo(() => ({}), [user?.id, workflowId, status, dateFrom, dateTo]);
+  const dataScope = useMemo(() => ({}), [user?.id, workflowId, status, dateFrom, dateTo, barSymbol, barFrom, barTo]);
   const previousDataScope = useRef<object | null>(null);
-  const scope = useMemo(() => ({ owner: user?.id, workflowId, status, dateFrom, dateTo, enabled }), [user?.id, workflowId, status, dateFrom, dateTo, enabled]);
+  const scope = useMemo(() => ({ owner: user?.id, workflowId, status, dateFrom, dateTo, barSymbol, barFrom, barTo, enabled }), [user?.id, workflowId, status, dateFrom, dateTo, barSymbol, barFrom, barTo, enabled]);
   const currentScope = useRef<typeof scope | null>(scope);
   currentScope.current = scope;
   const selection = useRef<string | null>(null);
   const detailRequest = useRef(0);
   const details = useRef(new Map<string, ExecutionRun>());
-  const cursor = useRef<{ started_at: string; id: string } | null>(null);
+  const cursor = useRef<ExecutionSummary | null>(null);
+  const firstRow = useRef<ExecutionSummary | null>(null);
   const firstFlight = useRef<object | null>(null);
   const pageFlight = useRef<object | null>(null);
   const detailFlight = useRef<{ id: string; promise: Promise<void>; queued: boolean } | null>(null);
-  const normalizedFilters = useMemo(() => ({ status, dateFrom: dateFrom === undefined ? undefined : new Date(dateFrom), dateTo: dateTo === undefined ? undefined : new Date(dateTo) }), [status, dateFrom, dateTo]);
+  const normalizedFilters = useMemo(() => ({ status, dateFrom: dateFrom === undefined ? undefined : new Date(dateFrom), dateTo: dateTo === undefined ? undefined : new Date(dateTo), barSymbol, barFrom, barTo }), [status, dateFrom, dateTo, barSymbol, barFrom, barTo]);
+  const timeColumn: HistoryTime = filtersBars(normalizedFilters) ? "bar_time" : "started_at";
+  const timeQueryColumn = timeColumn === "bar_time" ? BAR_TIME : timeColumn;
   const isCurrent = useCallback(() => currentScope.current === scope, [scope]);
 
   const loadDetail = useCallback((runId: string, force = false): Promise<void> => {
@@ -239,10 +286,22 @@ export function useExecutionHistory(
     setDetailLoading(true); setError(null);
     const promise = (async () => {
       try {
-        const { data, error: queryError } = await supabase.from("workflow_runs").select("*").eq("workflow_id", scope.workflowId!).eq("id", runId).single();
+        const { data, error: queryError } = await supabase.from("workflow_runs")
+          .select("*").eq("workflow_id", scope.workflowId!).eq("id", runId).single();
         if (!isCurrent() || request !== detailRequest.current || selection.current !== runId) return;
         if (queryError) throw queryError;
-        const next = data as ExecutionRun;
+        let next: ExecutionRun = { ...(data as Omit<ExecutionRun, keyof ReturnType<typeof barMetadata>>), ...barMetadata(data?.scope_snapshot) };
+        if (next.parent_run_id) {
+          const { data: graph, error: graphError } = await supabase.from("workflow_runs")
+            .select("nodes,edges,node_clusters")
+            .eq("workflow_id", scope.workflowId!).eq("id", next.parent_run_id).is(BAR_PARENT, null)
+            .maybeSingle();
+          if (!isCurrent() || request !== detailRequest.current || selection.current !== runId) return;
+          if (graphError || !graph || !Array.isArray(graph.nodes) || !Array.isArray(graph.edges)) {
+            throw new Error("The backtest graph snapshot is unavailable");
+          }
+          next = { ...next, nodes: graph.nodes, edges: graph.edges, node_clusters: graph.node_clusters };
+        }
         if (!matchesExecutionFilters(next, normalizedFilters)) {
           details.current.delete(runId);
           setExecutions(previous => previous.filter(run => run.id !== runId));
@@ -289,23 +348,26 @@ export function useExecutionHistory(
     setLoading(true); setError(null);
     try {
       const { data, error: queryError } = await applyFiltersToQuery(workflowId, normalizedFilters)
-        .order("started_at", { ascending: false }).order("id", { ascending: false }).limit(PAGE_SIZE);
+        .order(timeQueryColumn, { ascending: false }).order("id", { ascending: false }).limit(PAGE_SIZE);
       if (!isCurrent() || firstFlight.current !== flight) return;
       if (queryError) throw queryError;
       const rows = (data ?? []) as unknown as ExecutionSummary[];
-      if (manual || !cursor.current || rows.length < PAGE_SIZE) {
-        setExecutions(mergeSummaries([], rows));
-        cursor.current = rows[rows.length - 1] ?? null;
+      const boundary = rows[rows.length - 1];
+      const hasGap = boundary && firstRow.current && compareSummaries(boundary, firstRow.current, timeColumn) < 0;
+      firstRow.current = rows[0] ?? null;
+      if (manual || !cursor.current || rows.length < PAGE_SIZE || hasGap) {
+        pageFlight.current = null;
+        setLoadingMore(false);
+        setExecutions(mergeSummaries([], rows, timeColumn));
+        cursor.current = boundary ?? null;
         setHasMore(rows.length === PAGE_SIZE);
       } else {
         setExecutions(previous => {
           // A first-page load is authoritative for its covered time range.
           // Keep older pages; retain the oldest window so the cursor's boundary
           // cannot disappear when a realtime row or a new first page arrives.
-          const boundary = rows[rows.length - 1];
-          const retained = boundary ? previous.filter(run => run.started_at < boundary.started_at
-            || (run.started_at === boundary.started_at && run.id < boundary.id)) : [];
-          return mergeSummaries(retained, rows).slice(-MAX_CACHED_EXECUTIONS);
+          const retained = previous.filter(run => compareSummaries(run, boundary, timeColumn) > 0);
+          return mergeSummaries(retained, rows, timeColumn).slice(-MAX_CACHED_EXECUTIONS);
         });
       }
       const selectedId = selection.current;
@@ -319,7 +381,7 @@ export function useExecutionHistory(
     } finally {
       if (isCurrent() && firstFlight.current === flight) { firstFlight.current = null; setLoading(false); }
     }
-  }, [enabled, workflowId, scope.owner, normalizedFilters, isCurrent, loadDetail]);
+  }, [enabled, workflowId, scope.owner, normalizedFilters, timeColumn, timeQueryColumn, isCurrent, loadDetail]);
 
   const loadMore = useCallback(async () => {
     if (!isCurrent() || !enabled || !workflowId || !scope.owner || !hasMore || pageFlight.current || firstFlight.current || !cursor.current) return;
@@ -327,22 +389,23 @@ export function useExecutionHistory(
     const after = cursor.current;
     setLoadingMore(true);
     try {
+      const afterTime = after[timeColumn];
       const { data, error: queryError } = await applyFiltersToQuery(workflowId, normalizedFilters)
-        .or(`started_at.lt.${after.started_at},and(started_at.eq.${after.started_at},id.lt.${after.id})`)
-        .order("started_at", { ascending: false }).order("id", { ascending: false }).limit(PAGE_SIZE);
+        .or(`${timeQueryColumn}.lt.${afterTime},and(${timeQueryColumn}.eq.${afterTime},id.lt.${after.id})`)
+        .order(timeQueryColumn, { ascending: false }).order("id", { ascending: false }).limit(PAGE_SIZE);
       if (!isCurrent() || pageFlight.current !== flight) return;
       if (queryError) throw queryError;
       const rows = (data ?? []) as unknown as ExecutionSummary[];
       // Cursor is independent of retained rows; old pages cannot skip/repeat after eviction.
       if (rows.length) cursor.current = rows[rows.length - 1]!;
-      setExecutions(previous => mergeSummaries(previous, rows).slice(-MAX_CACHED_EXECUTIONS));
+      setExecutions(previous => mergeSummaries(previous, rows, timeColumn).slice(-MAX_CACHED_EXECUTIONS));
       setHasMore(rows.length === PAGE_SIZE);
     } catch (err) {
       if (isCurrent() && pageFlight.current === flight) setError(err instanceof Error ? err.message : "Failed to load more executions");
     } finally {
       if (isCurrent() && pageFlight.current === flight) { pageFlight.current = null; setLoadingMore(false); }
     }
-  }, [enabled, workflowId, scope.owner, hasMore, normalizedFilters, isCurrent]);
+  }, [enabled, workflowId, scope.owner, hasMore, normalizedFilters, timeColumn, timeQueryColumn, isCurrent]);
 
   useEffect(() => {
     currentScope.current = scope;
@@ -350,7 +413,7 @@ export function useExecutionHistory(
     firstFlight.current = pageFlight.current = null; detailFlight.current = null;
     if (previousDataScope.current !== dataScope) {
       previousDataScope.current = dataScope;
-      selection.current = null; setSelectedExecutionId(null); details.current.clear(); cursor.current = null;
+      selection.current = null; setSelectedExecutionId(null); details.current.clear(); cursor.current = firstRow.current = null;
       setExecutions([]); publishSelectedExecution(null); setHasMore(false); setError(null);
     }
     setLoading(false); setLoadingMore(false); setDetailLoading(false);
@@ -363,20 +426,36 @@ export function useExecutionHistory(
     if (!enabled || !workflowId || !scope.owner) return;
     let disposed = false;
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    let summaryTimer: ReturnType<typeof setTimeout> | null = null;
+    const refreshAfterBatch = () => {
+      summaryTimer = null;
+      if (disposed || !isCurrent()) return;
+      if (firstFlight.current) summaryTimer = setTimeout(refreshAfterBatch, 300);
+      else void fetchExecutions(true);
+    };
     const channel = supabase.channel(`workflow-runs-${scope.owner}-${workflowId}`).on("postgres_changes", {
       event: "*", schema: "public", table: "workflow_runs", filter: `workflow_id=eq.${workflowId}`,
     }, payload => {
       if (disposed || !isCurrent()) return;
       const id = String((payload.eventType === "DELETE" ? payload.old : payload.new)?.id ?? "");
       if (payload.eventType === "DELETE") {
-        details.current.delete(id);
-        setExecutions(previous => previous.filter(run => run.id !== id));
-        if (selection.current === id) void setSelectedExecution(null);
+        const selected = selection.current ? details.current.get(selection.current) : undefined;
+        for (const [runId, run] of details.current) {
+          if (runId === id || run.parent_run_id === id) details.current.delete(runId);
+        }
+        setExecutions(previous => previous.filter(run => run.id !== id && run.parent_run_id !== id));
+        if (selection.current === id || selected?.parent_run_id === id) void setSelectedExecution(null);
         return;
       }
       // Retain only summary fields from full realtime payloads.
-      const summary = toSummary(payload.new as ExecutionRun);
-      if (matchesExecutionFilters(summary, normalizedFilters)) setExecutions(previous => mergeSummaries(previous, [summary]).slice(-MAX_CACHED_EXECUTIONS));
+      const bar = barMetadata(payload.new.scope_snapshot);
+      if (bar.parent_run_id) return;
+      const summary = toSummary({ ...payload.new as ExecutionRun, ...bar });
+      if (payload.eventType === "UPDATE" && payload.new.scope_snapshot?.barHistory === true
+        && summary.completed_at && !summaryTimer) {
+        summaryTimer = setTimeout(refreshAfterBatch, 300);
+      }
+      if (matchesExecutionFilters(summary, normalizedFilters)) setExecutions(previous => mergeSummaries(previous, [summary], timeColumn).slice(-MAX_CACHED_EXECUTIONS));
       else {
         setExecutions(previous => previous.filter(run => run.id !== id));
         if (selection.current === id) void setSelectedExecution(null);
@@ -387,8 +466,13 @@ export function useExecutionHistory(
         if (!disposed && isCurrent() && selection.current) void loadDetail(selection.current, true);
       }, 100);
     }).subscribe();
-    return () => { disposed = true; if (refreshTimer) clearTimeout(refreshTimer); void supabase.removeChannel(channel); };
-  }, [enabled, workflowId, scope.owner, isCurrent, normalizedFilters, loadDetail, setSelectedExecution]);
+    return () => {
+      disposed = true;
+      if (refreshTimer) clearTimeout(refreshTimer);
+      if (summaryTimer) clearTimeout(summaryTimer);
+      void supabase.removeChannel(channel);
+    };
+  }, [enabled, workflowId, scope.owner, isCurrent, normalizedFilters, timeColumn, loadDetail, setSelectedExecution, fetchExecutions]);
 
   useEffect(() => {
     if (!enabled || !autoRefresh || !workflowId) return;

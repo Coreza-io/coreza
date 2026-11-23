@@ -19,7 +19,7 @@ import { IndicatorStateManager } from "./indicatorStateManager";
 import { NodeQueueManager } from "./nodeQueueManager";
 import { NodeStoreV2 } from "./nodeStoreV2";
 import { ParameterResolver } from "./parameterResolver";
-import { ExecutionMode, NodeExecutionContext } from "./types";
+import { ExecutionMode, NodeExecutionContext, type NodeResultObserver } from "./types";
 import { enforceWarmupPolicy } from "../backtest/warmup/WarmupPolicy";
 
 export type RuntimeOptions = {
@@ -46,6 +46,7 @@ type ExecutionContextExtras = Partial<
 >;
 
 export abstract class BaseExecutionRuntime {
+  nodeResultObserver?: NodeResultObserver;
   private readonly variableInvocations = new Map<string, number>();
   protected readonly queue = new NodeQueueManager();
   protected readonly nodeExecutorMap = new Map<string, INodeExecutor>();
@@ -272,7 +273,7 @@ export abstract class BaseExecutionRuntime {
       this.routeEdge(edge, result, meta);
   }
 
-  protected handleError(nodeId: string, error: unknown, meta?: IterMeta): void {
+  protected handleError(nodeId: string, error: unknown, meta?: IterMeta, startedAt?: number): void {
     const errorMessage = error instanceof Error ? error.message : String(error);
     const node = this.graph.nodeById.get(nodeId);
     const name = node?.name ?? node?.type;
@@ -286,8 +287,10 @@ export abstract class BaseExecutionRuntime {
     if (!continued) this.failed.add(nodeId);
     this.failedNodeErrors.set(nodeId, errorMessage);
     this.store.setNodeError(nodeId, error instanceof Error ? error : new Error(errorMessage));
-    this.store.setNodeResult(nodeId, continuation ? readNodeResult(continuation)
-      : error instanceof NodeResultError ? error.result : resultFailure(errorMessage));
+    const result = continuation ? readNodeResult(continuation)
+      : error instanceof NodeResultError ? error.result : resultFailure(errorMessage);
+    this.store.setNodeResult(nodeId, result);
+    this.nodeResultObserver?.(nodeId, result, startedAt === undefined ? 0 : performance.now() - startedAt);
     if (continuation) {
       const outgoing = name === "Loop" ? this.graph.doneEdges(nodeId)
         : this.graph.getOutgoingEdges(nodeId).filter(edge => !continuation.control?.sourceHandle || edge.sourceHandle === continuation.control?.sourceHandle);
@@ -302,6 +305,7 @@ export abstract class BaseExecutionRuntime {
     const node = this.graph.nodeById.get(item.nodeId);
     if (!node) return;
 
+    let startedAt: number | undefined;
     try {
       if (this.options.abortSignal?.aborted)
         throw new Error("Workflow cancelled by user");
@@ -324,6 +328,7 @@ export abstract class BaseExecutionRuntime {
 
       const context = this.getExecutionContext(node.id);
       const t0 = performance.now();
+      startedAt = t0;
       const warmupResult = context.isWarmingUp
         ? enforceWarmupPolicy(node)
         : undefined;
@@ -339,7 +344,7 @@ export abstract class BaseExecutionRuntime {
               item.meta,
             ),
           )
-          .catch((error) => this.handleError(node.id, error, item.meta));
+          .catch((error) => this.handleError(node.id, error, item.meta, startedAt));
       }
 
       this.routeNodeResult(
@@ -349,7 +354,7 @@ export abstract class BaseExecutionRuntime {
         item.meta,
       );
     } catch (error) {
-      this.handleError(node.id, error, item.meta);
+      this.handleError(node.id, error, item.meta, startedAt);
     }
   }
 
@@ -502,6 +507,7 @@ export class BacktestExecutionRuntime extends BaseExecutionRuntime {
 
     this.executionOrder.push(node.id);
     this.store.setNodeResult(node.id, result);
+    this.nodeResultObserver?.(node.id, result, elapsed);
 
     if (result.control?.suppressRouting) return;
 

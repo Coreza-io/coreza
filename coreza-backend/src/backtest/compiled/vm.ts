@@ -1,4 +1,4 @@
-import { isFailedResult, NodeResultError } from "../../contracts/nodeResult";
+import { isFailedResult, NodeResultError, resultFailure } from "../../contracts/nodeResult";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -10,6 +10,7 @@ import { isFailedResult, NodeResultError } from "../../contracts/nodeResult";
  */
 
 import { OpCode, BranchEnum, CompiledPlan, type ActivationTarget } from "./types";
+import type { NodeResultObserver } from "../../engine/types";
 import type { NodeResult } from "../../nodes/types";
 
 /**
@@ -31,7 +32,9 @@ import type { NodeResult } from "../../nodes/types";
  * @param plan The pre-compiled execution plan (mutated in place — slots[] and active[])
  * @param barInput The bar event data for this bar
  */
-export async function runBar(plan: CompiledPlan, barInput: any, throwOnNodeFailure = false): Promise<void> {
+export async function runBar(
+  plan: CompiledPlan, barInput: any, throwOnNodeFailure = false, observe?: NodeResultObserver,
+): Promise<void> {
   const {
     instructions, slots, active, activationCounts, satisfiedDependencyGroups,
     requiredActivationCounts, activeInputSlots, entryIndices, inputSlot, ctx,
@@ -81,31 +84,31 @@ export async function runBar(plan: CompiledPlan, barInput: any, throwOnNodeFailu
 
     const instr = instructions[i];
 
-    // Resolve params from slots
-    const resolveStart = timingEnabled ? performance.now() : 0;
-    const params = instr.resolveParams(slots);
-    if (timingEnabled) {
-      resolveParamsMs += performance.now() - resolveStart;
-    }
+    if (observe && ctx.abortSignal?.aborted) throw new Error("Workflow cancelled by user");
+    const resolveStart = timingEnabled || observe ? performance.now() : 0;
+    let execStart = resolveStart;
+    let result: NodeResult;
+    try {
+      const params = instr.resolveParams(slots);
+      if (timingEnabled) resolveParamsMs += performance.now() - resolveStart;
+      if (timingEnabled || observe) execStart = performance.now();
 
-    // Execute node
-    const execStart = timingEnabled ? performance.now() : 0;
-    const execution = instr.exec(
-      instr.node,
-      slots[activeInputSlots[i]],
-      params,
-      ctx,
-    );
-    // The compiler binds sync adapters only when isAsyncNode is false. The
-    // adapter itself retains the thenable guard for contract regressions.
-    const result: NodeResult = instr.isAsyncNode
-      ? await execution
-      : (execution as NodeResult);
-    if (timingEnabled) {
+      const execution = instr.exec(instr.node, slots[activeInputSlots[i]], params, ctx);
+      // Sync adapters retain the thenable guard for contract regressions.
+      result = instr.isAsyncNode ? await execution : (execution as NodeResult);
+    } catch (error) {
+      observe?.(instr.node.id, error instanceof NodeResultError ? error.result
+        : resultFailure(error instanceof Error ? error.message : String(error)), performance.now() - execStart);
+      throw error;
+    }
+    if (timingEnabled || observe) {
       const elapsed = performance.now() - execStart;
-      plan.instructionTimingMs[i] += elapsed;
-      plan.instructionTimingCount[i] += 1;
-      execMs += elapsed;
+      if (timingEnabled) {
+        plan.instructionTimingMs[i] += elapsed;
+        plan.instructionTimingCount[i] += 1;
+        execMs += elapsed;
+      }
+      observe?.(instr.node.id, result, elapsed);
     }
 
     // Store result in slot

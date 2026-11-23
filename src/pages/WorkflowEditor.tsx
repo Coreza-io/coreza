@@ -1,3 +1,5 @@
+import { fromZonedTime } from "date-fns-tz";
+import { useUserPreferences } from "@/contexts/UserPreferencesContext";
 import { selectEditorBatchExecution } from "@/services/editorNodeExecution";
 import { activateEditorSessionVariables, releaseEditorVariableLock } from "@/services/editorVariableScopes";
 import { publishNodeResult } from "@/utils/publishNodeResult";
@@ -96,7 +98,7 @@ import {
   ExecutionSummary,
   useExecutionHistory,
 } from "@/hooks/useExecutionHistory";
-import { ExecutionHistoryPanel } from "@/components/workflow/ExecutionHistoryPanel";
+import { ExecutionHistoryPanel, type BarHistoryFilters } from "@/components/workflow/ExecutionHistoryPanel";
 import { ExecutionDetailView } from "@/components/workflow/ExecutionDetailView";
 import { WorkflowVersionHistory } from "@/components/workflow/WorkflowVersionHistory";
 import { ClusterMetadataEditor, type ClusterMetadataEditIntent } from "@/components/workflow/ClusterMetadataEditor";
@@ -374,6 +376,16 @@ const WorkflowEditorContent = () => {
   const [dateToInput, setDateToInput] = useState<Date | null>(null);
   const [dateFromFilter, setDateFromFilter] = useState<Date | null>(null);
   const [dateToFilter, setDateToFilter] = useState<Date | null>(null);
+  const { timezone: preferredTimezone } = useUserPreferences();
+  const timezone = useMemo(() => {
+    try {
+      return new Intl.DateTimeFormat(undefined, { timeZone: preferredTimezone }).resolvedOptions().timeZone;
+    } catch {
+      return "UTC";
+    }
+  }, [preferredTimezone]);
+  const [barFilterInput, setBarFilterInput] = useState<BarHistoryFilters>({ symbol: "", from: "", to: "" });
+  const [barFilters, setBarFilters] = useState(barFilterInput);
   const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
   const [showSaveConfirmDialog, setShowSaveConfirmDialog] = useState(false);
   const [pendingSaveData, setPendingSaveData] = useState<{
@@ -403,14 +415,26 @@ const WorkflowEditorContent = () => {
     return () => clearTimeout(timeout);
   }, [dateToInput]);
 
-  const executionFilters = useMemo(
-    () => ({
+  useEffect(() => {
+    const timeout = setTimeout(() => setBarFilters(barFilterInput), 400);
+    return () => clearTimeout(timeout);
+  }, [barFilterInput]);
+
+  const executionFilters = useMemo(() => {
+    const toUtc = (value: string) => {
+      if (!value) return undefined;
+      const date = fromZonedTime(value, timezone);
+      return Number.isFinite(date.getTime()) ? date.toISOString() : undefined;
+    };
+    return {
       status: statusFilter,
       dateFrom: dateFromFilter,
       dateTo: dateToFilter,
-    }),
-    [statusFilter, dateFromFilter, dateToFilter],
-  );
+      barSymbol: barFilters.symbol.trim().toUpperCase(),
+      barFrom: toUtc(barFilters.from),
+      barTo: toUtc(barFilters.to),
+    };
+  }, [statusFilter, dateFromFilter, dateToFilter, barFilters, timezone]);
 
   // Execution history hook
   const {
@@ -447,6 +471,9 @@ const WorkflowEditorContent = () => {
     setDateToInput(null);
     setDateFromFilter(null);
     setDateToFilter(null);
+    const emptyBars = { symbol: "", from: "", to: "" };
+    setBarFilterInput(emptyBars);
+    setBarFilters(emptyBars);
   }, []);
 
   // CRITICAL FIX: Initialize with empty state for existing workflows to prevent race condition
@@ -2930,7 +2957,7 @@ const WorkflowEditorContent = () => {
           <ExecutionHistoryPanel
             workflowId={workflowId}
             selectedExecution={selectedExecution}
-              selectedExecutionId={selectedExecutionId}
+            selectedExecutionId={selectedExecutionId}
             onSelectExecution={handleSelectExecution}
             autoRefresh={autoRefresh}
             onAutoRefreshChange={setAutoRefresh}
@@ -2949,6 +2976,9 @@ const WorkflowEditorContent = () => {
             onDateFromChange={setDateFromInput}
             dateTo={dateToInput}
             onDateToChange={setDateToInput}
+            barFilters={barFilterInput}
+            onBarFiltersChange={setBarFilterInput}
+            timezone={timezone}
             onClearFilters={handleClearFilters}
             error={executionsError}
             onRetry={refreshExecutions}
@@ -2957,6 +2987,7 @@ const WorkflowEditorContent = () => {
           {selectedExecution ? (
             <ExecutionDetailView
               execution={selectedExecution}
+              timezone={timezone}
               nodes={nodes}
               edges={edges}
               nodeExecutions={selectedNodeExecutions}

@@ -483,6 +483,7 @@ export class AgentSystem {
         .from("workflow_runs")
         .select("*")
         .eq("id", params.runId)
+        .is("scope_snapshot->>backtestParentRunId", null)
         .single();
 
       if (error) {

@@ -147,6 +147,13 @@ export class WorkflowLifecycleService {
           workflow.edges,
           workflow.node_clusters,
           workflow.revision,
+          {
+            scopeKind: "workflow",
+            scopeSnapshot: {
+              executionMode: "backtest",
+              barHistory: process.env.BACKTEST_EXECUTION_HISTORY_ENABLED === "true",
+            },
+          },
         );
 
         const runId = (run as any).id;
@@ -222,7 +229,7 @@ export class WorkflowLifecycleService {
       }
       if (runId) {
         await this.runRepo.requestCancellation(runId);
-        this.backtest.cancelRun(runId);
+        await this.backtest.cancelRun(runId);
         await this.runRepo.markRunCancelled(runId);
       }
       const updated = await this.workflowRepo.releaseBacktestActivation(userId, workflow.id, runId);

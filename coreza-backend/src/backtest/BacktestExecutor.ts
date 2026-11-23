@@ -615,6 +615,7 @@ export class BacktestExecutor implements INodeExecutor {
           ? { interval, symbols, indicators: discoveredIndicators }
           : undefined,
         persistBacktest,
+        context?.runId,
       );
 
       // Replacing a session destroys its execution context; seed only after replacement.

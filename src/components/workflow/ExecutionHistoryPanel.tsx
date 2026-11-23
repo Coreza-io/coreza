@@ -10,6 +10,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import { format } from "date-fns";
+import { formatInTimeZone } from "date-fns-tz";
 import {
   RefreshCw,
   Loader2,
@@ -17,6 +18,7 @@ import {
   Filter,
   AlertCircle,
 } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -38,6 +40,12 @@ import {
 import { Calendar } from "@/components/ui/calendar";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
+export interface BarHistoryFilters {
+  symbol: string;
+  from: string;
+  to: string;
+}
+
 interface ExecutionHistoryPanelProps {
   workflowId: string | null;
   selectedExecution: ExecutionSummary | null;
@@ -58,6 +66,9 @@ interface ExecutionHistoryPanelProps {
   onDateFromChange: (date: Date | null) => void;
   dateTo: Date | null;
   onDateToChange: (date: Date | null) => void;
+  barFilters: BarHistoryFilters;
+  onBarFiltersChange: (filters: BarHistoryFilters) => void;
+  timezone: string;
   onClearFilters: () => void;
   error?: string | null;
   onRetry?: () => void;
@@ -83,6 +94,9 @@ export function ExecutionHistoryPanel({
   onDateFromChange,
   dateTo,
   onDateToChange,
+  barFilters,
+  onBarFiltersChange,
+  timezone,
   onClearFilters,
   error,
   onRetry,
@@ -93,8 +107,8 @@ export function ExecutionHistoryPanel({
   const listParentRef = useRef<HTMLDivElement | null>(null);
 
   const filtersActive = useMemo(
-    () => statusFilter !== "all" || !!dateFrom || !!dateTo,
-    [dateFrom, dateTo, statusFilter],
+    () => statusFilter !== "all" || !!dateFrom || !!dateTo || Object.values(barFilters).some(Boolean),
+    [dateFrom, dateTo, statusFilter, barFilters],
   );
 
   const shouldVirtualize = executions.length > 50;
@@ -147,29 +161,34 @@ export function ExecutionHistoryPanel({
     }
   };
 
-  const renderExecutionRow = (execution: ExecutionSummary) => (
-    <button
-      key={execution.id}
-      onClick={() => onSelectExecution(execution)}
-      className={cn(
-        "w-full text-left p-3 mb-1 transition-colors border-l-4",
-        "hover:bg-muted/50",
-        getStatusAccent(execution.status),
-        (selectedExecutionId ?? selectedExecution?.id) === execution.id && "bg-muted",
-      )}
-      aria-label={`Execution from ${format(new Date(execution.started_at), "MMM d, HH:mm:ss")}`}
-    >
-      <div className="text-sm font-medium">
-        {format(new Date(execution.started_at), "MMM d, HH:mm:ss")}
-      </div>
-      <div
-        className="text-xs text-muted-foreground mt-1"
-        title="Elapsed start-to-finish workflow time. The selected run shows recorded node time separately."
+  const renderExecutionRow = (execution: ExecutionSummary) => {
+    const title = execution.bar_time
+      ? `${execution.bar_symbol} · ${formatInTimeZone(execution.bar_time, timezone, "MMM d, yyyy HH:mm:ss zzz")}`
+      : format(new Date(execution.started_at), "MMM d, HH:mm:ss");
+    return (
+      <button
+        key={execution.id}
+        onClick={() => onSelectExecution(execution)}
+        className={cn(
+          "w-full text-left p-3 mb-1 transition-colors border-l-4",
+          "hover:bg-muted/50",
+          getStatusAccent(execution.status),
+          (selectedExecutionId ?? selectedExecution?.id) === execution.id && "bg-muted",
+        )}
+        aria-label={execution.bar_time ? `Backtest bar ${title}` : `Execution from ${title}`}
       >
-        {getStatusLabel(execution.status)} · Elapsed: {getDuration(execution)}
-      </div>
-    </button>
-  );
+        <div className="text-sm font-medium">
+          {title}
+        </div>
+        <div
+          className="text-xs text-muted-foreground mt-1"
+          title="Elapsed start-to-finish workflow time. The selected run shows recorded node time separately."
+        >
+          {getStatusLabel(execution.status)} · Elapsed: {getDuration(execution)}
+        </div>
+      </button>
+    );
+  };
 
   return (
     <div className="w-72 border-r border-border bg-card flex flex-col h-full">
@@ -287,6 +306,36 @@ export function ExecutionHistoryPanel({
                       </Popover>
                     </div>
                   </div>
+
+                  <fieldset className="space-y-2">
+                    <legend className="text-sm font-medium">Historical bars ({timezone})</legend>
+                    <label className="block text-xs">
+                      Symbol
+                      <Input
+                        value={barFilters.symbol}
+                        onChange={(event) => onBarFiltersChange({ ...barFilters, symbol: event.target.value })}
+                        placeholder="e.g. AAPL"
+                      />
+                    </label>
+                    <label className="block text-xs">
+                      From
+                      <Input
+                        type="datetime-local"
+                        step={1}
+                        value={barFilters.from}
+                        onChange={(event) => onBarFiltersChange({ ...barFilters, from: event.target.value })}
+                      />
+                    </label>
+                    <label className="block text-xs">
+                      To
+                      <Input
+                        type="datetime-local"
+                        step={1}
+                        value={barFilters.to}
+                        onChange={(event) => onBarFiltersChange({ ...barFilters, to: event.target.value })}
+                      />
+                    </label>
+                  </fieldset>
 
                   {filtersActive && (
                     <Button

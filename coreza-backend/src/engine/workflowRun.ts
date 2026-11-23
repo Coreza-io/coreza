@@ -18,6 +18,7 @@ import {
   MultiBarExecutionContext,
   WorkflowExecutionResult,
   NodeExecutionOutcome,
+  type NodeResultObserver,
   createNodeOutcomes,
   toExecutionError,
 } from "./types";
@@ -218,6 +219,10 @@ export class WorkflowRun {
   /** Seeds read-only external expression context without claiming node execution. */
   seedContext(results: NodeResults): void {
     for (const [nodeId, result] of Object.entries(results)) this.store.setNodeResult(nodeId, readNodeResult(result));
+  }
+
+  setNodeResultObserver(observer?: NodeResultObserver): void {
+    this.runtime.nodeResultObserver = observer;
   }
 
   resetForNextBar(full = false): void {

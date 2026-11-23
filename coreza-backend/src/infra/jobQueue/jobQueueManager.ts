@@ -324,7 +324,7 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
         status: "running",
         started_at: new Date().toISOString(),
       })
-      .eq("id", runId).eq("workflow_id", workflowId).eq("initiated_by", userId)
+      .eq("id", runId).eq("workflow_id", workflowId).eq("initiated_by", userId).is("scope_snapshot->>backtestParentRunId", null)
       .eq("status", "queued").select("id").maybeSingle();
     if (startError) throw new Error(`Failed to start backtest run: ${startError.message}`);
     if (!started || abortSignal?.aborted) throw new Error("Backtest run cancelled before startup");
@@ -468,6 +468,7 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
               error_message: "Workflow cancelled by user",
             })
             .eq("id", job.data.runId)
+            .is("scope_snapshot->>backtestParentRunId", null)
             .in("status", ["running", "queued"]);
         }
       } catch (err) {

@@ -132,16 +132,15 @@ export class WorkflowRepository {
   }
 
   async delete(userId: string, workflowId: string) {
-    const { data, error } = await supabase.schema("public")
+    const { error } = await supabase
       .from("workflows")
       .delete()
       .eq("id", workflowId)
-      .eq("user_id", userId)
-      .not("is_active", "is", true)
-      .select("id").maybeSingle();
+      .eq("user_id", userId);
 
-    if (error) throw createError("Failed to delete workflow", 500);
-    if (!data) throw createError("Workflow could not be deleted while active", 409);
+    if (error) {
+      throw createError("Failed to delete workflow", 500);
+    }
   }
 
   async setActivationState(
@@ -172,6 +171,16 @@ export class WorkflowRepository {
       throw createError("Failed to update workflow", 500);
     }
 
+    return data;
+  }
+
+  async claimBacktestActivation(userId: string, workflowId: string, runId: string) {
+    const { data, error } = await (supabase.from("workflows") as any)
+      .update({ is_active: true, active_execution_id: runId, schedule_cron: null, updated_at: new Date().toISOString() })
+      .eq("id", workflowId).eq("user_id", userId).eq("is_active", false)
+      .select().maybeSingle();
+    if (error) throw createError("Failed to claim backtest activation", 500);
+    if (!data) throw createError("Workflow is already active", 409);
     return data;
   }
 

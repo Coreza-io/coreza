@@ -14,7 +14,6 @@ import { getRedisQueue } from "../config/redis";
 import logger from "../utils/logger";
 import { WorkflowRunnerManager } from "../services/workflowRunnerManager";
 import { BacktestSessionManager } from "../backtest";
-import { drainBacktestActivations } from "../backtest/BacktestRunControl";
 import { PortfolioManager } from "../simulation/PortfolioManager";
 
 export interface ShutdownStats {
@@ -90,8 +89,6 @@ export class GracefulShutdownHandler {
 
     try {
       logger.info("🛑 Initiating graceful shutdown...");
-
-      await drainBacktestActivations();
 
       // 1. Pause all workers (stop taking new jobs)
       logger.info("⏸️ Pausing workers...");
@@ -213,7 +210,6 @@ export class GracefulShutdownHandler {
           const { error } = await (supabase.from("workflow_runs") as any)
             .update(updatePayload)
             .eq("id", runId)
-            .is("parent_run_id", null)
             .in("status", ["running", "queued"]);
 
           if (!error) {

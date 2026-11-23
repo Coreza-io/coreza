@@ -9,7 +9,6 @@
  */
 
 import { Queue } from "bullmq";
-import { BACKTEST_LEASE_SECONDS, hasBacktestLease } from "../backtest/BacktestRunControl";
 import { supabase } from "../config/supabase";
 import { getRedisQueue, getRedisCache } from "../config/redis";
 import logger from "../utils/logger";
@@ -75,8 +74,6 @@ export class WorkflowRecoveryService {
       const { data: staleRuns, error } = await supabase
         .from("workflow_runs")
         .select("id, workflow_id, status, started_at")
-        .is("parent_run_id", null)
-        .not("scope_snapshot", "cs", '{"executionMode":"backtest"}')
         .in("status", ["running", "queued"])
         .lt("started_at", thresholdTime)
         .order("started_at", { ascending: true });
@@ -126,38 +123,6 @@ export class WorkflowRecoveryService {
       logger.error({ err: error }, "Recovery process failed");
       stats.errors++;
       return stats;
-    }
-  }
-
-  async recoverStaleBacktests(): Promise<void> {
-    const cutoff = new Date(Date.now() - BACKTEST_LEASE_SECONDS * 1000).toISOString();
-    let afterId: string | undefined;
-    for (;;) {
-      let query = supabase.schema("public").from("workflow_runs")
-        .select("id,workflow_id,initiated_by,status,started_at")
-        .is("parent_run_id", null)
-        .contains("scope_snapshot", { executionMode: "backtest" })
-        .in("status", ["queued", "running", "cancelling"])
-        .lt("started_at", cutoff);
-      if (afterId) query = query.gt("id", afterId);
-      const { data, error } = await query.order("id").limit(100).abortSignal(AbortSignal.timeout(5_000));
-      if (error) throw new Error(`Failed to inspect stale backtests: ${error.message}`);
-      for (const run of data ?? []) {
-        try {
-          if (await hasBacktestLease(run.id)) continue;
-          const { error: recoveryError } = await supabase.schema("public").rpc("finalize_backtest_run", {
-            p_run_id: run.id, p_workflow_id: run.workflow_id, p_user_id: run.initiated_by,
-            p_status: "failed", p_result: null,
-            p_error_message: "Backtest worker stopped before completion. Bar history may be incomplete.",
-            p_expected_started_at: run.started_at, p_expected_status: run.status,
-          }).abortSignal(AbortSignal.timeout(5_000));
-          if (recoveryError) throw new Error(recoveryError.message);
-        } catch (err) {
-          logger.warn({ err, runId: run.id }, "Could not recover stale backtest");
-        }
-      }
-      if (!data || data.length < 100) return;
-      afterId = data[data.length - 1].id;
     }
   }
 

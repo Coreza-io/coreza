@@ -22,8 +22,6 @@ WITH required_tables(name) AS (
     ('guard_nested_workflow_writer()'), ('cluster_hierarchy_write_ready()'),
     ('validate_reporting_scope()'), ('mirror_backtest_reporting()'),
     ('write_backtest_bar_batch(uuid,jsonb)'), ('write_backtest_bar_result_part(jsonb,integer,text,boolean)'),
-    ('start_backtest_run(uuid,uuid,uuid)'), ('finalize_backtest_run(uuid,uuid,uuid,text,text,jsonb,timestamptz,text)'),
-    ('create_backtest_report(uuid,jsonb)'),
     ('claim_reporting_activation(uuid,uuid,uuid)'),
     ('complete_reporting_activation(uuid,uuid,uuid,text)'),
     ('reporting_trade_aggregate(uuid)'), ('mark_reporting_changes()'),

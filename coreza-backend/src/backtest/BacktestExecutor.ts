@@ -321,27 +321,32 @@ export class BacktestExecutor implements INodeExecutor {
             );
         }
 
-        if (!context?.runId) return createErrorOutput("Saved backtest run ID is required");
-        const { data: reportId, error: insertError } = await supabaseClient.schema("public")
-          .rpc("create_backtest_report", {
-            p_run_id: context.runId,
-            p_report: {
-              user_id: userId,
-              workflow_id: workflowId,
-              name: params.name || `Backtest ${new Date().toISOString()}`,
-              description: params.description || null,
-              initial_capital: config.initialCapital,
-              commission_rate: config.commissionValue,
-              slippage_rate: config.slippageValue,
-              start_date: params.start_date || new Date().toISOString().split("T")[0],
-              end_date: params.end_date || new Date().toISOString().split("T")[0],
-            },
-          }).abortSignal(AbortSignal.timeout(15_000));
+        const { data: backtest, error: insertError } = await supabaseClient
+          .from("backtests")
+          .insert({
+            user_id: userId,
+            workflow_id: workflowId,
+            name: params.name || `Backtest ${new Date().toISOString()}`,
+            description: params.description || null,
+            status: "running",
+            initial_capital: config.initialCapital,
+            commission_rate: config.commissionValue,
+            slippage_rate: config.slippageValue,
+            start_date:
+              params.start_date || new Date().toISOString().split("T")[0],
+            end_date: params.end_date || new Date().toISOString().split("T")[0],
+            started_at: new Date().toISOString(),
+          } as any)
+          .select("id")
+          .single();
 
-        if (insertError || typeof reportId !== "string") {
-          return createErrorOutput(`Failed to create backtest: ${insertError?.message ?? "missing report ID"}`);
+        if (insertError || !backtest) {
+          return createErrorOutput(
+              `Failed to create backtest: ${insertError?.message}`,
+            );
         }
-        backtestId = reportId;
+
+        backtestId = (backtest as { id: string }).id;
       }
       createdBacktestId = backtestId;
       const executionId =
@@ -580,7 +585,7 @@ export class BacktestExecutor implements INodeExecutor {
         || entryNodeIds.some((id) => !strategyNodes.some((candidate) => candidate.id === id)))) {
         throw new Error("Backtest strategy requires valid connected entry nodes");
       }
-      if (context?.abortSignal?.aborted) throw context.abortSignal.reason ?? new Error("Workflow cancelled by user");
+      if (context?.abortSignal?.aborted) throw new Error("Workflow cancelled by user");
       const session = BacktestSessionManager.getInstance().createSession(
         backtestId,
         workflowId,
@@ -625,13 +630,13 @@ export class BacktestExecutor implements INodeExecutor {
 
       let ownedNodeResults: Record<string, NodeResult> | undefined;
       if (!isManual) {
-        const cancelOwnedSession = () => session.cancel(context?.abortSignal?.reason);
+        const cancelOwnedSession = () => session.cancel();
         context?.abortSignal?.addEventListener("abort", cancelOwnedSession, { once: true });
         try {
           if (context?.abortSignal?.aborted) cancelOwnedSession();
           await session.initialize();
           await session.runAll();
-          if (context?.abortSignal?.aborted) throw context.abortSignal.reason ?? new Error("Workflow cancelled by user");
+          if (context?.abortSignal?.aborted) throw new Error("Workflow cancelled by user");
           ownedNodeResults = session.getLatestNodeSnapshots();
         } catch (error) {
           const snapshots = session.getLatestNodeSnapshots();

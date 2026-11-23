@@ -162,39 +162,7 @@ CREATE TABLE IF NOT EXISTS public.backtests (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
--- Save the reporting ID in the existing parent metadata in the same transaction.
-CREATE OR REPLACE FUNCTION public.create_backtest_report(p_run_id uuid, p_report jsonb)
-RETURNS uuid
-LANGUAGE plpgsql
-SET search_path = pg_catalog, public
-AS $$
-DECLARE
-  report public.backtests%ROWTYPE := jsonb_populate_record(NULL::public.backtests, p_report);
-  report_id uuid;
-BEGIN
-  SELECT (scope_snapshot->>'backtestId')::uuid INTO report_id FROM public.workflow_runs
-    WHERE id = p_run_id AND workflow_id = report.workflow_id AND initiated_by = report.user_id
-      AND parent_run_id IS NULL AND status = 'running'
-      AND scope_snapshot @> '{"executionMode":"backtest"}'
-    FOR NO KEY UPDATE;
-  IF NOT FOUND THEN RAISE EXCEPTION 'backtest reporting parent is no longer active'; END IF;
-  IF report_id IS NOT NULL THEN RETURN report_id; END IF;
-
-  INSERT INTO public.backtests
-    (workflow_id, user_id, name, description, status, initial_capital, commission_rate, slippage_rate,
-     start_date, end_date, started_at)
-    VALUES (report.workflow_id, report.user_id, report.name, report.description, 'running', report.initial_capital,
-      report.commission_rate, report.slippage_rate, report.start_date, report.end_date, now())
-    RETURNING id INTO report_id;
-  UPDATE public.workflow_runs
-    SET scope_snapshot = scope_snapshot || jsonb_build_object('backtestId', report_id)
-    WHERE id = p_run_id;
-  RETURN report_id;
-END $$;
-REVOKE ALL ON FUNCTION public.create_backtest_report(uuid,jsonb) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.create_backtest_report(uuid,jsonb) TO service_role;
-
--- Lock the parent once per batch so recovery and finalization cannot race inserts.
+-- Lock the parent once per batch so finalization cannot race inserts.
 CREATE OR REPLACE FUNCTION public.write_backtest_bar_batch(p_run_id uuid, p_rows jsonb)
 RETURNS void
 LANGUAGE plpgsql
@@ -283,86 +251,6 @@ BEGIN
 END $$;
 REVOKE ALL ON FUNCTION public.write_backtest_bar_result_part(jsonb,integer,text,boolean) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.write_backtest_bar_result_part(jsonb,integer,text,boolean) TO service_role;
-
-CREATE OR REPLACE FUNCTION public.start_backtest_run(p_run_id uuid, p_workflow_id uuid, p_user_id uuid)
-RETURNS boolean
-LANGUAGE plpgsql
-SET search_path = pg_catalog, public
-AS $$
-BEGIN
-  PERFORM 1 FROM public.workflow_runs
-    WHERE id = p_run_id AND workflow_id = p_workflow_id AND initiated_by = p_user_id
-      AND parent_run_id IS NULL AND status = 'queued'
-      AND scope_snapshot @> '{"executionMode":"backtest"}'
-    FOR NO KEY UPDATE;
-  IF NOT FOUND THEN RETURN false; END IF;
-
-  UPDATE public.workflows
-    SET is_active = true, active_execution_id = p_run_id, schedule_cron = NULL, updated_at = now()
-    WHERE id = p_workflow_id AND user_id = p_user_id AND is_active IS FALSE;
-  IF NOT FOUND THEN RETURN false; END IF;
-
-  UPDATE public.workflow_runs SET status = 'running', started_at = now() WHERE id = p_run_id;
-  RETURN true;
-END $$;
-REVOKE ALL ON FUNCTION public.start_backtest_run(uuid,uuid,uuid) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.start_backtest_run(uuid,uuid,uuid) TO service_role;
-
-CREATE OR REPLACE FUNCTION public.finalize_backtest_run(
-  p_run_id uuid, p_workflow_id uuid, p_user_id uuid, p_status text, p_error_message text, p_result jsonb,
-  p_expected_started_at timestamptz DEFAULT NULL, p_expected_status text DEFAULT NULL
-) RETURNS text
-LANGUAGE plpgsql
-SET search_path = pg_catalog, public
-AS $$
-DECLARE
-  prior_status text;
-  final_status text;
-  report_id uuid;
-  diagnostic text := p_error_message;
-BEGIN
-  IF p_status IS NULL OR p_status NOT IN ('success', 'failed') THEN RAISE EXCEPTION 'invalid backtest outcome'; END IF;
-
-  SELECT status, (scope_snapshot->>'backtestId')::uuid INTO prior_status, report_id FROM public.workflow_runs
-    WHERE id = p_run_id AND workflow_id = p_workflow_id AND initiated_by = p_user_id
-      AND parent_run_id IS NULL AND scope_snapshot @> '{"executionMode":"backtest"}'
-      AND (p_expected_started_at IS NULL OR started_at = p_expected_started_at)
-      AND (p_expected_status IS NULL OR status = p_expected_status)
-    FOR NO KEY UPDATE;
-  IF NOT FOUND THEN RETURN NULL; END IF;
-  IF prior_status NOT IN ('queued', 'running', 'cancelling') THEN RETURN prior_status; END IF;
-
-  final_status := CASE WHEN prior_status = 'cancelling' THEN 'cancelled' ELSE p_status END;
-  IF final_status = 'cancelled' THEN
-    diagnostic := coalesce(diagnostic, 'Run cancelled by user');
-    IF p_result->'success' = 'true'::jsonb THEN
-      p_result := p_result || jsonb_build_object('success', false, 'error',
-        jsonb_build_object('code', 'CANCELLED', 'message', diagnostic, 'phase', 'execute'));
-    END IF;
-  END IF;
-
-  UPDATE public.workflow_runs
-    SET status = final_status, completed_at = now(), error_message = diagnostic,
-      cancel_acknowledged_at = CASE WHEN final_status = 'cancelled' THEN now() ELSE cancel_acknowledged_at END,
-      result = coalesce(p_result, result)
-    WHERE id = p_run_id;
-
-  -- Successful simulation results survive a history failure. Rows stranded by a worker exit are terminal here.
-  IF final_status IN ('failed', 'cancelled') THEN
-    UPDATE public.backtests
-      SET status = final_status, completed_at = now(), error_message = diagnostic
-      WHERE id = report_id AND workflow_id = p_workflow_id AND user_id = p_user_id
-        AND status IN ('pending', 'running');
-  END IF;
-
-  UPDATE public.workflows
-    SET is_active = false, active_execution_id = NULL, schedule_cron = NULL, updated_at = now()
-    WHERE id = p_workflow_id AND user_id = p_user_id AND active_execution_id = p_run_id;
-  DELETE FROM public.workflow_bar_result_parts WHERE parent_run_id = p_run_id;
-  RETURN final_status;
-END $$;
-REVOKE ALL ON FUNCTION public.finalize_backtest_run(uuid,uuid,uuid,text,text,jsonb,timestamptz,text) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.finalize_backtest_run(uuid,uuid,uuid,text,text,jsonb,timestamptz,text) TO service_role;
 
 CREATE TABLE IF NOT EXISTS public.live_fills (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -99,11 +99,9 @@ export function useWorkflowActivation(scopeKey?: string) {
       }
       toast({
         title: "Success",
-        description: result.message === "Backtest cancellation requested"
-          ? result.message
-          : newStatus && !actualStatus && result.message === "Backtest completed"
-            ? "Backtest completed successfully"
-            : `Workflow ${actualStatus ? "activated" : "deactivated"} successfully`,
+        description: newStatus && !actualStatus && result.message === "Backtest completed"
+          ? "Backtest completed successfully"
+          : `Workflow ${actualStatus ? "activated" : "deactivated"} successfully`,
       });
 
       return actualStatus;

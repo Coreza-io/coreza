@@ -11,7 +11,6 @@ services:
       target: production
     container_name: coreza-backend
     restart: unless-stopped
-    stop_grace_period: 2m
     ports:
       - "8000:8000"
       - "8081:8081"  # WebSocket port

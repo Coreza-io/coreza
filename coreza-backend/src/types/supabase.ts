@@ -247,10 +247,6 @@ export interface Database {
 
     };
     Functions: {
-      create_backtest_report: {
-        Args: { p_run_id: string; p_report: Record<string, unknown> };
-        Returns: string;
-      };
       write_backtest_bar_result_part: {
         Args: { p_row: Record<string, unknown>; p_part_index: number; p_payload: string | null; p_final: boolean };
         Returns: undefined;
@@ -258,23 +254,6 @@ export interface Database {
       write_backtest_bar_batch: {
         Args: { p_run_id: string; p_rows: Database["public"]["Tables"]["workflow_runs"]["Insert"][] };
         Returns: undefined;
-      };
-      start_backtest_run: {
-        Args: { p_run_id: string; p_workflow_id: string; p_user_id: string };
-        Returns: boolean;
-      };
-      finalize_backtest_run: {
-        Args: {
-          p_run_id: string;
-          p_workflow_id: string;
-          p_user_id: string;
-          p_status: "success" | "failed";
-          p_error_message: string | null;
-          p_result: Record<string, unknown> | null;
-          p_expected_started_at?: string;
-          p_expected_status?: string;
-        };
-        Returns: string | null;
       };
     };
   };

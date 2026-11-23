@@ -10,15 +10,26 @@ export class WorkflowRunRepository {
     status: "success" | "failed", errorMessage: string | null = null,
     result?: WorkflowExecutionResult,
   ): Promise<boolean> {
-    const { data, error } = await supabase.schema("public").rpc("finalize_backtest_run", {
-      p_run_id: runId, p_workflow_id: workflowId, p_user_id: userId,
-      p_status: status, p_error_message: errorMessage, p_result: result ? serializeWorkflowRunResult(result) : null,
-    }).abortSignal(AbortSignal.timeout(15_000));
+    const { data, error } = await (supabase.from("workflow_runs") as any)
+      .update({ status, completed_at: new Date().toISOString(), error_message: errorMessage,
+        ...(result ? { result: serializeWorkflowRunResult(result) } : {}),
+      })
+      .eq("id", runId).eq("workflow_id", workflowId).eq("initiated_by", userId).is("parent_run_id", null)
+      .in("status", ["queued", "running"]).select("id").maybeSingle();
     if (error) throw createError("Failed to finalize backtest run", 500);
-    if (data !== status && data !== "cancelled") {
-      throw createError("Backtest run is no longer executable", 409);
-    }
-    return data !== "cancelled";
+    if (data) return true;
+    const now = new Date().toISOString();
+    const { data: cancelled, error: cancelError } = await supabase.schema("public").from("workflow_runs")
+      .update({
+        status: "cancelled", completed_at: now, cancel_acknowledged_at: now,
+        error_message: errorMessage ?? "Run cancelled by user",
+        ...(result ? { result: serializeWorkflowRunResult(result) } : {}),
+      })
+      .eq("id", runId).eq("workflow_id", workflowId).eq("initiated_by", userId).is("parent_run_id", null)
+      .in("status", ["cancelling", "cancelled"]).select("id").maybeSingle();
+    if (cancelError) throw createError("Failed to finalize backtest cancellation", 500);
+    if (!cancelled) throw createError("Backtest run is no longer executable", 409);
+    return false;
   }
 
   async createRun(
@@ -83,25 +94,7 @@ export class WorkflowRunRepository {
     const { data, error } = await supabase.from("workflow_runs").select("id,status,scope_snapshot")
       .eq("id", runId).eq("workflow_id", workflowId).eq("initiated_by", userId).is("parent_run_id", null).single();
     if (error || !data) throw createError("Workflow run not found", 404);
-    return data as { id: string; status: string; scope_snapshot: { memberNodeIds?: unknown; executionMode?: string } | null };
-  }
-
-  async hasBacktestRun(userId: string, workflowId: string, runId: string): Promise<boolean> {
-    const { data, error } = await supabase.schema("public").from("workflow_runs").select("id")
-      .eq("id", runId).eq("workflow_id", workflowId).eq("initiated_by", userId).is("parent_run_id", null)
-      .contains("scope_snapshot", { executionMode: "backtest" }).maybeSingle();
-    if (error) throw createError("Failed to inspect backtest activation", 500);
-    return Boolean(data);
-  }
-
-  async waitForBacktestCancellation(userId: string, workflowId: string, runId: string) {
-    const deadline = performance.now() + 5_000;
-    let run = await this.getOwnedRun(userId, workflowId, runId);
-    while (run.status === "cancelling" && performance.now() < deadline) {
-      await new Promise(resolve => setTimeout(resolve, 500));
-      run = await this.getOwnedRun(userId, workflowId, runId);
-    }
-    return run;
+    return data as { id: string; status: string; scope_snapshot: { memberNodeIds?: unknown } | null };
   }
 
   async requestCancellation(runId: string): Promise<void> {
@@ -109,6 +102,14 @@ export class WorkflowRunRepository {
       status: "cancelling", cancel_requested_at: new Date().toISOString(), error_message: null,
     }).eq("id", runId).is("parent_run_id", null).in("status", ["pending", "queued", "running"]);
     if (error) throw createError("Failed to request workflow cancellation", 500);
+  }
+
+  async markRunCancelled(runId: string): Promise<void> {
+    const now = new Date().toISOString();
+    const { error } = await (supabase.from("workflow_runs") as any).update({
+      status: "cancelled", cancel_acknowledged_at: now, completed_at: now, error_message: "Run cancelled by user",
+    }).eq("id", runId).is("parent_run_id", null).eq("status", "cancelling");
+    if (error) throw createError("Failed to cancel workflow run", 500);
   }
 
   async finalizeQueuedCancellation(runId: string, memberNodeIds: readonly string[]): Promise<void> {
@@ -195,7 +196,6 @@ export class WorkflowRunRepository {
       })
       .eq("workflow_id", workflowId)
       .is("parent_run_id", null)
-      .not("scope_snapshot", "cs", '{"executionMode":"backtest"}')
       .in("status", ["running", "queued"])
       .select("id");
 

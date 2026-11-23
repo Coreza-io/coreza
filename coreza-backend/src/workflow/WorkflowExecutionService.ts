@@ -5,7 +5,7 @@ import { WorkflowRunRepository } from "./WorkflowRunRepository";
 import { ExecuteWorkflowInput } from "./schemas";
 import { createError } from "../middleware/errorHandler";
 import { createHash } from "crypto";
-import { signalBacktestCancellation } from "../backtest/BacktestRunControl";
+import { BacktestLifecycleAdapter } from "../backtest/BacktestLifecycleAdapter";
 import type { IWorkflowJobQueue } from "../infra/jobQueue/queueInterface";
 
 function requestError(code: string, statusCode: number) {
@@ -138,10 +138,11 @@ export class WorkflowExecutionService {
       return { run_id: runId, status: run.status, cancelled: run.status === "cancelled" };
     }
     await this.runRepo.requestCancellation(runId);
-    if (run.scope_snapshot?.executionMode === "backtest") {
-      signalBacktestCancellation(runId);
-      const durable = await this.runRepo.waitForBacktestCancellation(userId, workflowId, runId);
-      return { run_id: runId, status: durable.status, cancelled: durable.status === "cancelled" };
+    const backtestCancellation = new BacktestLifecycleAdapter().cancelRun(runId);
+    if (backtestCancellation) {
+      await backtestCancellation;
+      await this.runRepo.markRunCancelled(runId);
+      return { run_id: runId, status: "cancelled", cancelled: true };
     }
     const cancellation = await this.executionQueue.cancelWorkflowRun(userId, workflowId, runId);
     if (cancellation.removedQueued && !cancellation.signalledActive) {

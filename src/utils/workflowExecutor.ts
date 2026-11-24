@@ -752,7 +752,7 @@ export class WorkflowExecutor {
       .map((n) => n.id);
     const queue: string[] = [...roots];
     const branchOrders = this.context.edges.some(edge => readBranchOrder(edge.data) !== undefined)
-      ? buildBranchOrders(branchOrderNodes(this.context.nodes), this.context.edges)
+      ? buildBranchOrders(branchOrderNodes(this.context.nodes), this.context.edges)?.priorities
       : undefined;
 
     if (import.meta.env.DEV) console.log(

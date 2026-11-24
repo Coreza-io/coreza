@@ -16,6 +16,7 @@ import { acceptEditorExecution } from "./executionGeneration";
 import { executeEditorNode, type EditorNodeActionSnapshot } from "@/services/editorNodeExecution";
 import type { ExecutionVisualSnapshot } from "@/domain/clusters/executionVisuals";
 import { getControlResultHandle } from "./controlResult";
+import { branchOrderNodes, buildBranchOrders, orderedReadyIndex, readBranchOrder } from "@/domain/branchOrder";
 
 export interface ExecutorContext {
   nodes: Node[];
@@ -750,6 +751,9 @@ export class WorkflowExecutor {
       )
       .map((n) => n.id);
     const queue: string[] = [...roots];
+    const branchOrders = this.context.edges.some(edge => readBranchOrder(edge.data) !== undefined)
+      ? buildBranchOrders(branchOrderNodes(this.context.nodes), this.context.edges)
+      : undefined;
 
     if (import.meta.env.DEV) console.log(
       `🎯 [WORKFLOW EXECUTOR] Found ${roots.length} root nodes:`,
@@ -768,7 +772,8 @@ export class WorkflowExecutor {
           break;
         }
 
-        const id = queue.shift()!;
+        const index = branchOrders ? orderedReadyIndex(queue, 0, branchOrders, id => id) : 0;
+        const id = index === 0 ? queue.shift()! : queue.splice(index, 1)[0];
         //if (executed.has(id) || failed.has(id)) continue;
         const node = this.nodeById.get(id);
 

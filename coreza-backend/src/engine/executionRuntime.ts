@@ -103,7 +103,7 @@ export abstract class BaseExecutionRuntime {
   }
 
   dequeue(): QueueItem | undefined {
-    return this.queue.dequeue();
+    return this.queue.dequeue(this.allowedExecutableNodeIds ? undefined : this.graph.branchOrders);
   }
 
   getExecutionOrder(): string[] {
@@ -424,7 +424,7 @@ export class StandardExecutionRuntime extends BaseExecutionRuntime {
   }
 
   override dequeue(): QueueItem | undefined {
-    const item = this.queue.dequeue();
+    const item = super.dequeue();
     if (!item) return undefined;
     this.enqueuedKeys.delete(this.keyFor(item));
     return item;

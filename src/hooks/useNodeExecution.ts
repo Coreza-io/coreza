@@ -19,7 +19,8 @@ import { canContinueNodeError, continuedNodeError } from "../../coreza-backend/s
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useNodeId } from "@xyflow/react";
-import type { Node } from "@xyflow/react";
+import type { Edge, Node } from "@xyflow/react";
+import { readBranchOrder } from "@/domain/branchOrder";
 import { useAuth } from "@/contexts/AuthContext";
 import { useExecutionStore, useExecutionStoreNotify } from "@/contexts/ExecutionStoreContext";
 import { useStableNodes } from "@/contexts/StableNodeContext";
@@ -56,6 +57,12 @@ import { startManualAgentActivity } from "@/services/agentActivity";
 import { getEditorExecutionGeneration } from "@/utils/executionGeneration";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+
+function serializeExecutionEdge(edge: Pick<Edge, "id" | "source" | "target" | "sourceHandle" | "targetHandle" | "data">) {
+  const { id, source, target, sourceHandle, targetHandle } = edge;
+  const branchOrder = readBranchOrder(edge.data);
+  return { id, source, target, sourceHandle, targetHandle, ...(branchOrder !== undefined ? { data: { branchOrder } } : {}) };
+}
 
 // Generate array signature for loop tracking
 const makeArraySignature = (arr: any[]): string => {
@@ -340,13 +347,7 @@ export function useNodeExecution({
             (e.source === nodeId && supportNodeIds.has(e.target)) ||
             (e.target === nodeId && supportNodeIds.has(e.source)),
         )
-        .map((e) => ({
-          id: e.id,
-          source: e.source,
-          target: e.target,
-          sourceHandle: e.sourceHandle,
-          targetHandle: e.targetHandle,
-        }));
+        .map(serializeExecutionEdge);
 
       // Discovery needs the graph; BacktestInit replay also needs every node's
       // raw configuration so conditions and expressions resolve against each bar.
@@ -375,13 +376,7 @@ export function useNodeExecution({
           return serializedNode;
         });
 
-        payload.edges = edges.map((e) => ({
-          id: e.id,
-          source: e.source,
-          target: e.target,
-          sourceHandle: e.sourceHandle,
-          targetHandle: e.targetHandle,
-        }));
+        payload.edges = edges.map(serializeExecutionEdge);
       }
 
       return {

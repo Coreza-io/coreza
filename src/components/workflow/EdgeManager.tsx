@@ -31,6 +31,7 @@ import {
 } from "@/components/nodes/constants/nodeVisualThemes";
 import { resolveNodeVisualCategory } from "@/components/nodes/constants/resolveNodeVisualCategory";
 import { useResolvedTheme } from "@/hooks/useResolvedTheme";
+import { readBranchOrder } from "@/domain/branchOrder";
 
 export interface EdgeControl {
   icon: React.ReactNode;
@@ -66,6 +67,23 @@ const buildControls = (data: any, canDelete: boolean): EdgeControl[] => {
 
 const EDGE_STROKE_WIDTH = 1;
 const EDGE_INTERACTION_WIDTH = 40;
+
+function BranchOrderLabel({ data, x, y }: { data: EdgeProps["data"]; x: number; y: number }) {
+  const order = readBranchOrder(data);
+  if (order === undefined) return null;
+  return (
+    <EdgeLabelRenderer>
+      <span
+        aria-label={`Branch order ${order}`}
+        className="pointer-events-none absolute rounded border bg-popover px-1 text-xs font-semibold text-popover-foreground"
+        style={{ transform: `translate(-50%, -100%) translate(${x}px, ${y - 10}px)` }}
+      >
+        {order}
+      </span>
+    </EdgeLabelRenderer>
+  );
+}
+
 const readStrokeWidth = (
   value?: React.CSSProperties["strokeWidth"],
 ): number => {
@@ -866,6 +884,7 @@ export const PlugEdge: React.FC<InteractiveEdgeProps> = ({
           </textPath>
         </text>
       )}
+      <BranchOrderLabel data={data} x={midX} y={midY} />
       <EdgeToolbar
         edgeId={id}
         x={midX}
@@ -1091,6 +1110,7 @@ export const InteractiveEdge: React.FC<InteractiveEdgeProps> = ({
           </textPath>
         </text>
       )}
+      <BranchOrderLabel data={data} x={midX} y={midY} />
       <EdgeToolbar
         edgeId={id}
         x={midX}

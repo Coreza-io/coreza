@@ -55,6 +55,7 @@ export interface WorkflowEdge {
   target: string;
   sourceHandle?: string;
   targetHandle?: string;
+  data?: { branchOrder?: number };
 }
 
 // -----------------------------------------------------------------------------

@@ -164,7 +164,7 @@ function validateTopology(
     : false;
   if (entry && !loopBoundary && internalMain.some((edge) => edge.target === entry)) invalid("entry-not-root");
   if (exit && !loopBoundary && internalMain.some((edge) => edge.source === exit)) invalid("exit-not-leaf");
-  if (entry && exit && !hasDirectedPath(entry, exit, internalMain)) invalid("no-entry-exit-path");
+  if (requireConnectedMembers && entry && exit && !hasDirectedPath(entry, exit, internalMain)) invalid("no-entry-exit-path");
 }
 
 function isAcceptedLoopBoundary(

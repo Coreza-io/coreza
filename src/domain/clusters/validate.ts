@@ -134,7 +134,7 @@ function validateTopology(
     : false;
   if (entry && !acceptedLoop && internalMain.some((edge) => edge.target === entry)) violations.push(violation('entry-not-root', 'The cluster entry must be an internal root.', cluster.id, [entry]));
   if (exit && !acceptedLoop && internalMain.some((edge) => edge.source === exit)) violations.push(violation('exit-not-leaf', 'The cluster exit must be an internal leaf.', cluster.id, [exit]));
-  if (entry && exit && !hasDirectedPath(entry, exit, internalMain)) violations.push(violation('no-entry-exit-path', 'The cluster entry must connect to its exit.', cluster.id, [entry, exit]));
+  if (requireConnectedMembers && entry && exit && !hasDirectedPath(entry, exit, internalMain)) violations.push(violation('no-entry-exit-path', 'The cluster entry must connect to its exit.', cluster.id, [entry, exit]));
 }
 
 function isAcceptedLoopBoundary(
@@ -240,7 +240,7 @@ export function validateClusterSelection(
     edges,
     [{ ...candidate, memberNodeIds: expandedSelection }],
     { ...options, requireConnectedMembers: true },
-  ).violations.filter(({ code }) => code === 'disconnected-members');
+  ).violations.filter(({ code }) => code === 'disconnected-members' || code === 'no-entry-exit-path');
   const combinedViolations = [...completeValidation.violations, ...candidateConnectivity];
   return {
     valid: combinedViolations.length === 0,

@@ -86,7 +86,7 @@ export default [
   },
   {
     name: "missing entry exit path",
-    valid: false,
+    valid: true,
     nodes: [
       {"id": "x", "name": "x", "node_type": "main", "handles": [{"id": "in", "type": "target", "connectionKind": "main"}, {"id": "out", "type": "source", "connectionKind": "main"}]},
       {"id": "a", "name": "a", "node_type": "main", "handles": [{"id": "in", "type": "target", "connectionKind": "main"}, {"id": "out", "type": "source", "connectionKind": "main"}]},

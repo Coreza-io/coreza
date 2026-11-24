@@ -14,8 +14,10 @@ type BranchEdge = {
 };
 
 type LinearBranch<E> = { firstEdge: E; nodeIds: string[] };
+type LinearBranchGroup<E> = { branches: LinearBranch<E>[]; joinId: string };
 type BranchPriority = { fork: string; order: number };
 export type BranchOrders = ReadonlyMap<string, BranchPriority>;
+export type OrderedBranches = { priorities: BranchOrders; joinIds: ReadonlySet<string> };
 
 export function readBranchOrder(data: BranchEdge["data"]): number | undefined {
   const order = data?.branchOrder;
@@ -29,7 +31,7 @@ export function findLinearBranchGroups<E extends BranchEdge>(
   nodes: readonly BranchNode[],
   edges: readonly E[],
   forkIds: ReadonlySet<string>,
-): LinearBranch<E>[][] {
+): LinearBranchGroup<E>[] {
   const nodeById = new Map(nodes.map(node => [node.id, node]));
   const outgoing = new Map<string, E[]>();
   const inDegree = new Map<string, number>();
@@ -43,7 +45,7 @@ export function findLinearBranchGroups<E extends BranchEdge>(
     inDegree.set(edge.target, (inDegree.get(edge.target) ?? 0) + 1);
   }
 
-  const groups: LinearBranch<E>[][] = [];
+  const groups: LinearBranchGroup<E>[] = [];
   for (const forkId of forkIds) {
     if (!isRegular(nodeById.get(forkId))) continue;
     const byHandle = new Map<string, E[]>();
@@ -75,7 +77,7 @@ export function findLinearBranchGroups<E extends BranchEdge>(
         joinId = id;
         branches.push({ firstEdge, nodeIds });
       }
-      if (branches.length === siblings.length) groups.push(branches);
+      if (branches.length === siblings.length && joinId !== undefined) groups.push({ branches, joinId });
     }
   }
   return groups;
@@ -84,7 +86,7 @@ export function findLinearBranchGroups<E extends BranchEdge>(
 export function buildBranchOrders(
   nodes: readonly BranchNode[],
   edges: readonly BranchEdge[],
-): BranchOrders | undefined {
+): OrderedBranches | undefined {
   const forkIds = new Set<string>();
   for (const edge of edges) {
     if (readBranchOrder(edge.data) !== undefined) forkIds.add(edge.source);
@@ -92,15 +94,17 @@ export function buildBranchOrders(
   if (!forkIds.size) return;
 
   const priorities = new Map<string, BranchPriority>();
-  for (const branches of findLinearBranchGroups(nodes, edges, forkIds)) {
+  const joinIds = new Set<string>();
+  for (const { branches, joinId } of findLinearBranchGroups(nodes, edges, forkIds)) {
     const orders = branches.map(({ firstEdge }) => readBranchOrder(firstEdge.data));
     if (orders.includes(undefined) || new Set(orders).size !== orders.length) continue;
     const fork = branches[0].firstEdge.id;
+    joinIds.add(joinId);
     branches.forEach(({ nodeIds }, index) => {
       for (const id of nodeIds) priorities.set(id, { fork, order: orders[index]! });
     });
   }
-  if (priorities.size) return priorities;
+  if (priorities.size) return { priorities, joinIds };
 }
 
 export function orderedReadyIndex<T>(

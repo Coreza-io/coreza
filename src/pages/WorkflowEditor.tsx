@@ -2277,10 +2277,10 @@ const WorkflowEditorContent = () => {
       const groups = findLinearBranchGroups(branchOrderNodes(currentNodes), currentEdges, new Set([forkNodeId]));
       if (!groups.length) return;
       const targetY = new Map(currentNodes.map(node => [node.id, node.position.y]));
-      for (const group of groups) {
+      for (const { branches } of groups) {
         // Stable sort keeps the canonical edge order when targets share a Y position.
-        group.sort((a, b) => targetY.get(a.firstEdge.target)! - targetY.get(b.firstEdge.target)!);
-        group.forEach(({ firstEdge }, index) => priorities.set(firstEdge.id, index + 1));
+        branches.sort((a, b) => targetY.get(a.firstEdge.target)! - targetY.get(b.firstEdge.target)!);
+        branches.forEach(({ firstEdge }, index) => priorities.set(firstEdge.id, index + 1));
       }
     }
     const nextEdges = currentEdges.map(edge => {

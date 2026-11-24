@@ -181,6 +181,7 @@ function cloneEdge(edge: WorkflowEdge): WorkflowEdge {
     target: edge.target,
     ...(edge.sourceHandle !== undefined ? { sourceHandle: edge.sourceHandle } : {}),
     ...(edge.targetHandle !== undefined ? { targetHandle: edge.targetHandle } : {}),
+    ...(edge.data?.branchOrder !== undefined ? { data: { branchOrder: edge.data.branchOrder } } : {}),
   };
 }
 

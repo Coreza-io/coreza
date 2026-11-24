@@ -18,6 +18,12 @@
  */
 
 import { QueueItem } from '../nodes/types';
+import { orderedReadyIndex, type BranchOrders } from "./branchOrder";
+
+const sameIteration = (a: QueueItem, b: QueueItem) =>
+  a.meta?.originLoopId === b.meta?.originLoopId &&
+  a.meta?.iterIndex === b.meta?.iterIndex &&
+  a.meta?.itemIndex === b.meta?.itemIndex;
 
 /**
  * Single queue manager with reference counting for loop iterations
@@ -51,12 +57,15 @@ export class NodeQueueManager {
    * Removes and returns the next item from the queue
    * @returns Next queue item or undefined if empty
    */
-  dequeue(): QueueItem | undefined {
+  dequeue(branchOrders?: BranchOrders): QueueItem | undefined {
     if (this.head >= this.q.length) {
       return undefined;
     }
 
-    const item = this.q[this.head++];
+    const index = branchOrders
+      ? orderedReadyIndex(this.q, this.head, branchOrders, item => item.nodeId, sameIteration)
+      : this.head;
+    const item = index === this.head ? this.q[this.head++] : this.q.splice(index, 1)[0];
 
     // Compaction to avoid unbounded growth when queue is heavily used.
     if (this.head > 1024 && this.head * 2 >= this.q.length) {

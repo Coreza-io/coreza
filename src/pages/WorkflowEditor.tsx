@@ -82,6 +82,7 @@ import {
   Upload,
 } from "lucide-react";
 import { exportWorkflow, importWorkflow } from "@/utils/workflowExport";
+import { branchOrderNodes, findLinearBranchGroups } from "@/domain/branchOrder";
 import { motion, AnimatePresence } from "framer-motion";
 import { NodePalette } from "@/components/workflow/NodePalette";
 import EdgeManager from "@/components/workflow/EdgeManager";
@@ -257,6 +258,7 @@ interface CanvasMenuState {
   y: number;
   nodeIds: string[];
   kind: "selection" | "pane";
+  forkNodeId?: string;
 }
 
 interface ClusterMoveSession {
@@ -2194,7 +2196,7 @@ const WorkflowEditorContent = () => {
     clientY: number;
     preventDefault: () => void;
     stopPropagation: () => void;
-  }, nodeIds: string[], kind: CanvasMenuState["kind"]) => {
+  }, nodeIds: string[], kind: CanvasMenuState["kind"], forkNodeId?: string) => {
     event.preventDefault();
     event.stopPropagation();
     contextMenuFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -2205,6 +2207,7 @@ const WorkflowEditorContent = () => {
       y: Math.max(8, Math.min(event.clientY, window.innerHeight - menuHeight - 8)),
       nodeIds,
       kind,
+      forkNodeId,
     });
   }, []);
 
@@ -2227,7 +2230,7 @@ const WorkflowEditorContent = () => {
       setNodes((current) => current.map((item) => ({ ...item, selected: targets.has(item.id) })));
       setSelectedClusterIds(clusterId ? new Set([clusterId]) : new Set());
     }
-    openCanvasMenu(event, nodeIds, "selection");
+    openCanvasMenu(event, nodeIds, "selection", clusterId ? undefined : node.id);
   }, [clusterProjection.displayNodeToCluster, effectiveMembers, openCanvasMenu, resolveVisibleCanonicalSelection, setNodes]);
 
   const onSelectionContextMenu = useCallback((event: React.MouseEvent, selectedNodes: Node[]) => {
@@ -2257,6 +2260,45 @@ const WorkflowEditorContent = () => {
     const result = groupSelectionInDocument({nodes, edges, clusters}, canvasMenu.nodeIds, selectedClusterIds, {id:crypto.randomUUID(), title:nextClusterTitle, memberNodeIds:[]});
     return result.ok === false ? {valid:false, violations:[{message:result.message}]} : {valid:true, violations:[]};
   }, [canvasMenu, clusters, edges, nextClusterTitle, nodes, selectedClusterIds]);
+
+  const forkNodeId = canvasMenu?.forkNodeId;
+  const canOrderBranches = useMemo(() => forkNodeId !== undefined &&
+    findLinearBranchGroups(branchOrderNodes(nodes), edges, new Set([forkNodeId])).length > 0,
+  [nodes, edges, forkNodeId]);
+  const hasBranchOrder = forkNodeId !== undefined &&
+    edges.some(edge => edge.source === forkNodeId && edge.data?.branchOrder !== undefined);
+
+  const updateBranchOrder = (clear: boolean) => {
+    if (forkNodeId === undefined || !canMutateDocument()) return;
+    const currentNodes = nodesRef.current;
+    const currentEdges = canonicalEdgesRef.current;
+    const priorities = new Map<string, number>();
+    if (!clear) {
+      const groups = findLinearBranchGroups(branchOrderNodes(currentNodes), currentEdges, new Set([forkNodeId]));
+      if (!groups.length) return;
+      const targetY = new Map(currentNodes.map(node => [node.id, node.position.y]));
+      for (const group of groups) {
+        // Stable sort keeps the canonical edge order when targets share a Y position.
+        group.sort((a, b) => targetY.get(a.firstEdge.target)! - targetY.get(b.firstEdge.target)!);
+        group.forEach(({ firstEdge }, index) => priorities.set(firstEdge.id, index + 1));
+      }
+    }
+    const nextEdges = currentEdges.map(edge => {
+      if (edge.source !== forkNodeId) return edge;
+      const order = priorities.get(edge.id);
+      if (edge.data?.branchOrder === order) return edge;
+      const data = { ...edge.data };
+      if (order === undefined) delete data.branchOrder;
+      else data.branchOrder = order;
+      return { ...edge, data };
+    });
+    if (nextEdges.some((edge, index) => edge !== currentEdges[index])) {
+      saveHistorySnapshot();
+      canonicalEdgesRef.current = nextEdges;
+      setEdges(nextEdges);
+    }
+    closeCanvasMenu();
+  };
 
   useEffect(() => {
     if (!canvasMenu) return;
@@ -2675,6 +2717,7 @@ const WorkflowEditorContent = () => {
                   target: ed.target,
                   sourceHandle: ed.sourceHandle,
                   targetHandle: ed.targetHandle,
+                  ...(ed.data?.branchOrder !== undefined ? { data: { branchOrder: ed.data.branchOrder } } : {}),
                 })) as Edge[];
                 handleRestoreFromVersion(importedNodes, importedEdges, imported.clusters);
                 toast({
@@ -2902,6 +2945,12 @@ const WorkflowEditorContent = () => {
               onPointerDown={(event) => event.stopPropagation()}
             >
               {canvasMenu.kind === "selection" ? <>
+                {canOrderBranches && (
+                  <button role="menuitem" className="w-full rounded px-3 py-2 text-left text-sm hover:bg-accent" onClick={() => updateBranchOrder(false)}>Set branch order top to bottom</button>
+                )}
+                {hasBranchOrder && (
+                  <button role="menuitem" className="w-full rounded px-3 py-2 text-left text-sm hover:bg-accent" onClick={() => updateBranchOrder(true)}>Clear branch order</button>
+                )}
                 <button role="menuitem" className="w-full rounded px-3 py-2 text-left text-sm hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50" disabled={!menuValidation?.valid || Boolean(dragSource.nodeId)} title={menuValidation?.violations[0]?.message} onClick={() => createClusterFromSelection(canvasMenu.nodeIds)}>
                   Create cluster from selection
                   {!menuValidation?.valid && <span className="block truncate text-xs text-muted-foreground">{menuValidation?.violations[0]?.message}</span>}

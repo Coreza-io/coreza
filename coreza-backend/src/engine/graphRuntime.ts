@@ -1,4 +1,5 @@
 import { NodeResult, WorkflowEdge, WorkflowNode } from "../nodes/types";
+import { buildBranchOrders, orderedReadyIndex, type OrderedBranches } from "./branchOrder";
 
 type BranchOriginInfo = { ifNodeId: string; handle: string; edgeId: string };
 
@@ -17,6 +18,7 @@ export class GraphRuntime {
   readonly requiredEdgeCounts = new Map<string, number>();
   readonly dependenciesByTarget: ReadonlyMap<string, DependencyDescriptor>;
   readonly entryNodeIds: readonly string[];
+  readonly orderedBranches: OrderedBranches | undefined;
 
   constructor(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
     this.validate(nodes, edges);
@@ -48,6 +50,7 @@ export class GraphRuntime {
 
     this.buildBranchOrigins(edges);
     this.dependenciesByTarget = this.buildDependencies();
+    this.orderedBranches = buildBranchOrders(nodes, edges);
   }
 
   private buildDependencies(): ReadonlyMap<string, DependencyDescriptor> {
@@ -118,8 +121,10 @@ export class GraphRuntime {
     }
 
     const topoOrder: string[] = [];
+    const priorities = this.orderedBranches?.priorities;
     while (queue.length > 0) {
-      const nodeId = queue.shift()!;
+      const index = priorities ? orderedReadyIndex(queue, 0, priorities, id => id) : 0;
+      const nodeId = index === 0 ? queue.shift()! : queue.splice(index, 1)[0];
       topoOrder.push(nodeId);
 
       for (const edge of this.getOutgoingEdges(nodeId)) {

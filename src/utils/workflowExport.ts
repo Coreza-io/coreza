@@ -42,6 +42,7 @@ interface ExportedWorkflow {
     target: string;
     sourceHandle?: string | null;
     targetHandle?: string | null;
+    data?: { branchOrder?: number };
   }>;
   isActive: boolean;
   clusters?: NodeCluster[];

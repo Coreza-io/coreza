@@ -14,6 +14,7 @@ import {
   INodeExecutor,
 } from "../nodes/types";
 import { DataContext } from "./DataContext";
+import type { OrderedBranches } from "./branchOrder";
 import { GraphRuntime } from "./graphRuntime";
 import { IndicatorStateManager } from "./indicatorStateManager";
 import { NodeQueueManager } from "./nodeQueueManager";
@@ -61,6 +62,8 @@ export abstract class BaseExecutionRuntime {
   protected executionContextExtras: ExecutionContextExtras = {};
   protected readonly pinnedNodeIds = new Set<string>();
   private readonly allowedExecutableNodeIds?: ReadonlySet<string>;
+  private readonly orderedBranches?: OrderedBranches;
+  protected readonly orderedLoopJoinArrivals = new Map<string, Set<string>>();
 
   constructor(
     protected readonly graph: GraphRuntime,
@@ -71,6 +74,7 @@ export abstract class BaseExecutionRuntime {
     this.allowedExecutableNodeIds = options.allowedExecutableNodeIds
       ? new Set(options.allowedExecutableNodeIds)
       : undefined;
+    this.orderedBranches = this.allowedExecutableNodeIds ? undefined : graph.orderedBranches;
     if (options.nodeExecutorMap) {
       for (const [id, exec] of options.nodeExecutorMap) {
         this.nodeExecutorMap.set(id, exec);
@@ -103,7 +107,23 @@ export abstract class BaseExecutionRuntime {
   }
 
   dequeue(): QueueItem | undefined {
-    return this.queue.dequeue();
+    return this.queue.dequeue(this.orderedBranches?.priorities);
+  }
+
+  protected routeOrderedLoopJoin(edge: WorkflowEdge, payload: any, meta?: IterMeta): boolean {
+    if (!meta?.originLoopId || !this.orderedBranches?.joinIds.has(edge.target)) return false;
+
+    // Each iteration needs a fresh arrival on every incoming branch edge.
+    const key = JSON.stringify([edge.target, meta.originLoopId, meta.iterIndex, meta.itemIndex]);
+    const arrivals = this.orderedLoopJoinArrivals.get(key) ?? new Set<string>();
+    arrivals.add(edge.id);
+    if (arrivals.size === this.graph.requiredEdgeCounts.get(edge.target)) {
+      this.orderedLoopJoinArrivals.delete(key);
+      this.enqueue({ nodeId: edge.target, input: payload, meta });
+    } else {
+      this.orderedLoopJoinArrivals.set(key, arrivals);
+    }
+    return true;
   }
 
   getExecutionOrder(): string[] {
@@ -424,7 +444,7 @@ export class StandardExecutionRuntime extends BaseExecutionRuntime {
   }
 
   override dequeue(): QueueItem | undefined {
-    const item = this.queue.dequeue();
+    const item = super.dequeue();
     if (!item) return undefined;
     this.enqueuedKeys.delete(this.keyFor(item));
     return item;
@@ -440,6 +460,7 @@ export class StandardExecutionRuntime extends BaseExecutionRuntime {
     if (this.graph.isSubNode(edge.source) || this.graph.isSubNode(edge.target)) return;
     this.assertNodeAllowed(edge.source, "route");
     this.assertNodeAllowed(edge.target, "route");
+    if (this.routeOrderedLoopJoin(edge, payload, meta)) return;
     this.edgePayload.set(edge.id, payload);
 
     const targetNode = this.graph.nodeById.get(edge.target);
@@ -483,6 +504,7 @@ export class StandardExecutionRuntime extends BaseExecutionRuntime {
     this.store.clearResults();
     this.queue.clear();
     this.enqueuedKeys.clear();
+    this.orderedLoopJoinArrivals.clear();
     this.executionOrder.length = 0;
     if (full) this.edgePayload.clear();
   }
@@ -532,6 +554,7 @@ export class BacktestExecutionRuntime extends BaseExecutionRuntime {
     if (this.graph.isSubNode(edge.source) || this.graph.isSubNode(edge.target)) return;
     this.assertNodeAllowed(edge.source, "route");
     this.assertNodeAllowed(edge.target, "route");
+    if (this.routeOrderedLoopJoin(edge, payload, meta)) return;
     this.satisfiedCounts.set(
       edge.target,
       (this.satisfiedCounts.get(edge.target) ?? 0) + 1,
@@ -561,6 +584,7 @@ export class BacktestExecutionRuntime extends BaseExecutionRuntime {
     this.lastStoreClearMs = performance.now() - t0;
     this.queue.clear();
     this.satisfiedCounts.clear();
+    this.orderedLoopJoinArrivals.clear();
     this.executionOrder.length = 0;
     if (full) this.execCtx = null;
   }

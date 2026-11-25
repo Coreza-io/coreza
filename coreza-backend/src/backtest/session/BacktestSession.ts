@@ -279,6 +279,7 @@ export class BacktestSession {
           bars: [event.bars[symbol]],
         })),
       barIndex: event.barIndex,
+      isWarmingUp: false,
       isLast,
       total_bars: this.totalBars,
       timestamp: event.timestamp,
@@ -304,6 +305,7 @@ export class BacktestSession {
           ]
         : [],
       barIndex: event.barIndex,
+      isWarmingUp: false,
       isLast,
       total_bars: this.totalBars,
       currentSymbol: symbol,
@@ -809,6 +811,7 @@ export class BacktestSession {
             return {
               BarSeries: [],
               barIndex: currentEvent.barIndex,
+              isWarmingUp: false,
               isLast,
               total_bars: this.totalBars,
               symbolIndex: 0,

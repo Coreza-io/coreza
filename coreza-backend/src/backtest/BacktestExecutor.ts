@@ -829,6 +829,7 @@ export class BacktestExecutor implements INodeExecutor {
       this._onBarResults.set(node.id, resultSuccess({
           BarSeries: [{ symbol: "", interval: "", bars: [null as any] }],
           barIndex: 0,
+          isWarmingUp: false,
         }));
     }
 
@@ -839,6 +840,7 @@ export class BacktestExecutor implements INodeExecutor {
     barSeries.interval = data?.interval;
     barSeries.bars[0] = data?.bar;
     onBarResult.data.barIndex = data?.barIndex;
+    onBarResult.data.isWarmingUp = context?.isWarmingUp === true;
 
     return onBarResult;
   }

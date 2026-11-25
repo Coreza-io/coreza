@@ -55,6 +55,7 @@ export function compilePlan(
   compiledParams: Map<string, CompiledNodeParams>,
   pinnedResults: Record<string, any>,
   ctxBase: {
+    backtestStore?: CompiledExecContext["backtestStore"];
     runId: string;
     workflowId: string;
     userId: string;
@@ -269,6 +270,7 @@ export function compilePlan(
   }
 
   const ctx: CompiledExecContext = {
+    backtestStore: ctxBase.backtestStore,
     isWarmingUp: false,
     nodeId: "",
     runId: ctxBase.runId,

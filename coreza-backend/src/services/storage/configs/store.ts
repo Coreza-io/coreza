@@ -9,6 +9,8 @@
  */
 
 import type { StorageConfig, StorageInput, StorageContext } from "../types";
+import type { ChainableCommander } from "ioredis";
+import { BACKTEST_STORE_MAX_TTL } from "../backtestSessionStore";
 import {
   buildStoreKey,
   extractVariableNameFromKey,
@@ -94,6 +96,17 @@ const getTargetWorkflowId = (
     : input.workflow_id || input.workflowId || context.workflowId;
 };
 
+const storeKey = (ctx: StorageContext, workflowId: string, variableName: string): string =>
+  ctx.backtestStore?.key(variableName) ?? buildStoreKey(ctx.userId, workflowId, variableName);
+
+async function executeStoreTransaction(ctx: StorageContext, key: string, transaction: ChainableCommander) {
+  if (ctx.backtestStore) transaction.expire(key, BACKTEST_STORE_MAX_TTL, "NX");
+  const replies = await transaction.exec();
+  if (!replies) throw new Error("Store transaction aborted; please retry");
+  for (const [error] of replies) if (error) throw error;
+  return replies;
+}
+
 export const storeConfig: StorageConfig = {
   requiresCredentials: false, // Uses internal Redis
 
@@ -106,8 +119,8 @@ export const storeConfig: StorageConfig = {
         if (!workflowId || !input.variableName) {
           throw new Error("workflow_id and variableName required for set");
         }
-        const key = buildStoreKey(ctx.userId, workflowId, input.variableName);
-        await setStoreValue(ctx.redis!, key, input.value, input.ttl);
+        const key = storeKey(ctx, workflowId, input.variableName);
+        await setStoreValue(ctx.redis!, key, input.value, input.ttl || (ctx.backtestStore ? BACKTEST_STORE_MAX_TTL : undefined));
         return {
           operation: "set",
           variableName: input.variableName,
@@ -125,7 +138,7 @@ export const storeConfig: StorageConfig = {
         if (!targetWorkflowId || !varName) {
           throw new Error("workflow_id and variableName required for get");
         }
-        const key = buildStoreKey(ctx.userId, targetWorkflowId, varName);
+        const key = storeKey(ctx, targetWorkflowId, varName);
         const storedValue = await getStoreValue(ctx.redis!, key);
         return { operation: "get", variableName: varName, value: storedValue };
       },
@@ -139,7 +152,7 @@ export const storeConfig: StorageConfig = {
         if (!targetWorkflowId || !varName) {
           throw new Error("workflow_id and variableName required for delete");
         }
-        const key = buildStoreKey(ctx.userId, targetWorkflowId, varName);
+        const key = storeKey(ctx, targetWorkflowId, varName);
         await ctx.redis!.del(key);
         return {
           operation: "delete",
@@ -159,9 +172,11 @@ export const storeConfig: StorageConfig = {
             "workflow_id and variableName required for increment",
           );
         }
-        const key = buildStoreKey(ctx.userId, targetWorkflowId, varName);
+        const key = storeKey(ctx, targetWorkflowId, varName);
         const amount = input.incrementBy || 1;
-        const newValue = await ctx.redis!.incrby(key, amount);
+        const newValue = ctx.backtestStore
+          ? (await executeStoreTransaction(ctx, key, ctx.redis!.multi().incrby(key, amount)))[0][1]
+          : await ctx.redis!.incrby(key, amount);
         return {
           operation: "increment",
           variableName: varName,
@@ -178,8 +193,12 @@ export const storeConfig: StorageConfig = {
         if (!targetWorkflowId || !varName) {
           throw new Error("workflow_id and variableName required for append");
         }
-        const key = buildStoreKey(ctx.userId, targetWorkflowId, varName);
-        await ctx.redis!.append(key, input.value || "");
+        const key = storeKey(ctx, targetWorkflowId, varName);
+        if (ctx.backtestStore) {
+          await executeStoreTransaction(ctx, key, ctx.redis!.multi().append(key, input.value || ""));
+        } else {
+          await ctx.redis!.append(key, input.value || "");
+        }
         return {
           operation: "append",
           variableName: varName,
@@ -197,12 +216,16 @@ export const storeConfig: StorageConfig = {
         if (!workflowId || !input.variableName) {
           throw new Error("workflow_id and variableName required for lpush");
         }
-        const key = buildStoreKey(ctx.userId, workflowId, input.variableName);
+        const key = storeKey(ctx, workflowId, input.variableName);
         const serialized =
           typeof input.value === "string"
             ? input.value
             : JSON.stringify(input.value);
-        await ctx.redis!.lpush(key, serialized);
+        if (ctx.backtestStore) {
+          await executeStoreTransaction(ctx, key, ctx.redis!.multi().lpush(key, serialized));
+        } else {
+          await ctx.redis!.lpush(key, serialized);
+        }
         await applyTTL(ctx.redis!, key, input.ttl);
         return {
           operation: "lpush",
@@ -219,12 +242,16 @@ export const storeConfig: StorageConfig = {
         if (!workflowId || !input.variableName) {
           throw new Error("workflow_id and variableName required for rpush");
         }
-        const key = buildStoreKey(ctx.userId, workflowId, input.variableName);
+        const key = storeKey(ctx, workflowId, input.variableName);
         const serialized =
           typeof input.value === "string"
             ? input.value
             : JSON.stringify(input.value);
-        await ctx.redis!.rpush(key, serialized);
+        if (ctx.backtestStore) {
+          await executeStoreTransaction(ctx, key, ctx.redis!.multi().rpush(key, serialized));
+        } else {
+          await ctx.redis!.rpush(key, serialized);
+        }
         await applyTTL(ctx.redis!, key, input.ttl);
         return {
           operation: "rpush",
@@ -244,7 +271,7 @@ export const storeConfig: StorageConfig = {
           );
         }
         const maxLength = parseMaxLength(input.maxLength);
-        const key = buildStoreKey(ctx.userId, workflowId, input.variableName);
+        const key = storeKey(ctx, workflowId, input.variableName);
         const serialized =
           typeof input.value === "string"
             ? input.value
@@ -255,16 +282,12 @@ export const storeConfig: StorageConfig = {
           input.variableName,
           "list",
           async () => {
-            const replies = await ctx
+            const transaction = ctx
               .redis!.multi()
               .rpush(key, serialized)
               .ltrim(key, -maxLength, -1)
-              .llen(key)
-              .exec();
-            if (!replies) {
-              throw new Error("Store transaction aborted; please retry");
-            }
-            for (const [error] of replies) if (error) throw error;
+              .llen(key);
+            const replies = await executeStoreTransaction(ctx, key, transaction);
             return Number(replies[2]?.[1] ?? 0);
           },
         );
@@ -286,7 +309,7 @@ export const storeConfig: StorageConfig = {
         if (!targetWorkflowId || !varName) {
           throw new Error("workflow_id and variableName required for lpop");
         }
-        const key = buildStoreKey(ctx.userId, targetWorkflowId, varName);
+        const key = storeKey(ctx, targetWorkflowId, varName);
         const popped = await ctx.redis!.lpop(key);
         return {
           operation: "lpop",
@@ -303,7 +326,7 @@ export const storeConfig: StorageConfig = {
         if (!targetWorkflowId || !varName) {
           throw new Error("workflow_id and variableName required for rpop");
         }
-        const key = buildStoreKey(ctx.userId, targetWorkflowId, varName);
+        const key = storeKey(ctx, targetWorkflowId, varName);
         const popped = await ctx.redis!.rpop(key);
         return {
           operation: "rpop",
@@ -320,7 +343,7 @@ export const storeConfig: StorageConfig = {
         if (!targetWorkflowId || !varName) {
           throw new Error("workflow_id and variableName required for lrange");
         }
-        const key = buildStoreKey(ctx.userId, targetWorkflowId, varName);
+        const key = storeKey(ctx, targetWorkflowId, varName);
         const start = input.startIndex ?? 0;
         const end = input.endIndex ?? -1;
         const items = await ctx.redis!.lrange(key, start, end);
@@ -339,7 +362,7 @@ export const storeConfig: StorageConfig = {
         if (!targetWorkflowId || !varName) {
           throw new Error("workflow_id and variableName required for llen");
         }
-        const key = buildStoreKey(ctx.userId, targetWorkflowId, varName);
+        const key = storeKey(ctx, targetWorkflowId, varName);
         const length = await ctx.redis!.llen(key);
         return { operation: "llen", variableName: varName, value: length };
       },
@@ -352,7 +375,7 @@ export const storeConfig: StorageConfig = {
         if (!targetWorkflowId || !varName) {
           throw new Error("workflow_id and variableName required for lindex");
         }
-        const key = buildStoreKey(ctx.userId, targetWorkflowId, varName);
+        const key = storeKey(ctx, targetWorkflowId, varName);
         const item = await ctx.redis!.lindex(key, input.index ?? 0);
         return {
           operation: "lindex",
@@ -369,7 +392,7 @@ export const storeConfig: StorageConfig = {
         if (!workflowId || !input.variableName) {
           throw new Error("workflow_id and variableName required for lset");
         }
-        const key = buildStoreKey(ctx.userId, workflowId, input.variableName);
+        const key = storeKey(ctx, workflowId, input.variableName);
         const serialized =
           typeof input.value === "string"
             ? input.value
@@ -390,7 +413,7 @@ export const storeConfig: StorageConfig = {
         if (!targetWorkflowId || !varName) {
           throw new Error("workflow_id and variableName required for ltrim");
         }
-        const key = buildStoreKey(ctx.userId, targetWorkflowId, varName);
+        const key = storeKey(ctx, targetWorkflowId, varName);
         const start = input.startIndex ?? 0;
         const end = input.endIndex ?? -1;
         await ctx.redis!.ltrim(key, start, end);

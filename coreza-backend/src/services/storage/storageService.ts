@@ -23,6 +23,13 @@ import CredentialManager from "../../utils/credentialManager";
 import { getUserRedisConnection } from "./helpers/redisConnection";
 import { getRedisCache } from "../../config/redis";
 import logger from "../../utils/logger";
+import {
+  BACKTEST_SESSION_SCOPE,
+  BACKTEST_STORE_MAX_TTL,
+  BACKTEST_STORE_SESSION_REQUIRED,
+  backtestStoreOperations,
+  type BacktestSessionStore,
+} from "./backtestSessionStore";
 
 const getErrorString = (
   error: unknown,
@@ -58,7 +65,7 @@ export class StorageService implements IStorageService {
     return this.contextMeta;
   }
 
-  async execute(input: StorageInput): Promise<NodeResult> {
+  async execute(input: StorageInput, backtestStore?: BacktestSessionStore): Promise<NodeResult> {
     try {
       const { operation, user_id, credential_id, workflow_id, subCategory } =
         input;
@@ -68,7 +75,7 @@ export class StorageService implements IStorageService {
       }
 
       const operationConfig = this.config.operations[operation];
-      if (!operationConfig) {
+      if (!Object.hasOwn(this.config.operations, operation) || !operationConfig) {
         return createErrorOutput(
           `Unknown operation: ${operation}`,
           this.getContext()
@@ -79,6 +86,40 @@ export class StorageService implements IStorageService {
         userId: user_id || "",
         workflowId: workflow_id || "",
       };
+
+      if (this.serviceKey === "store") {
+        const scope = input.scope;
+        if (scope != null && scope !== "local" && scope !== "global" && scope !== BACKTEST_SESSION_SCOPE) {
+          throw new Error("Store scope must be Local, Global, or Backtest session");
+        }
+        if (scope === BACKTEST_SESSION_SCOPE) {
+          if (!backtestStore || backtestStore.userId !== user_id || backtestStore.workflowId !== workflow_id) {
+            throw new Error(BACKTEST_STORE_SESSION_REQUIRED);
+          }
+          if (!backtestStoreOperations.has(operation)) {
+            throw new Error("Backtest session storage supports String and List operations only");
+          }
+          const name = input.sessionVariableName ?? input.variableNameManual ?? input.variableName;
+          if (typeof name !== "string" || !name.trim()) {
+            throw new Error("Enter a manual variable name for Backtest session storage");
+          }
+          const ttl = Number(input.ttl);
+          const sessionInput: StorageInput = {
+            ...input,
+            variableName: name,
+            variableNameManual: name,
+            variableNameSelect: undefined,
+            variableSource: "manual",
+            sourceWorkflowId: undefined,
+            workflowId: workflow_id,
+            ttl: Number.isInteger(ttl) && ttl > 0 ? Math.min(ttl, BACKTEST_STORE_MAX_TTL) : 0,
+          };
+          const result = await backtestStore.execute(redis => operationConfig.handler(sessionInput, {
+            ...context, redis, backtestStore,
+          }));
+          return createSuccessOutput(result, this.getContext());
+        }
+      }
 
       // Get Redis client based on service type
       if (this.requiresCredentials) {

@@ -12,6 +12,8 @@ import { resultSuccess, resultFailure, safeErrorDetails } from "../contracts/nod
 import { Router, Request, Response } from "express";
 import { requireAuth } from "../middleware/jwtAuth";
 import { getStorageService } from "../services/storage";
+import { BACKTEST_SESSION_SCOPE, BACKTEST_STORE_SESSION_REQUIRED } from "../services/storage/backtestSessionStore";
+import { BacktestSessionManager } from "../backtest/session/BacktestSessionManager";
 import CredentialManager from "../utils/credentialManager";
 import { testRedisConnection } from "../services/storage/helpers/redisConnection";
 import { CredentialValidator } from "../utils/credentialValidator";
@@ -558,6 +560,23 @@ router.post("/:service/:operation", async (req: Request, res: Response) => {
     const storageService = getStorageService(service);
     if (!storageService) {
       return res.status(400).json(resultFailure(`Unsupported storage service: ${service}`, { data: null }));
+    }
+
+    if (service === "store" && params.scope === BACKTEST_SESSION_SCOPE) {
+      const editorSessionId = params.workflowSessionId;
+      const workflowId = params.workflowId || params.workflow_id || editorSessionId;
+      const backtestId = params.backtest_id;
+      const store = typeof editorSessionId === "string" && editorSessionId &&
+        typeof workflowId === "string" && workflowId &&
+        (backtestId == null || typeof backtestId === "string")
+        ? BacktestSessionManager.getInstance().getEditorStore(userId, workflowId, editorSessionId, backtestId || undefined)
+        : undefined;
+      if (!store) return res.status(400).json(resultFailure(BACKTEST_STORE_SESSION_REQUIRED, { data: null }));
+
+      const result = await storageService.execute({
+        ...params, credential_id, operation, user_id: userId, workflow_id: workflowId,
+      }, store);
+      return res.json(result);
     }
 
     const result = await storageService.execute({

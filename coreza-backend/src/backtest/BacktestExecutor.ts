@@ -616,6 +616,7 @@ export class BacktestExecutor implements INodeExecutor {
           : undefined,
         persistBacktest,
         context?.runId,
+        isManual ? context?.workflowSessionId : undefined,
       );
 
       // Replacing a session destroys its execution context; seed only after replacement.

@@ -51,6 +51,7 @@ export class BacktestSessionManager {
     indicatorInitialization?: IndicatorInitialization,
     persistResults = true,
     parentRunId?: string,
+    editorSessionId?: string,
   ): BacktestSession {
     const scopeKey = `${userId}:${workflowId}:${nodeId}:${persistResults ? "database" : runId}`;
     const existingBacktestId = this.scopeIndex.get(scopeKey);
@@ -78,6 +79,7 @@ export class BacktestSessionManager {
       indicatorInitialization,
       persistResults,
       parentRunId,
+      editorSessionId,
     );
 
     this.sessions.set(backtestId, session);
@@ -91,6 +93,18 @@ export class BacktestSessionManager {
     const session = this.sessions.get(backtestId);
     if (session && !session.persistResults) this.renewEditorSession(backtestId);
     return session;
+  }
+
+  getEditorStore(userId: string, workflowId: string, editorSessionId: string, backtestId?: string) {
+    const matches = (session: BacktestSession) => !session.persistResults &&
+      session.userId === userId && session.workflowId === workflowId &&
+      session.editorSessionId === editorSessionId;
+    const sessions = backtestId
+      ? [this.sessions.get(backtestId)].filter((session): session is BacktestSession => !!session && matches(session))
+      : [...this.sessions.values()].filter(matches);
+    const session = sessions[0];
+    if (sessions.length !== 1 || session.isExecuting) return undefined;
+    return this.getSession(session.backtestId)?.storeScope;
   }
 
   deleteSession(backtestId: string): void {

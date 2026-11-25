@@ -2,6 +2,7 @@ import { resultFailure, resultSuccess } from "../../contracts/nodeResult";
 import { resolveCategory } from "../../nodes/categoryMap";
 import type { NodeResult, WorkflowNode } from "../../nodes/types";
 import type { WarmupNodePolicy } from "./types";
+import { BACKTEST_SESSION_SCOPE } from "../../services/storage/backtestSessionStore";
 
 /**
  * Warm-up node policy.
@@ -50,6 +51,10 @@ export function resolveWarmupPolicy(node: WorkflowNode): WarmupNodePolicy {
 
   if (REJECT_CATEGORIES.has(category) || REJECT_NODES.has(nodeName)) {
     return "reject";
+  }
+
+  if (node.name === "Store") {
+    return node.values?.scope === BACKTEST_SESSION_SCOPE ? "execute" : "suppress";
   }
 
   if (EXECUTE_NODES.has(nodeName) || EXECUTE_CATEGORIES.has(category)) {

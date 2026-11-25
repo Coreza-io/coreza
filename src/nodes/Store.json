@@ -27,6 +27,10 @@
         {
           "label": "Global (shared across workflows)",
           "value": "global"
+        },
+        {
+          "label": "Backtest session",
+          "value": "backtest_session"
         }
       ],
       "default": "global",
@@ -50,7 +54,18 @@
         { "id": "utility", "name": "Utility (keys, ttl)" }
       ],
       "default": "string",
-      "required": true
+      "required": true,
+      "dynamicOptions": {
+        "dependsOn": "scope",
+        "optionsByValue": {
+          "backtest_session": [
+            { "id": "string", "name": "String (key-value)" },
+            { "id": "list", "name": "List (ordered array)" }
+          ]
+        },
+        "fallbackToStatic": true,
+        "preserveValidValue": true
+      }
     },
     {
       "key": "operation",
@@ -138,6 +153,7 @@
       "default": "manual",
       "required": true,
       "displayOptions": {
+        "hide": { "scope": ["backtest_session"] },
         "show": {
           "operation": [
             "get",
@@ -183,6 +199,7 @@
       "placeholder": "e.g., scanner_tickers",
       "required": true,
       "displayOptions": {
+        "hide": { "scope": ["backtest_session"] },
         "show": {
           "variableSource": ["manual"],
           "operation": [
@@ -230,6 +247,7 @@
       "placeholder": "Select workflow",
       "required": true,
       "displayOptions": {
+        "hide": { "scope": ["backtest_session"] },
         "show": {
           "variableSource": ["store"],
           "operation": [
@@ -278,6 +296,7 @@
       "placeholder": "Select variable",
       "required": true,
       "displayOptions": {
+        "hide": { "scope": ["backtest_session"] },
         "show": {
           "variableSource": ["store"],
           "operation": [
@@ -324,6 +343,7 @@
       "placeholder": "e.g., scanner_tickers",
       "required": true,
       "displayOptions": {
+        "hide": { "scope": ["backtest_session"] },
         "show": {
           "operation": [
             "set",
@@ -342,6 +362,22 @@
           ]
         }
       }
+    },
+    {
+      "key": "sessionVariableName",
+      "label": "Variable Name",
+      "type": "text",
+      "placeholder": "e.g., wick_score",
+      "required": true,
+      "displayOptions": { "show": { "scope": ["backtest_session"] } }
+    },
+    {
+      "key": "backtest_id",
+      "label": "Backtest ID",
+      "type": "text",
+      "placeholder": "{{ $('BacktestInit').json.data.backtest_id }}",
+      "description": "Selects a backtest when this workflow has more than one active backtest in the editor session.",
+      "displayOptions": { "show": { "scope": ["backtest_session"] } }
     },
     {
       "key": "value",
@@ -619,7 +655,8 @@
       "key": "ttl",
       "label": "TTL (seconds)",
       "type": "text",
-      "placeholder": "0 = no expiry, e.g., 86400 = 24hrs",
+      "placeholder": "0 = use scope default",
+      "description": "Zero means no expiry for Local and Global. Backtest session keys expire within 24 hours.",
       "default": 0,
       "displayOptions": {
         "show": {

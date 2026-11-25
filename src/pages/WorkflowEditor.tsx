@@ -400,9 +400,9 @@ const WorkflowEditorContent = () => {
   } = useWorkflowPersistence({ projectId, workflowId });
 
   const executionFilters = useMemo(() => {
-    const toUtc = (value: string) => {
-      if (!value) return undefined;
-      const date = fromZonedTime(value, timezone);
+    const toUtc = (day: string, time: string) => {
+      if (!day) return undefined;
+      const date = fromZonedTime(`${day}T${time}`, timezone);
       return Number.isFinite(date.getTime()) ? date.toISOString() : undefined;
     };
     const { status, dateFrom, dateTo, bars } = historyFilters;
@@ -411,8 +411,8 @@ const WorkflowEditorContent = () => {
       dateFrom,
       dateTo,
       barSymbol: bars.symbol.trim().toUpperCase(),
-      barFrom: toUtc(bars.from),
-      barTo: toUtc(bars.to),
+      barFrom: toUtc(bars.from, bars.fromTime || "00:00:00"),
+      barTo: toUtc(bars.to, bars.toTime || "23:59:59.999"),
     };
   }, [historyFilters, timezone]);
 

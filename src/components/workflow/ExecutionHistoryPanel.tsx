@@ -44,6 +44,8 @@ interface BarHistoryFilters {
   symbol: string;
   from: string;
   to: string;
+  fromTime: string;
+  toTime: string;
 }
 
 export interface ExecutionHistoryFilterValues {
@@ -57,7 +59,7 @@ export const EMPTY_EXECUTION_HISTORY_FILTERS: ExecutionHistoryFilterValues = {
   status: "all",
   dateFrom: null,
   dateTo: null,
-  bars: { symbol: "", from: "", to: "" },
+  bars: { symbol: "", from: "", to: "", fromTime: "", toTime: "" },
 };
 
 const hasFilters = ({ status, dateFrom, dateTo, bars }: ExecutionHistoryFilterValues) =>
@@ -336,24 +338,37 @@ export function ExecutionHistoryPanel({
                         placeholder="e.g. AAPL"
                       />
                     </label>
-                    <label className="block text-xs">
-                      From
-                      <Input
-                        type="datetime-local"
-                        step={1}
-                        value={bars.from}
-                        onChange={(event) => setDraft({ ...draft, bars: { ...bars, from: event.target.value } })}
-                      />
-                    </label>
-                    <label className="block text-xs">
-                      To
-                      <Input
-                        type="datetime-local"
-                        step={1}
-                        value={bars.to}
-                        onChange={(event) => setDraft({ ...draft, bars: { ...bars, to: event.target.value } })}
-                      />
-                    </label>
+                    {(["from", "to"] as const).map((bound) => {
+                      const label = bound === "from" ? "From" : "To";
+                      const timeKey = bound === "from" ? "fromTime" : "toTime";
+                      return (
+                        <div key={bound} className="flex flex-wrap gap-2">
+                          <label className="min-w-0 grow basis-32 text-xs">
+                            {label} date
+                            <Input
+                              type="date"
+                              className="px-2"
+                              value={bars[bound]}
+                              onChange={(event) => {
+                                const date = event.target.value;
+                                setDraft({ ...draft, bars: { ...bars, [bound]: date, [timeKey]: date ? bars[timeKey] : "" } });
+                              }}
+                            />
+                          </label>
+                          <label className="min-w-0 grow basis-32 text-xs">
+                            {label} time (optional)
+                            <Input
+                              type="time"
+                              className="px-2"
+                              step={1}
+                              value={bars[timeKey]}
+                              disabled={!bars[bound]}
+                              onChange={(event) => setDraft({ ...draft, bars: { ...bars, [timeKey]: event.target.value } })}
+                            />
+                          </label>
+                        </div>
+                      );
+                    })}
                   </fieldset>
                 </div>
                 <div className="flex shrink-0 justify-end gap-2 pt-4">

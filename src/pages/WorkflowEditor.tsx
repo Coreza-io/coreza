@@ -792,14 +792,19 @@ const WorkflowEditorContent = () => {
 
   const deleteNodeIds = useCallback((nodeIds: readonly string[]) => {
     if (nodeIds.length === 0 || !canMutateDocument()) return;
-    if (!nodeIds.some(id=>nodes.some(n=>n.id === id))) return;
+    const current = {
+      nodes: nodesRef.current,
+      edges: canonicalEdgesRef.current,
+      clusters: clustersRef.current,
+    };
+    if (!nodeIds.some(id => current.nodes.some(node => node.id === id))) return;
     try {
-      const result = deleteNodesFromDocument({ nodes, edges, clusters }, new Set(nodeIds));
+      const result = deleteNodesFromDocument(current, new Set(nodeIds));
       saveHistorySnapshot();
       restoreDocument(result.document);
       if (result.dissolvedClusters.length > 0) toast({title:'Clusters dissolved', description:result.dissolvedClusters.map(c=>c.title).join(', ')});
     } catch (error) { toast({title:'Cannot delete nodes', description:String(error)}); }
-  }, [clusters, canMutateDocument, edges, nodes, restoreDocument, saveHistorySnapshot, toast]);
+  }, [canMutateDocument, restoreDocument, saveHistorySnapshot, toast]);
 
   const dissolveClustersForNodes = useCallback((nodeIds: readonly string[]) => {
     const selected = new Set(nodeIds);

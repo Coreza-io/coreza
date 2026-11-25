@@ -61,7 +61,7 @@ export const EMPTY_EXECUTION_HISTORY_FILTERS: ExecutionHistoryFilterValues = {
 };
 
 const hasFilters = ({ status, dateFrom, dateTo, bars }: ExecutionHistoryFilterValues) =>
-  status !== "all" || !!dateFrom || !!dateTo || Object.values(bars).some(Boolean);
+  status !== "all" || Boolean(dateFrom || dateTo || bars.symbol.trim() || bars.from || bars.to);
 
 interface ExecutionHistoryPanelProps {
   workflowId: string | null;
@@ -219,7 +219,11 @@ export function ExecutionHistoryPanel({
               <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
             </Button>
             <Popover open={isFiltersOpen} onOpenChange={(open) => {
-              if (open) setDraft(filters);
+              if (open) {
+                setDraft(filters);
+                setIsFromOpen(false);
+                setIsToOpen(false);
+              }
               setIsFiltersOpen(open);
             }}>
               <PopoverTrigger asChild>
@@ -235,7 +239,12 @@ export function ExecutionHistoryPanel({
                   )}
                 </Button>
               </PopoverTrigger>
-              <PopoverContent className="flex max-h-[var(--radix-popover-content-available-height)] w-80 max-w-[calc(100vw-1rem)] flex-col" align="end" sideOffset={8}>
+              <PopoverContent
+                className="flex max-h-[var(--radix-popover-content-available-height)] w-80 max-w-[var(--radix-popover-content-available-width)] flex-col"
+                align="end"
+                sideOffset={8}
+                collisionPadding={8}
+              >
                 <div className="min-h-0 space-y-4 overflow-y-auto p-1">
                   <div className="space-y-1">
                     <div className="text-sm font-medium">Status</div>

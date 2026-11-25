@@ -9,6 +9,11 @@ interface DependencyDescriptor {
   readonly branchGroups: readonly (readonly string[])[];
 }
 
+interface LoopScheduling {
+  readonly feedbackEdgeIds: ReadonlySet<string>;
+  readonly startup: DependencyDescriptor;
+}
+
 export class GraphRuntime {
   readonly nodeById = new Map<string, WorkflowNode>();
   readonly subNodeIds = new Set<string>();
@@ -19,6 +24,7 @@ export class GraphRuntime {
   readonly dependenciesByTarget: ReadonlyMap<string, DependencyDescriptor>;
   readonly entryNodeIds: readonly string[];
   readonly orderedBranches: OrderedBranches | undefined;
+  private readonly loopScheduling = new Map<string, LoopScheduling>();
 
   constructor(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
     this.validate(nodes, edges);
@@ -56,29 +62,54 @@ export class GraphRuntime {
   private buildDependencies(): ReadonlyMap<string, DependencyDescriptor> {
     const descriptors = new Map<string, DependencyDescriptor>();
     for (const nodeId of this.nodeById.keys()) {
-      const origins = this.branchOrigins.get(nodeId);
-      const independent: string[] = [];
-      const branchGroups = new Map<string, string[]>();
-      let requiredCount = 0;
-      for (const edge of this.getIncomingEdges(nodeId)) {
-        if (this.isSubNode(edge.source)) continue;
-        requiredCount++;
-        const origin = origins?.get(edge.id);
-        if (!origin) {
-          independent.push(edge.id);
-          continue;
-        }
-        const group = branchGroups.get(origin.ifNodeId) ?? [];
-        group.push(edge.id);
-        branchGroups.set(origin.ifNodeId, group);
-      }
-      descriptors.set(nodeId, Object.freeze({
-        requiredCount,
-        independentEdgeIds: Object.freeze(independent),
-        branchGroups: Object.freeze([...branchGroups.values()].map(group => Object.freeze(group))),
-      }));
+      descriptors.set(nodeId, this.describeDependencies(nodeId));
     }
     return descriptors;
+  }
+
+  private describeDependencies(nodeId: string, excludedEdges?: ReadonlySet<string>): DependencyDescriptor {
+    const origins = this.branchOrigins.get(nodeId);
+    const independent: string[] = [];
+    const branchGroups = new Map<string, string[]>();
+    let requiredCount = 0;
+    for (const edge of this.getIncomingEdges(nodeId)) {
+      if (this.isSubNode(edge.source) || excludedEdges?.has(edge.id)) continue;
+      requiredCount++;
+      const origin = origins?.get(edge.id);
+      if (!origin) {
+        independent.push(edge.id);
+        continue;
+      }
+      const group = branchGroups.get(origin.ifNodeId) ?? [];
+      group.push(edge.id);
+      branchGroups.set(origin.ifNodeId, group);
+    }
+    return Object.freeze({
+      requiredCount,
+      independentEdgeIds: Object.freeze(independent),
+      branchGroups: Object.freeze([...branchGroups.values()].map(group => Object.freeze(group))),
+    });
+  }
+
+  getLoopScheduling(loopId: string): LoopScheduling {
+    const cached = this.loopScheduling.get(loopId);
+    if (cached) return cached;
+
+    const body = new Set<string>();
+    const pending = this.loopBodyEdges(loopId).map(edge => edge.target);
+    while (pending.length) {
+      const nodeId = pending.pop()!;
+      // Stop at the owning Loop so its done path cannot lead back into the body.
+      if (nodeId === loopId || this.isSubNode(nodeId) || body.has(nodeId)) continue;
+      body.add(nodeId);
+      for (const edge of this.getOutgoingEdges(nodeId)) pending.push(edge.target);
+    }
+
+    const feedbackEdgeIds = new Set(this.getIncomingEdges(loopId)
+      .filter(edge => body.has(edge.source)).map(edge => edge.id));
+    const scheduling = { feedbackEdgeIds, startup: this.describeDependencies(loopId, feedbackEdgeIds) };
+    this.loopScheduling.set(loopId, scheduling);
+    return scheduling;
   }
 
   private validate(nodes: WorkflowNode[], edges: WorkflowEdge[]): void {

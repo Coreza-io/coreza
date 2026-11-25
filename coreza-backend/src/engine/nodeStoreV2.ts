@@ -246,6 +246,10 @@ export class NodeStoreV2 {
     nodeStateMap.set(key, value);
   }
 
+  clearNodeState(nodeId: string): void {
+    this.nodeStates.delete(nodeId);
+  }
+
   // Persistent value management (for Edit Fields nodes)
   async getPersistentValue(
     userId: string,

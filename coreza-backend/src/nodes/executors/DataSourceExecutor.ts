@@ -15,7 +15,6 @@ import {
   getDataSourceService,
 } from "../../services/datasources";
 import { getStorageService } from "../../services/storage";
-import { BACKTEST_SESSION_SCOPE } from "../../services/storage/backtestSessionStore";
 import type { StorageInput } from "../../services/storage/types";
 import { finalizeNodeResult, createErrorOutput } from "../../utils/nodeResultHelpers";
 
@@ -46,11 +45,6 @@ export class DataSourceExecutor implements INodeExecutor {
       const resolvedParams = context?.resolveNodeParameters
         ? context.resolveNodeParameters(node, input)
         : { ...node.values, ...input };
-
-      if (context?.isWarmingUp && (node.name !== "Store" || nodeName !== "Store" ||
-          node.values?.scope !== BACKTEST_SESSION_SCOPE || resolvedParams.scope !== BACKTEST_SESSION_SCOPE)) {
-        throw new Error("Only built-in Store nodes with a literal Backtest session scope can run during warm-up");
-      }
 
       if (nodeName === "Store") {
         const result = await this.executeStoreNode(resolvedParams, context);
@@ -191,14 +185,6 @@ export class DataSourceExecutor implements INodeExecutor {
           `Unsupported storage service: ${serviceKey}`,
           outputContext,
         );
-    }
-
-    if (serviceKey === "store" && params.scope === BACKTEST_SESSION_SCOPE) {
-      return storageService.execute({
-        ...params,
-        user_id: context?.userId,
-        workflow_id: context?.workflowId,
-      }, context?.backtestStore);
     }
 
     params.user_id =

@@ -153,7 +153,6 @@ export interface CompiledPlan {
  * resolveNodeParameters overridden to return pre-resolved params.
  */
 export interface CompiledExecContext {
-  backtestStore?: import("../../services/storage/backtestSessionStore").BacktestSessionStore;
   isWarmingUp: boolean;
   nodeId: string;
   runId: string;

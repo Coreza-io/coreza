@@ -11,7 +11,6 @@ export interface MultiBarExecutionContext {
 }
 
 export interface NodeExecutionContext {
-  backtestStore?: import("../../services/storage/backtestSessionStore").BacktestSessionStore;
   liveTiming?: import("../../utils/liveTiming").LiveExecutionTiming;
   variableEventId?: string;
   commitVariables?: (changes: readonly import("../../variables/contract").VariableChange[]) => void | Promise<void>;

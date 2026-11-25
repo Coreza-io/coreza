@@ -2,7 +2,6 @@ import { resultFailure, resultSuccess } from "../../contracts/nodeResult";
 import { resolveCategory } from "../../nodes/categoryMap";
 import type { NodeResult, WorkflowNode } from "../../nodes/types";
 import type { WarmupNodePolicy } from "./types";
-import { BACKTEST_SESSION_SCOPE } from "../../services/storage/backtestSessionStore";
 
 /**
  * Warm-up node policy.
@@ -53,8 +52,9 @@ export function resolveWarmupPolicy(node: WorkflowNode): WarmupNodePolicy {
     return "reject";
   }
 
-  if (node.name === "Store") {
-    return node.values?.scope === BACKTEST_SESSION_SCOPE ? "execute" : "suppress";
+  // Match the built-in Store and its executor's service selection.
+  if (node.name === "Store" && (node.subCategory ?? node.name) === "Store") {
+    return "execute";
   }
 
   if (EXECUTE_NODES.has(nodeName) || EXECUTE_CATEGORIES.has(category)) {

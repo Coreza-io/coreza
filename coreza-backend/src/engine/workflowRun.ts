@@ -40,7 +40,6 @@ interface WorkflowRunOptions {
 }
 
 interface ExecutionContextExtras {
-  backtestStore?: import("./types").NodeExecutionContext["backtestStore"];
   liveTiming?: LiveExecutionTiming;
   variableEventId?: string;
   multiBarContext?: MultiBarExecutionContext;

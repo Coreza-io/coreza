@@ -17,7 +17,6 @@ import { LoopExecutorV2 } from "./LoopExecutorV2";
 import { ComparatorService } from "../../nodes/logic/comparator";
 import { createSuccessOutput, createErrorOutput } from "../../utils/nodeResultHelpers";
 import { applyFieldRows, stagePersistentFields } from "../logic/editFields";
-import { BACKTEST_SESSION_SCOPE } from "../../services/storage/backtestSessionStore";
 
 export class ControlFlowExecutor implements INodeExecutor {
   private isPromiseLike(value: unknown): value is PromiseLike<unknown> {
@@ -281,10 +280,7 @@ export class ControlFlowExecutor implements INodeExecutor {
     // Get loop configuration
     const inputArray = resolvedParams.inputArray || "items";
     const batchSize = Number(resolvedParams.batchSize) || 1;
-    // Distributed Loop jobs and their continuations do not inherit the backtest session.
-    const parallel = !!resolvedParams.parallel && !(context?.backtestStore &&
-      context.nodes?.some((strategyNode: WorkflowNode) =>
-        strategyNode.name === "Store" && strategyNode.values?.scope === BACKTEST_SESSION_SCOPE));
+    const parallel = !!resolvedParams.parallel;
     const continueOnError = !!resolvedParams.continueOnError;
     const isBacktest = context?.executionMode === "backtest";
     const throttleMs = isBacktest

@@ -10,7 +10,6 @@
 
 import type { Redis } from "ioredis";
 import type { NodeResult } from "../../contracts/nodeResult";
-import type { BacktestSessionStore } from "./backtestSessionStore";
 
 export interface StorageInput {
   user_id: string;
@@ -73,7 +72,7 @@ export interface StorageResult {
 export interface IStorageService {
   readonly serviceKey: string;
   readonly requiresCredentials: boolean;
-  execute(input: StorageInput, backtestStore?: BacktestSessionStore): Promise<NodeResult>;
+  execute(input: StorageInput): Promise<NodeResult>;
   validateCredentials?(credentials: any): Promise<{ valid: boolean; error?: string }>;
 }
 
@@ -82,7 +81,6 @@ export interface StorageContext {
   workflowId?: string;
   redis?: Redis;
   credentials?: any;
-  backtestStore?: BacktestSessionStore;
 }
 
 export type StorageOperationHandler = (

@@ -1,5 +1,4 @@
 import { getRedisCache } from "../../config/redis";
-import { BacktestSessionStore } from "../../services/storage/backtestSessionStore";
 import { BacktestExecutor } from "../BacktestExecutor";
 import { NodeResult, WorkflowEdge, WorkflowNode } from "../../nodes/types";
 import { IndicatorStateManager } from "../../engine/indicatorStateManager";
@@ -71,7 +70,6 @@ export class BacktestSession {
   private run: WorkflowRun;
   private readonly stateManager?: IndicatorStateManager;
   private readonly abortController: AbortController;
-  private store: BacktestSessionStore;
   private barsProcessed = 0;
   private currentSymbolIndex = 0;
   private stepping = false;
@@ -137,13 +135,11 @@ export class BacktestSession {
     private readonly indicatorInitialization?: IndicatorInitialization,
     public readonly persistResults = true,
     parentRunId?: string,
-    public readonly editorSessionId?: string,
   ) {
     if (persistResults && parentRunId && process.env.BACKTEST_EXECUTION_HISTORY_ENABLED === "true") {
       this.barHistory = new BacktestBarHistory(parentRunId, workflowId, userId);
     }
     this.abortController = new AbortController();
-    this.store = new BacktestSessionStore(userId, workflowId);
     this.stateManager = stateManager;
     this.plan = WorkflowPlan.compile(this.nodes, this.edges, "backtest");
     this.run = this.plan.createRun({
@@ -164,10 +160,6 @@ export class BacktestSession {
 
     // Pin init results once — they survive across bar resets
     this.run.pinResults(this.backtestInitResult);
-  }
-
-  get storeScope(): BacktestSessionStore {
-    return this.store;
   }
 
   /**
@@ -202,7 +194,6 @@ export class BacktestSession {
         compiledParams,
         this.backtestInitResult,
         {
-          backtestStore: this.store,
           runId: this.executionId,
           workflowId: this.workflowId,
           userId: this.userId,
@@ -346,16 +337,12 @@ export class BacktestSession {
     this.initializing = true;
     try {
       await this.initializeState();
-    } catch (error) {
-      this.store.close();
-      throw error;
     } finally {
       this.initializing = false;
     }
   }
 
   private async initializeState(): Promise<void> {
-    this.run.setExecutionContextExtras({ backtestStore: this.store });
     await this.run.initialize();
     if (this.warmupMode === "workflow_replay" && this.indicatorWarmupSeed) {
       throw new Error(
@@ -913,7 +900,6 @@ export class BacktestSession {
 
       return this.normalizeBarPayload(currentEvent, isLast);
     } finally {
-      if (!manual && this.status === "finished") this.store.close();
       this.stepping = false;
     }
   }
@@ -1083,7 +1069,6 @@ export class BacktestSession {
       try {
         if (this.barHistory) await this.barHistory.flush();
       } finally {
-        if (this.currentIndex >= this.bars.length) this.store.close();
         this.stepping = false;
       }
     }
@@ -1091,7 +1076,7 @@ export class BacktestSession {
     if (this.abortController.signal.aborted) {
       throw this.abortController.signal.reason ?? new Error("Workflow cancelled by user");
     }
-    if (this.currentIndex >= this.bars.length) {
+    if (this.bars.length === 0) {
       this.status = "finished";
       this.phase = "finished";
     }
@@ -1122,17 +1107,12 @@ export class BacktestSession {
     try {
       if (this.finalization) await this.finalization;
       await this.resetState();
-    } catch (error) {
-      this.store.close();
-      throw error;
     } finally {
       this.stepping = false;
     }
   }
 
   private async resetState(): Promise<void> {
-    this.store.close();
-    this.store = new BacktestSessionStore(this.userId, this.workflowId);
     if (!this.persistResults) this.finalization = null;
     this.currentIndex = 0;
     this.currentSymbolIndex = 0;
@@ -1203,14 +1183,13 @@ export class BacktestSession {
   }
 
   cleanup(): void {
-    this.cancel();
+    this.abortController.abort();
     BacktestExecutor.cleanupBacktestResources(this.backtestId);
     this.run.destroy();
   }
 
   cancel(reason?: unknown): void {
     this.abortController.abort(reason);
-    this.store.close();
   }
 
   private async reportProgress(): Promise<void> {

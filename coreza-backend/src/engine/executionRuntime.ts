@@ -100,6 +100,11 @@ export abstract class BaseExecutionRuntime {
     return true;
   }
 
+  enqueueEntry(nodeId: string, input: unknown): void {
+    this.primeEntry(nodeId, input);
+    this.enqueue({ nodeId, input });
+  }
+
   protected assertNodeAllowed(nodeId: string, phase: "enqueue" | "execute" | "route"): void {
     if (this.allowedExecutableNodeIds && !this.allowedExecutableNodeIds.has(nodeId)) {
       throw new Error(`Scoped execution invariant failed during ${phase}: ${nodeId}`);
@@ -522,12 +527,26 @@ export class BacktestExecutionRuntime extends BaseExecutionRuntime {
 
   private readonly satisfiedCounts = new Map<string, number>();
   private readonly loopStartupArrivals = new Map<string, Set<string>>();
+  private readonly pendingLoopEntries = new Map<string, QueueItem>();
   private readonly activeLoops = new Map<string, BacktestLoopActivation>();
+
+  override enqueueEntry(nodeId: string, input: unknown): void {
+    const node = this.graph.nodeById.get(nodeId);
+    if (node?.name === "Loop" && !node.values?.checkDependency &&
+        this.graph.getLoopScheduling(nodeId).startup.requiredCount > 0) {
+      // BacktestInit's edge supplies the bar payload but is outside the strategy graph.
+      this.assertNodeAllowed(nodeId, "enqueue");
+      this.pendingLoopEntries.set(nodeId, { nodeId, input });
+      return;
+    }
+    super.enqueueEntry(nodeId, input);
+  }
 
   override enqueue(item: QueueItem): boolean {
     if (this.graph.isLoopNode(item.nodeId)) {
       if (this.activeLoops.has(item.nodeId)) return false;
       this.loopStartupArrivals.delete(item.nodeId);
+      this.pendingLoopEntries.delete(item.nodeId);
       this.activeLoops.set(item.nodeId, { startupMeta: item.meta });
     }
     return super.enqueue(item);
@@ -628,7 +647,7 @@ export class BacktestExecutionRuntime extends BaseExecutionRuntime {
     this.loopStartupArrivals.set(edge.target, arrivals);
     arrivals.add(edge.id);
     if (skipDependencyCheck || this.areDependenciesSatisfied(edge.target)) {
-      this.enqueue({ nodeId: edge.target, input: payload, meta });
+      this.enqueue(this.pendingLoopEntries.get(edge.target) ?? { nodeId: edge.target, input: payload, meta });
     }
   }
 
@@ -654,6 +673,7 @@ export class BacktestExecutionRuntime extends BaseExecutionRuntime {
     this.queue.clear();
     this.satisfiedCounts.clear();
     this.loopStartupArrivals.clear();
+    this.pendingLoopEntries.clear();
     for (const nodeId of this.activeLoops.keys()) this.store.clearNodeState(nodeId);
     this.activeLoops.clear();
     this.orderedLoopJoinArrivals.clear();

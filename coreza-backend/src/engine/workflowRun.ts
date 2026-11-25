@@ -199,8 +199,7 @@ export class WorkflowRun {
     return this.runExecution(() => {
       for (const entryNodeId of entryNodeIds) {
         this.ensureNodeExists(entryNodeId);
-        this.runtime.primeEntry(entryNodeId, input);
-        this.runtime.enqueue({ nodeId: entryNodeId, input });
+        this.runtime.enqueueEntry(entryNodeId, input);
       }
     });
   }
@@ -210,8 +209,7 @@ export class WorkflowRun {
       for (const activation of activations) {
         this.ensureNodeExists(activation.nodeId);
         const input = mergeActivationInputs(activation.inputs);
-        this.runtime.primeEntry(activation.nodeId, input);
-        this.runtime.enqueue({ nodeId: activation.nodeId, input });
+        this.runtime.enqueueEntry(activation.nodeId, input);
       }
     });
   }

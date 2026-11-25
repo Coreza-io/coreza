@@ -3,6 +3,12 @@ import { supabase } from "../config/supabase";
 import { createError } from "../middleware/errorHandler";
 import { WorkflowEdge, WorkflowNode } from "../nodes/types";
 import type { WorkflowExecutionResult } from "../engine/types";
+import type { Database } from "../types/supabase";
+
+type WorkflowRunRow = Database["public"]["Tables"]["workflow_runs"]["Row"];
+const COMPLETED_RUN_STATUSES = ["success", "failed", "cancelled"];
+const BACKTEST_PARENT = "scope_snapshot->>backtestParentRunId";
+const HISTORY_DELETE_BATCH_SIZE = 50;
 
 export class WorkflowRunRepository {
   async finishBacktestRun(
@@ -165,6 +171,55 @@ export class WorkflowRunRepository {
     }
 
     return data;
+  }
+
+  async clearExecutionHistory(workflowId: string, backtestRunId?: string): Promise<number> {
+    if (backtestRunId) {
+      const { data: run, error } = await supabase.from("workflow_runs")
+        .select("status,scope_snapshot").eq("workflow_id", workflowId)
+        .eq("id", backtestRunId).is(BACKTEST_PARENT, null).maybeSingle()
+        .overrideTypes<Pick<WorkflowRunRow, "status" | "scope_snapshot">, { merge: false }>();
+      if (error) throw createError("Failed to find backtest history", 500);
+      if (!run) throw createError("Backtest run not found", 404);
+      if (run.scope_snapshot?.executionMode !== "backtest" && run.scope_snapshot?.barHistory !== true) {
+        const { data: bars, error: barsError } = await supabase.from("workflow_runs")
+          .select("id").eq("workflow_id", workflowId).eq(BACKTEST_PARENT, backtestRunId).limit(1);
+        if (barsError) throw createError("Failed to find backtest history", 500);
+        if (!bars?.length) throw createError("Backtest run not found", 404);
+      }
+      if (!COMPLETED_RUN_STATUSES.includes(run.status)) {
+        throw createError("Wait for the backtest to finish before clearing its history", 409);
+      }
+      return this.deleteCompletedRuns(workflowId, [backtestRunId]);
+    }
+
+    const cutoff = new Date().toISOString();
+    let deleted = 0;
+    let cursor: string | undefined;
+    for (;;) {
+      let query = supabase.from("workflow_runs").select("id")
+        .eq("workflow_id", workflowId).is(BACKTEST_PARENT, null)
+        .in("status", COMPLETED_RUN_STATUSES)
+        .or(`completed_at.is.null,completed_at.lte.${cutoff}`)
+        .order("id").limit(HISTORY_DELETE_BATCH_SIZE);
+      if (cursor) query = query.gt("id", cursor);
+      const { data: runs, error } = await query.overrideTypes<Pick<WorkflowRunRow, "id">[], { merge: false }>();
+      if (error) throw createError("Failed to find completed execution history", 500);
+      const ids = (runs ?? []).map(run => run.id);
+      if (!ids.length) return deleted;
+      deleted += await this.deleteCompletedRuns(workflowId, ids);
+      cursor = ids[ids.length - 1];
+    }
+  }
+
+  private async deleteCompletedRuns(workflowId: string, rootIds: string[]): Promise<number> {
+    // Delete parent snapshots and their historical bars in the same statement.
+    const ids = rootIds.join(",");
+    const { count, error } = await supabase.from("workflow_runs").delete({ count: "exact" })
+      .eq("workflow_id", workflowId).in("status", COMPLETED_RUN_STATUSES)
+      .or(`id.in.(${ids}),${BACKTEST_PARENT}.in.(${ids})`);
+    if (error) throw createError("Failed to clear execution history", 500);
+    return count ?? 0;
   }
 
   async getRunStatus(workflowId: string, runId: string) {

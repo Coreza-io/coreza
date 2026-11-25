@@ -131,6 +131,11 @@ export class WorkflowQueryService {
     return this.runRepo.listByWorkflow(workflowId);
   }
 
+  async clearExecutionHistory(userId: string, workflowId: string, backtestRunId?: string) {
+    await this.workflowRepo.getOwnedWorkflow(userId, workflowId, "id");
+    return this.runRepo.clearExecutionHistory(workflowId, backtestRunId);
+  }
+
   async getRunStatus(userId: string, workflowId: string, runId: string) {
     await this.workflowRepo.getOwnedWorkflow(userId, workflowId, "id");
     const run = await this.runRepo.getRunStatus(workflowId, runId);

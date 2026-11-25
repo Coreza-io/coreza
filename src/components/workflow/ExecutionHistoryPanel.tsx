@@ -17,14 +17,26 @@ import {
   CalendarRange,
   Filter,
   AlertCircle,
+  Trash2,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import type { ExecutionHistorySort, ExecutionStatus, ExecutionSummary } from "@/hooks/useExecutionHistory";
+import type { ExecutionHistorySort, ExecutionRun, ExecutionStatus, ExecutionSummary } from "@/hooks/useExecutionHistory";
+import { toast } from "@/hooks/use-toast";
 import {
   Select,
   SelectContent,
@@ -69,12 +81,13 @@ const hasFilters = ({ status, sort, dateFrom, dateTo, bars }: ExecutionHistoryFi
 
 interface ExecutionHistoryPanelProps {
   workflowId: string | null;
-  selectedExecution: ExecutionSummary | null;
+  selectedExecution: ExecutionRun | null;
   selectedExecutionId?: string | null;
   onSelectExecution: (execution: ExecutionSummary) => void;
   autoRefresh: boolean;
   onAutoRefreshChange: (value: boolean) => void;
   onRefresh: () => void;
+  onClearHistory: (backtestRunId?: string) => Promise<number>;
   executions: ExecutionSummary[];
   loading: boolean;
   getDuration: (execution: ExecutionSummary) => string;
@@ -96,6 +109,7 @@ export function ExecutionHistoryPanel({
   autoRefresh,
   onAutoRefreshChange,
   onRefresh,
+  onClearHistory,
   executions,
   loading,
   getDuration,
@@ -113,10 +127,26 @@ export function ExecutionHistoryPanel({
   const [draft, setDraft] = useState(filters);
   const [isFromOpen, setIsFromOpen] = useState(false);
   const [isToOpen, setIsToOpen] = useState(false);
+  const [clearTarget, setClearTarget] = useState<{ workflowId: string; backtestRunId?: string } | null>(null);
+  const [clearingHistory, setClearingHistory] = useState<"backtest" | "workflow" | null>(null);
   const listParentRef = useRef<HTMLDivElement | null>(null);
 
   const filtersActive = hasFilters(filters);
   const { dateFrom, dateTo, bars } = draft;
+
+  const clearHistory = async (backtestRunId?: string) => {
+    if (!clearTarget || clearTarget.workflowId !== workflowId || clearingHistory) return;
+    setClearingHistory(backtestRunId ? "backtest" : "workflow");
+    try {
+      const deleted = await onClearHistory(backtestRunId);
+      setClearTarget(null);
+      toast({ description: deleted ? `Cleared ${deleted} execution history ${deleted === 1 ? "entry" : "entries"}.` : "No completed execution history to clear." });
+    } catch (error) {
+      toast({ title: "Could not clear execution history", description: error instanceof Error ? error.message : undefined, variant: "destructive" });
+    } finally {
+      setClearingHistory(null);
+    }
+  };
 
   const applyFilters = (values: ExecutionHistoryFilterValues) => {
     if (values.sort !== filters.sort && listParentRef.current) listParentRef.current.scrollTop = 0;
@@ -224,6 +254,51 @@ export function ExecutionHistoryPanel({
             >
               <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
             </Button>
+            <AlertDialog
+              open={clearTarget !== null && clearTarget.workflowId === workflowId}
+              onOpenChange={(open) => {
+                if (clearingHistory) return;
+                if (!open || !workflowId) {
+                  setClearTarget(null);
+                  return;
+                }
+                const selectedRun = executions.find(({ id }) => id === selectedExecutionId) ??
+                  (selectedExecution?.id === selectedExecutionId ? selectedExecution : null);
+                const backtestRunId = selectedRun?.parent_run_id ??
+                  (selectedRun?.execution_mode === "backtest" || selectedRun?.bar_history === true ? selectedRun.id : undefined);
+                setClearTarget({ workflowId, backtestRunId });
+              }}
+            >
+              <AlertDialogTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Clear execution history" title="Clear execution history" disabled={!workflowId || !!clearingHistory}>
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Clear execution history?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    {clearTarget?.backtestRunId
+                      ? "Permanently delete completed execution logs for the selected backtest or for the entire workflow."
+                      : "Permanently delete all completed execution logs for this workflow, including historical bars."}
+                    {" Active runs will be kept."}
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter className="sm:flex-wrap sm:gap-2 sm:space-x-0">
+                  <AlertDialogCancel disabled={!!clearingHistory}>Cancel</AlertDialogCancel>
+                  {clearTarget?.backtestRunId && (
+                    <Button variant="destructive" disabled={!!clearingHistory} onClick={() => void clearHistory(clearTarget.backtestRunId)}>
+                      {clearingHistory === "backtest" && <Loader2 className="h-4 w-4 animate-spin" />}
+                      Clear selected backtest
+                    </Button>
+                  )}
+                  <Button variant="destructive" disabled={!!clearingHistory} onClick={() => void clearHistory()}>
+                    {clearingHistory === "workflow" && <Loader2 className="h-4 w-4 animate-spin" />}
+                    Clear workflow history
+                  </Button>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
             <Popover open={isFiltersOpen} onOpenChange={(open) => {
               if (open) {
                 setDraft(filters);

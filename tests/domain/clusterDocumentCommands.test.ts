@@ -119,6 +119,22 @@ describe("cluster-aware document commands", () => {
     expect(result.dissolvedClusters).toEqual([]);
   });
 
+  it("preserves a cluster when deleting the node between its entry and exit", () => {
+    const original = document();
+    original.nodes.push(node("before"), node("bridge"), node("after"));
+    original.clusters[0].memberNodeIds.push("bridge");
+    original.edges = [
+      { id: "in", source: "before", target: "a" },
+      { id: "a-bridge", source: "a", target: "bridge" },
+      { id: "bridge-b", source: "bridge", target: "b" },
+      { id: "out", source: "b", target: "after" },
+    ];
+    const result = deleteNodesFromDocument(original, new Set(["bridge"]));
+    expect(result.document.edges.map(({ id }) => id)).toEqual(["in", "out"]);
+    expect(result.document.clusters[0].memberNodeIds).toEqual(["a", "b"]);
+    expect(result.dissolvedClusters).toEqual([]);
+  });
+
   it("does not silently discard an already-invalid cluster during an unrelated mutation", () => {
     const invalid = document();
     invalid.clusters[0].memberNodeIds.push("missing");

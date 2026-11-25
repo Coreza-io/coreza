@@ -85,8 +85,8 @@ export default [
     node_clusters: [{"id": "123e4567-e89b-42d3-a456-426614174000", "title": "Group", "memberNodeIds": ["a", "b"]}],
   },
   {
-    name: "missing entry exit path",
-    valid: false,
+    name: "persisted cluster with a disconnected entry and exit",
+    valid: true,
     nodes: [
       {"id": "x", "name": "x", "node_type": "main", "handles": [{"id": "in", "type": "target", "connectionKind": "main"}, {"id": "out", "type": "source", "connectionKind": "main"}]},
       {"id": "a", "name": "a", "node_type": "main", "handles": [{"id": "in", "type": "target", "connectionKind": "main"}, {"id": "out", "type": "source", "connectionKind": "main"}]},

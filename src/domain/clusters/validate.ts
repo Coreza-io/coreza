@@ -129,28 +129,31 @@ function validateTopology(
 
   const entry = incoming.size === 1 ? [...incoming][0] : undefined;
   const exit = outgoing.size === 1 ? [...outgoing][0] : undefined;
-  const acceptedLoop = entry && exit
-    ? isAcceptedLoopBoundary(entry, exit, internalMain, incomingMain, outgoingMain, nodeById)
-    : false;
+  const acceptedLoop = isAcceptedLoopBoundary(entry, exit, internalMain, incomingMain, outgoingMain, nodeById, requireConnectedMembers);
   if (entry && !acceptedLoop && internalMain.some((edge) => edge.target === entry)) violations.push(violation('entry-not-root', 'The cluster entry must be an internal root.', cluster.id, [entry]));
   if (exit && !acceptedLoop && internalMain.some((edge) => edge.source === exit)) violations.push(violation('exit-not-leaf', 'The cluster exit must be an internal leaf.', cluster.id, [exit]));
-  if (entry && exit && !hasDirectedPath(entry, exit, internalMain)) violations.push(violation('no-entry-exit-path', 'The cluster entry must connect to its exit.', cluster.id, [entry, exit]));
+  if (requireConnectedMembers && entry && exit && !hasDirectedPath(entry, exit, internalMain)) violations.push(violation('no-entry-exit-path', 'The cluster entry must connect to its exit.', cluster.id, [entry, exit]));
 }
 
 function isAcceptedLoopBoundary(
-  entry: string,
-  exit: string,
+  entry: string | undefined,
+  exit: string | undefined,
   internalEdges: readonly Edge[],
   incomingEdges: readonly Edge[],
   outgoingEdges: readonly Edge[],
   nodeById: ReadonlyMap<string, Node>,
+  requireConnectedMembers: boolean,
 ): boolean {
-  if (entry !== exit) return false;
-  const definition = nodeById.get(entry)?.data?.definition;
+  const loopId = entry ?? exit;
+  if (!loopId || (entry && exit && entry !== exit)) return false;
+  const definition = nodeById.get(loopId)?.data?.definition;
   if (typeof definition !== 'object' || definition === null ||
       (definition as { name?: unknown }).name !== 'Loop') return false;
   if (!incomingEdges.every((edge) => edge.targetHandle == null || edge.targetHandle === 'in')) return false;
   if (!outgoingEdges.every((edge) => edge.sourceHandle === 'done')) return false;
+  // An existing Loop cluster can keep its boundary while a wire is removed.
+  if (!requireConnectedMembers) return true;
+  if (!entry || !exit) return false;
   const loopBranches = internalEdges.filter((edge) => edge.source === entry && edge.sourceHandle === 'loop');
   const returns = internalEdges.filter((edge) => edge.target === entry && (edge.targetHandle == null || edge.targetHandle === 'in'));
   return loopBranches.length === 1 && returns.length >= 1 &&
@@ -235,16 +238,18 @@ export function validateClusterSelection(
     [...existingClusters, { ...candidate, memberNodeIds: expandedSelection }],
     options,
   );
-  const candidateConnectivity = validateClusters(
+  if (!completeValidation.valid) return { ...completeValidation, resolvedMemberNodeIds: expandedSelection };
+
+  const candidateTopology = validateClusters(
     nodes,
     edges,
     [{ ...candidate, memberNodeIds: expandedSelection }],
     { ...options, requireConnectedMembers: true },
-  ).violations.filter(({ code }) => code === 'disconnected-members');
-  const combinedViolations = [...completeValidation.violations, ...candidateConnectivity];
+  ).violations.filter(({ code }) => code === 'disconnected-members' || code === 'no-entry-exit-path' ||
+    code === 'entry-not-root' || code === 'exit-not-leaf');
   return {
-    valid: combinedViolations.length === 0,
-    violations: combinedViolations,
+    valid: candidateTopology.length === 0,
+    violations: candidateTopology,
     resolvedMemberNodeIds: expandedSelection,
   };
 }

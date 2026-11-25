@@ -28,6 +28,7 @@ const EXECUTE_NODES = new Set([
   "edit fields",
   "onbar",
   "consolidator",
+  "store",
 ]);
 
 /** Nodes/categories that would create or mutate trading state. */
@@ -52,12 +53,10 @@ export function resolveWarmupPolicy(node: WorkflowNode): WarmupNodePolicy {
     return "reject";
   }
 
-  // Match the built-in Store and its executor's service selection.
-  if (node.name === "Store" && (node.subCategory ?? node.name) === "Store") {
-    return "execute";
-  }
-
-  if (EXECUTE_NODES.has(nodeName) || EXECUTE_CATEGORIES.has(category)) {
+  // For Store, also match the service selected by DataSourceExecutor.
+  const allowedByName = EXECUTE_NODES.has(nodeName) &&
+    (nodeName !== "store" || (node.name === "Store" && (node.subCategory ?? node.name) === "Store"));
+  if (allowedByName || EXECUTE_CATEGORIES.has(category)) {
     return "execute";
   }
 

@@ -11,6 +11,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { apiClient } from "@/lib/apiClient";
 import { normalizePersistedNodeResult } from "@/utils/persistedNodeResult";
 
 const PAGE_SIZE = 20;
@@ -19,7 +20,7 @@ const BAR_PARENT = "scope_snapshot->>backtestParentRunId";
 const BAR_SYMBOL = "scope_snapshot->>backtestBarSymbol";
 const BAR_TIME = "scope_snapshot->>backtestBarTime";
 const SUMMARY_COLUMNS = `id,workflow_id,status,started_at,completed_at,error_message,initiated_by,node_count,edge_count,parent_run_id:${BAR_PARENT},bar_symbol:${BAR_SYMBOL},bar_time:${BAR_TIME}`;
-export type ExecutionSummary = Omit<ExecutionRun, "result" | "nodes" | "edges" | "node_clusters">;
+export type ExecutionSummary = Omit<ExecutionRun, "result" | "nodes" | "edges" | "node_clusters" | "scope_snapshot">;
 
 export type ExecutionStatus =
   | "all"
@@ -87,6 +88,7 @@ export interface ExecutionRun {
   nodes: unknown[] | null;
   edges: unknown[] | null;
   node_clusters: unknown;
+  scope_snapshot?: { executionMode?: string; barHistory?: boolean } | null;
   node_count: number | null;
   edge_count: number | null;
   parent_run_id: string | null;
@@ -249,7 +251,7 @@ export function useExecutionHistory(
   filters: ExecutionFilters = {},
   enabled = true,
 ) {
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const [executions, setExecutions] = useState<ExecutionSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -390,6 +392,31 @@ export function useExecutionHistory(
       if (isCurrent() && firstFlight.current === flight) { firstFlight.current = null; setLoading(false); }
     }
   }, [enabled, workflowId, scope.owner, normalizedFilters, ascending, compare, timeQueryColumn, isCurrent, loadDetail]);
+
+  const clearHistory = useCallback(async (backtestRunId?: string): Promise<number> => {
+    const token = session?.access_token;
+    if (!workflowId || !token || !isCurrent()) throw new Error("Sign in to clear execution history");
+
+    const query = backtestRunId ? `?backtestRunId=${encodeURIComponent(backtestRunId)}` : "";
+    try {
+      const response = await apiClient.delete(`/workflows/${encodeURIComponent(workflowId)}/runs${query}`, token);
+      const result = await response.json().catch(() => null);
+      if (!response.ok || typeof result?.deleted !== "number") {
+        throw new Error(result?.message || "Failed to clear execution history");
+      }
+      if (isCurrent()) {
+        await setSelectedExecution(null);
+        details.current.clear();
+      }
+      return result.deleted;
+    } finally {
+      if (isCurrent()) {
+        // Supersede any fetch that started before the deletion.
+        firstFlight.current = null;
+        await fetchExecutions(true);
+      }
+    }
+  }, [workflowId, session?.access_token, isCurrent, setSelectedExecution, fetchExecutions]);
 
   const loadMore = useCallback(async () => {
     if (!isCurrent() || !enabled || !workflowId || !scope.owner || !hasMore || pageFlight.current || firstFlight.current || !cursor.current) return;
@@ -590,6 +617,7 @@ export function useExecutionHistory(
     setAutoRefresh,
     detailLoading,
     refresh: () => fetchExecutions(true),
+    clearHistory,
     getDuration,
     getNodeExecutions,
     error,

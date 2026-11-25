@@ -430,6 +430,7 @@ const WorkflowEditorContent = () => {
     autoRefresh,
     setAutoRefresh,
     refresh: refreshExecutions,
+    clearHistory: clearExecutionHistory,
     getDuration,
     getNodeExecutions,
     error: executionsError,
@@ -2984,6 +2985,7 @@ const WorkflowEditorContent = () => {
             autoRefresh={autoRefresh}
             onAutoRefreshChange={setAutoRefresh}
             onRefresh={refreshExecutions}
+            onClearHistory={clearExecutionHistory}
             executions={executions}
             loading={executionsLoading}
             getDuration={getDuration}

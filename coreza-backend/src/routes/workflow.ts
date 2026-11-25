@@ -110,6 +110,17 @@ router.get("/:workflowId/runs", async (req, res, next) => {
   }
 });
 
+router.delete("/:workflowId/runs", async (req, res, next) => {
+  try {
+    const userId = requireUserId(req);
+    const { backtestRunId } = z.object({ backtestRunId: z.string().uuid().optional() }).strict().parse(req.query);
+    const deleted = await queryService.clearExecutionHistory(userId, req.params.workflowId, backtestRunId);
+    res.json({ deleted });
+  } catch (error) {
+    next(normalizeValidationError(error));
+  }
+});
+
 router.post("/:workflowId/execute", async (req, res, next) => {
   try {
     const userId = requireUserId(req);

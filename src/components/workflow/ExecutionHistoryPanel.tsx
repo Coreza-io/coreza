@@ -8,7 +8,7 @@
  * See the LICENSE file for details.
  */
 
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { format } from "date-fns";
 import { formatInTimeZone } from "date-fns-tz";
 import {
@@ -106,6 +106,7 @@ export function ExecutionHistoryPanel({
   error,
   onRetry,
 }: ExecutionHistoryPanelProps) {
+  const filtersFormId = useId();
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
   const [draft, setDraft] = useState(filters);
   const [isFromOpen, setIsFromOpen] = useState(false);
@@ -247,7 +248,14 @@ export function ExecutionHistoryPanel({
                 sideOffset={8}
                 collisionPadding={8}
               >
-                <div className="min-h-0 space-y-4 overflow-y-auto p-1">
+                <form
+                  id={filtersFormId}
+                  className="min-h-0 space-y-4 overflow-y-auto p-1"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    applyFilters(draft);
+                  }}
+                >
                   <div className="space-y-1">
                     <div className="text-sm font-medium">Status</div>
                     <Select
@@ -370,14 +378,14 @@ export function ExecutionHistoryPanel({
                       );
                     })}
                   </fieldset>
-                </div>
+                </form>
                 <div className="flex shrink-0 justify-end gap-2 pt-4">
                   {(filtersActive || hasFilters(draft)) && (
                     <Button variant="outline" size="sm" onClick={() => applyFilters(EMPTY_EXECUTION_HISTORY_FILTERS)}>
                       Reset filters
                     </Button>
                   )}
-                  <Button size="sm" onClick={() => applyFilters(draft)}>
+                  <Button size="sm" type="submit" form={filtersFormId}>
                     Apply filters
                   </Button>
                 </div>

@@ -8,7 +8,7 @@
  * See the LICENSE file for details.
  */
 
-import { useMemo, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { format } from "date-fns";
 import { formatInTimeZone } from "date-fns-tz";
 import {
@@ -24,7 +24,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import { ExecutionSummary } from "@/hooks/useExecutionHistory";
+import type { ExecutionStatus, ExecutionSummary } from "@/hooks/useExecutionHistory";
 import {
   Select,
   SelectContent,
@@ -40,11 +40,28 @@ import {
 import { Calendar } from "@/components/ui/calendar";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
-export interface BarHistoryFilters {
+interface BarHistoryFilters {
   symbol: string;
   from: string;
   to: string;
 }
+
+export interface ExecutionHistoryFilterValues {
+  status: ExecutionStatus;
+  dateFrom: Date | null;
+  dateTo: Date | null;
+  bars: BarHistoryFilters;
+}
+
+export const EMPTY_EXECUTION_HISTORY_FILTERS: ExecutionHistoryFilterValues = {
+  status: "all",
+  dateFrom: null,
+  dateTo: null,
+  bars: { symbol: "", from: "", to: "" },
+};
+
+const hasFilters = ({ status, dateFrom, dateTo, bars }: ExecutionHistoryFilterValues) =>
+  status !== "all" || Boolean(dateFrom || dateTo || bars.symbol.trim() || bars.from || bars.to);
 
 interface ExecutionHistoryPanelProps {
   workflowId: string | null;
@@ -60,16 +77,9 @@ interface ExecutionHistoryPanelProps {
   hasMore: boolean;
   loadingMore: boolean;
   onLoadMore: () => void;
-  statusFilter: string;
-  onStatusFilterChange: (status: string) => void;
-  dateFrom: Date | null;
-  onDateFromChange: (date: Date | null) => void;
-  dateTo: Date | null;
-  onDateToChange: (date: Date | null) => void;
-  barFilters: BarHistoryFilters;
-  onBarFiltersChange: (filters: BarHistoryFilters) => void;
+  filters: ExecutionHistoryFilterValues;
+  onApplyFilters: (filters: ExecutionHistoryFilterValues) => void;
   timezone: string;
-  onClearFilters: () => void;
   error?: string | null;
   onRetry?: () => void;
 }
@@ -88,28 +98,25 @@ export function ExecutionHistoryPanel({
   hasMore,
   loadingMore,
   onLoadMore,
-  statusFilter,
-  onStatusFilterChange,
-  dateFrom,
-  onDateFromChange,
-  dateTo,
-  onDateToChange,
-  barFilters,
-  onBarFiltersChange,
+  filters,
+  onApplyFilters,
   timezone,
-  onClearFilters,
   error,
   onRetry,
 }: ExecutionHistoryPanelProps) {
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
+  const [draft, setDraft] = useState(filters);
   const [isFromOpen, setIsFromOpen] = useState(false);
   const [isToOpen, setIsToOpen] = useState(false);
   const listParentRef = useRef<HTMLDivElement | null>(null);
 
-  const filtersActive = useMemo(
-    () => statusFilter !== "all" || !!dateFrom || !!dateTo || Object.values(barFilters).some(Boolean),
-    [dateFrom, dateTo, statusFilter, barFilters],
-  );
+  const filtersActive = hasFilters(filters);
+  const { dateFrom, dateTo, bars } = draft;
+
+  const applyFilters = (values: ExecutionHistoryFilterValues) => {
+    onApplyFilters(values);
+    setIsFiltersOpen(false);
+  };
 
   const shouldVirtualize = executions.length > 50;
   const rowVirtualizer = useVirtualizer({
@@ -211,7 +218,14 @@ export function ExecutionHistoryPanel({
             >
               <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
             </Button>
-            <Popover open={isFiltersOpen} onOpenChange={setIsFiltersOpen}>
+            <Popover open={isFiltersOpen} onOpenChange={(open) => {
+              if (open) {
+                setDraft(filters);
+                setIsFromOpen(false);
+                setIsToOpen(false);
+              }
+              setIsFiltersOpen(open);
+            }}>
               <PopoverTrigger asChild>
                 <Button
                   variant="ghost"
@@ -225,13 +239,18 @@ export function ExecutionHistoryPanel({
                   )}
                 </Button>
               </PopoverTrigger>
-              <PopoverContent className="w-80" align="end" sideOffset={8}>
-                <div className="space-y-4">
+              <PopoverContent
+                className="flex max-h-[var(--radix-popover-content-available-height)] w-80 max-w-[var(--radix-popover-content-available-width)] flex-col"
+                align="end"
+                sideOffset={8}
+                collisionPadding={8}
+              >
+                <div className="min-h-0 space-y-4 overflow-y-auto p-1">
                   <div className="space-y-1">
                     <div className="text-sm font-medium">Status</div>
                     <Select
-                      value={statusFilter}
-                      onValueChange={onStatusFilterChange}
+                      value={draft.status}
+                      onValueChange={(status) => setDraft({ ...draft, status: status as ExecutionStatus })}
                       disabled={!workflowId}
                     >
                       <SelectTrigger className="h-9 text-xs">
@@ -250,13 +269,13 @@ export function ExecutionHistoryPanel({
 
                   <div className="space-y-2">
                     <div className="text-sm font-medium">Execution start</div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-col gap-2">
                       <Popover open={isFromOpen} onOpenChange={setIsFromOpen}>
                         <PopoverTrigger asChild>
                           <Button
                             variant="outline"
                             size="sm"
-                            className="flex-1 justify-start"
+                            className="min-w-0 justify-start"
                             disabled={!workflowId}
                           >
                             <CalendarRange className="h-4 w-4 mr-2 text-muted-foreground" />
@@ -270,7 +289,7 @@ export function ExecutionHistoryPanel({
                             mode="single"
                             selected={dateFrom ?? undefined}
                             onSelect={(date) => {
-                              onDateFromChange(date ?? null);
+                              setDraft({ ...draft, dateFrom: date ?? null });
                               setIsFromOpen(false);
                             }}
                             initialFocus
@@ -283,7 +302,7 @@ export function ExecutionHistoryPanel({
                           <Button
                             variant="outline"
                             size="sm"
-                            className="flex-1 justify-start"
+                            className="min-w-0 justify-start"
                             disabled={!workflowId}
                           >
                             <CalendarRange className="h-4 w-4 mr-2 text-muted-foreground" />
@@ -297,7 +316,7 @@ export function ExecutionHistoryPanel({
                             mode="single"
                             selected={dateTo ?? undefined}
                             onSelect={(date) => {
-                              onDateToChange(date ?? null);
+                              setDraft({ ...draft, dateTo: date ?? null });
                               setIsToOpen(false);
                             }}
                             initialFocus
@@ -307,13 +326,13 @@ export function ExecutionHistoryPanel({
                     </div>
                   </div>
 
-                  <fieldset className="space-y-2">
+                  <fieldset className="min-w-0 space-y-2">
                     <legend className="text-sm font-medium">Historical bars ({timezone})</legend>
                     <label className="block text-xs">
                       Symbol
                       <Input
-                        value={barFilters.symbol}
-                        onChange={(event) => onBarFiltersChange({ ...barFilters, symbol: event.target.value })}
+                        value={bars.symbol}
+                        onChange={(event) => setDraft({ ...draft, bars: { ...bars, symbol: event.target.value } })}
                         placeholder="e.g. AAPL"
                       />
                     </label>
@@ -322,8 +341,8 @@ export function ExecutionHistoryPanel({
                       <Input
                         type="datetime-local"
                         step={1}
-                        value={barFilters.from}
-                        onChange={(event) => onBarFiltersChange({ ...barFilters, from: event.target.value })}
+                        value={bars.from}
+                        onChange={(event) => setDraft({ ...draft, bars: { ...bars, from: event.target.value } })}
                       />
                     </label>
                     <label className="block text-xs">
@@ -331,25 +350,21 @@ export function ExecutionHistoryPanel({
                       <Input
                         type="datetime-local"
                         step={1}
-                        value={barFilters.to}
-                        onChange={(event) => onBarFiltersChange({ ...barFilters, to: event.target.value })}
+                        value={bars.to}
+                        onChange={(event) => setDraft({ ...draft, bars: { ...bars, to: event.target.value } })}
                       />
                     </label>
                   </fieldset>
-
-                  {filtersActive && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="w-full"
-                      onClick={() => {
-                        onClearFilters();
-                        setIsFiltersOpen(false);
-                      }}
-                    >
+                </div>
+                <div className="flex shrink-0 justify-end gap-2 pt-4">
+                  {(filtersActive || hasFilters(draft)) && (
+                    <Button variant="outline" size="sm" onClick={() => applyFilters(EMPTY_EXECUTION_HISTORY_FILTERS)}>
                       Reset filters
                     </Button>
                   )}
+                  <Button size="sm" onClick={() => applyFilters(draft)}>
+                    Apply filters
+                  </Button>
                 </div>
               </PopoverContent>
             </Popover>

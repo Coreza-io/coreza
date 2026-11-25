@@ -510,10 +510,28 @@ export class StandardExecutionRuntime extends BaseExecutionRuntime {
   }
 }
 
+type BacktestLoopMeta = IterMeta & { feedbackToken?: symbol };
+
+interface BacktestLoopActivation {
+  startupMeta?: IterMeta;
+  feedback?: { iterIndex: number; token: symbol };
+}
+
 export class BacktestExecutionRuntime extends BaseExecutionRuntime {
   public lastStoreClearMs = 0;
 
   private readonly satisfiedCounts = new Map<string, number>();
+  private readonly loopStartupArrivals = new Map<string, Set<string>>();
+  private readonly activeLoops = new Map<string, BacktestLoopActivation>();
+
+  override enqueue(item: QueueItem): boolean {
+    if (this.graph.isLoopNode(item.nodeId)) {
+      if (this.activeLoops.has(item.nodeId)) return false;
+      this.loopStartupArrivals.delete(item.nodeId);
+      this.activeLoops.set(item.nodeId, { startupMeta: item.meta });
+    }
+    return super.enqueue(item);
+  }
 
   protected override routeNodeResult(
     node: WorkflowNode,
@@ -534,6 +552,18 @@ export class BacktestExecutionRuntime extends BaseExecutionRuntime {
     if (result.control?.suppressRouting) return;
 
     if (node.name === "Loop") {
+      const active = this.activeLoops.get(node.id);
+      const control = result.control;
+      if (active && control?.loopIteration && !control.loopCompleted &&
+          !control.parallelDistributed && control.currentIndex !== undefined) {
+        // Iteration indices start over when a Loop is activated again in the same bar.
+        const token = Symbol();
+        active.feedback = { iterIndex: control.currentIndex, token };
+        const iterationMeta: BacktestLoopMeta = { ...meta, feedbackToken: token };
+        this.routeLoop(node.id, result, iterationMeta);
+        return;
+      }
+      this.activeLoops.delete(node.id);
       this.routeLoop(node.id, result, meta);
       return;
     }
@@ -546,21 +576,30 @@ export class BacktestExecutionRuntime extends BaseExecutionRuntime {
     this.routeStandard(node, result, meta);
   }
 
+  protected override handleError(nodeId: string, error: unknown, meta?: IterMeta, startedAt?: number): void {
+    if (this.activeLoops.delete(nodeId)) this.store.clearNodeState(nodeId);
+    super.handleError(nodeId, error, meta, startedAt);
+  }
+
   primeEntry(_nodeId: string, _input: any): void {
     // Backtest runtime does not require pre-marking edge payloads.
   }
 
-  routeEdge(edge: WorkflowEdge, payload: any, meta?: IterMeta): void {
+  routeEdge(edge: WorkflowEdge, payload: any, meta?: BacktestLoopMeta): void {
     if (this.graph.isSubNode(edge.source) || this.graph.isSubNode(edge.target)) return;
     this.assertNodeAllowed(edge.source, "route");
     this.assertNodeAllowed(edge.target, "route");
+    const targetNode = this.graph.nodeById.get(edge.target);
+    if (targetNode?.name === "Loop") {
+      this.routeLoopInput(edge, payload, meta, Boolean(targetNode.values?.checkDependency));
+      return;
+    }
     if (this.routeOrderedLoopJoin(edge, payload, meta)) return;
     this.satisfiedCounts.set(
       edge.target,
       (this.satisfiedCounts.get(edge.target) ?? 0) + 1,
     );
 
-    const targetNode = this.graph.nodeById.get(edge.target);
     const skipDependencyCheck = Boolean(
       (targetNode as any)?.values?.checkDependency,
     );
@@ -570,7 +609,37 @@ export class BacktestExecutionRuntime extends BaseExecutionRuntime {
     this.enqueue({ nodeId: edge.target, input: payload, meta });
   }
 
+  private routeLoopInput(edge: WorkflowEdge, payload: any, meta: BacktestLoopMeta | undefined, skipDependencyCheck: boolean): void {
+    const { feedbackEdgeIds } = this.graph.getLoopScheduling(edge.target);
+    const active = this.activeLoops.get(edge.target);
+    if (feedbackEdgeIds.has(edge.id)) {
+      const feedback = active?.feedback;
+      if (active && feedback && meta?.originLoopId === edge.target &&
+          meta.iterIndex === feedback.iterIndex && meta.feedbackToken === feedback.token) {
+        active.feedback = undefined;
+        // Preserve the caller's iteration metadata for the eventual done edge.
+        super.enqueue({ nodeId: edge.target, input: payload, meta: active.startupMeta });
+      }
+      return;
+    }
+    if (active) return;
+
+    const arrivals = this.loopStartupArrivals.get(edge.target) ?? new Set<string>();
+    this.loopStartupArrivals.set(edge.target, arrivals);
+    arrivals.add(edge.id);
+    if (skipDependencyCheck || this.areDependenciesSatisfied(edge.target)) {
+      this.enqueue({ nodeId: edge.target, input: payload, meta });
+    }
+  }
+
   areDependenciesSatisfied(nodeId: string): boolean {
+    if (this.graph.isLoopNode(nodeId)) {
+      const arrivals = this.loopStartupArrivals.get(nodeId);
+      const { startup } = this.graph.getLoopScheduling(nodeId);
+      return !!arrivals && startup.requiredCount > 0 &&
+        startup.independentEdgeIds.every(id => arrivals.has(id)) &&
+        startup.branchGroups.every(group => group.some(id => arrivals.has(id)));
+    }
     const required = this.graph.requiredEdgeCounts.get(nodeId) ?? 0;
     return required > 0 && (this.satisfiedCounts.get(nodeId) ?? 0) >= required;
   }
@@ -584,6 +653,9 @@ export class BacktestExecutionRuntime extends BaseExecutionRuntime {
     this.lastStoreClearMs = performance.now() - t0;
     this.queue.clear();
     this.satisfiedCounts.clear();
+    this.loopStartupArrivals.clear();
+    for (const nodeId of this.activeLoops.keys()) this.store.clearNodeState(nodeId);
+    this.activeLoops.clear();
     this.orderedLoopJoinArrivals.clear();
     this.executionOrder.length = 0;
     if (full) this.execCtx = null;

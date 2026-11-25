@@ -8,7 +8,7 @@
  * See the LICENSE file for details.
  */
 
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { format } from "date-fns";
 import { formatInTimeZone } from "date-fns-tz";
 import {
@@ -44,6 +44,8 @@ interface BarHistoryFilters {
   symbol: string;
   from: string;
   to: string;
+  fromTime: string;
+  toTime: string;
 }
 
 export interface ExecutionHistoryFilterValues {
@@ -57,7 +59,7 @@ export const EMPTY_EXECUTION_HISTORY_FILTERS: ExecutionHistoryFilterValues = {
   status: "all",
   dateFrom: null,
   dateTo: null,
-  bars: { symbol: "", from: "", to: "" },
+  bars: { symbol: "", from: "", to: "", fromTime: "", toTime: "" },
 };
 
 const hasFilters = ({ status, dateFrom, dateTo, bars }: ExecutionHistoryFilterValues) =>
@@ -104,6 +106,7 @@ export function ExecutionHistoryPanel({
   error,
   onRetry,
 }: ExecutionHistoryPanelProps) {
+  const filtersFormId = useId();
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
   const [draft, setDraft] = useState(filters);
   const [isFromOpen, setIsFromOpen] = useState(false);
@@ -245,7 +248,14 @@ export function ExecutionHistoryPanel({
                 sideOffset={8}
                 collisionPadding={8}
               >
-                <div className="min-h-0 space-y-4 overflow-y-auto p-1">
+                <form
+                  id={filtersFormId}
+                  className="min-h-0 space-y-4 overflow-y-auto p-1"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    applyFilters(draft);
+                  }}
+                >
                   <div className="space-y-1">
                     <div className="text-sm font-medium">Status</div>
                     <Select
@@ -336,33 +346,46 @@ export function ExecutionHistoryPanel({
                         placeholder="e.g. AAPL"
                       />
                     </label>
-                    <label className="block text-xs">
-                      From
-                      <Input
-                        type="datetime-local"
-                        step={1}
-                        value={bars.from}
-                        onChange={(event) => setDraft({ ...draft, bars: { ...bars, from: event.target.value } })}
-                      />
-                    </label>
-                    <label className="block text-xs">
-                      To
-                      <Input
-                        type="datetime-local"
-                        step={1}
-                        value={bars.to}
-                        onChange={(event) => setDraft({ ...draft, bars: { ...bars, to: event.target.value } })}
-                      />
-                    </label>
+                    {(["from", "to"] as const).map((bound) => {
+                      const label = bound === "from" ? "From" : "To";
+                      const timeKey = bound === "from" ? "fromTime" : "toTime";
+                      return (
+                        <div key={bound} className="flex flex-wrap gap-2">
+                          <label className="min-w-0 grow basis-32 text-xs">
+                            {label} date
+                            <Input
+                              type="date"
+                              className="px-2"
+                              value={bars[bound]}
+                              onChange={(event) => {
+                                const date = event.target.value;
+                                setDraft({ ...draft, bars: { ...bars, [bound]: date, [timeKey]: date ? bars[timeKey] : "" } });
+                              }}
+                            />
+                          </label>
+                          <label className="min-w-0 grow basis-32 text-xs">
+                            {label} time (optional)
+                            <Input
+                              type="time"
+                              className="px-2"
+                              step={1}
+                              value={bars[timeKey]}
+                              disabled={!bars[bound]}
+                              onChange={(event) => setDraft({ ...draft, bars: { ...bars, [timeKey]: event.target.value } })}
+                            />
+                          </label>
+                        </div>
+                      );
+                    })}
                   </fieldset>
-                </div>
+                </form>
                 <div className="flex shrink-0 justify-end gap-2 pt-4">
                   {(filtersActive || hasFilters(draft)) && (
                     <Button variant="outline" size="sm" onClick={() => applyFilters(EMPTY_EXECUTION_HISTORY_FILTERS)}>
                       Reset filters
                     </Button>
                   )}
-                  <Button size="sm" onClick={() => applyFilters(draft)}>
+                  <Button size="sm" type="submit" form={filtersFormId}>
                     Apply filters
                   </Button>
                 </div>

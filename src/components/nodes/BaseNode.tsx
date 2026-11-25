@@ -61,7 +61,7 @@ import {
 import { ExecutionControl } from "@/components/workflow/ExecutionIconButton";
 import { resolveManualExecution } from "@/nodes/manualExecution";
 import { getEditorExecutionTarget, subscribeEditorExecution } from "@/services/editorNodeExecution";
-import type { SemanticNode } from "@/contexts/canonicalGraphStore";
+import type { SemanticEdge, SemanticNode } from "@/contexts/canonicalGraphStore";
 
 interface BaseNodeProps {
   data: any;
@@ -224,19 +224,23 @@ const BaseNode: React.FC<BaseNodeProps> = ({
       ...node, data: { ...node.data, output: recorded.get(node.id) },
     }));
   }, [canonicalGraph.nodes, readOnly, data.historyNodes, data.historyReferenceNodes, data.allNodeExecutions]);
+  const referenceEdges = useMemo<readonly Pick<SemanticEdge, "source" | "target" | "sourceHandle">[]>(
+    () => readOnly ? data.historyEdges ?? [] : canonicalGraph.edges,
+    [readOnly, data.historyEdges, canonicalGraph.edges],
+  );
   const previousNodes = useMemo(
     () => getPreviousNodes(
       nodeId ?? undefined,
       referenceNodes,
-      readOnly ? data.historyEdges ?? [] : canonicalGraph.edges,
+      referenceEdges,
     ),
-    [nodeId, referenceNodes, readOnly, data.historyEdges, canonicalGraph.edges],
+    [nodeId, referenceNodes, referenceEdges],
   );
 
   const incomingEdgeCount = useMemo(() => {
     if (!nodeId) return 0;
-    return canonicalGraph.edges.filter((edge) => edge.target === nodeId).length;
-  }, [canonicalGraph.edges, nodeId]);
+    return referenceEdges.filter((edge) => edge.target === nodeId).length;
+  }, [referenceEdges, nodeId]);
 
   // State for selected previous node and auth modal
   const [showAuth, setShowAuth] = useState(false);
@@ -246,11 +250,10 @@ const BaseNode: React.FC<BaseNodeProps> = ({
 
   const preferredPrevNodeId = useMemo(() => {
     if (!nodeId) return undefined;
-    const edges = readOnly ? data.historyEdges ?? [] : canonicalGraph.edges;
-    return edges.find(
-      (edge: { target: string; sourceHandle?: string | null }) => edge.target === nodeId && edge.sourceHandle === "done",
+    return referenceEdges.find(
+      (edge) => edge.target === nodeId && edge.sourceHandle === "done",
     )?.source;
-  }, [canonicalGraph.edges, nodeId, readOnly, data.historyEdges]);
+  }, [referenceEdges, nodeId]);
 
   const resolvedPrevNodeId = useMemo(
     () => resolvePreviousNodeId(selectedPrevNodeId, previousNodes, preferredPrevNodeId),

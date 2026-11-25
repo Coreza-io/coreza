@@ -913,6 +913,7 @@ export class BacktestSession {
 
       return this.normalizeBarPayload(currentEvent, isLast);
     } finally {
+      if (!manual && this.status === "finished") this.store.close();
       this.stepping = false;
     }
   }
@@ -1082,7 +1083,7 @@ export class BacktestSession {
       try {
         if (this.barHistory) await this.barHistory.flush();
       } finally {
-        this.store.close();
+        if (this.currentIndex >= this.bars.length) this.store.close();
         this.stepping = false;
       }
     }
@@ -1090,7 +1091,7 @@ export class BacktestSession {
     if (this.abortController.signal.aborted) {
       throw this.abortController.signal.reason ?? new Error("Workflow cancelled by user");
     }
-    if (this.bars.length === 0) {
+    if (this.currentIndex >= this.bars.length) {
       this.status = "finished";
       this.phase = "finished";
     }

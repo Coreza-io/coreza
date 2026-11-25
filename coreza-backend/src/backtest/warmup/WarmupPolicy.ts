@@ -53,10 +53,7 @@ export function resolveWarmupPolicy(node: WorkflowNode): WarmupNodePolicy {
     return "reject";
   }
 
-  // For Store, also match the service selected by DataSourceExecutor.
-  const allowedByName = EXECUTE_NODES.has(nodeName) &&
-    (nodeName !== "store" || (node.name === "Store" && (node.subCategory ?? node.name) === "Store"));
-  if (allowedByName || EXECUTE_CATEGORIES.has(category)) {
+  if (EXECUTE_NODES.has(nodeName) || EXECUTE_CATEGORIES.has(category)) {
     return "execute";
   }
 

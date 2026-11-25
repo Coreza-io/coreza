@@ -76,6 +76,20 @@ describe('cluster validation', () => {
     ]));
   });
 
+  it('requires a directed entry-to-exit path when creating a cluster', () => {
+    const members = ['entry', 'join', 'fork', 'exit'];
+    const nodes = ['before', ...members, 'after'].map((id) => node(id));
+    const edges = [
+      edge('in', 'before', 'entry'),
+      edge('entry-join', 'entry', 'join'),
+      edge('fork-join', 'fork', 'join'),
+      edge('fork-exit', 'fork', 'exit'),
+      edge('out', 'exit', 'after'),
+    ];
+    expect(validateClusterSelection(members, nodes, edges, [], cluster([])).violations)
+      .toEqual([expect.objectContaining({ code: 'no-entry-exit-path' })]);
+  });
+
   it('normalizes titles, notes, membership order, and duplicates', () => {
     expect(normalizeClusters([cluster(['b', 'a', 'b'], { title: ' Cluster 1 ', note: ' note ' })])[0]).toMatchObject({
       title: 'Cluster 1', note: 'note', memberNodeIds: ['a', 'b'],
@@ -201,7 +215,7 @@ describe('cluster validation', () => {
       .toEqual(expect.arrayContaining([expect.objectContaining({ code: 'unknown-semantics', edgeIds: ['removed'] })]));
   });
 
-  it('accepts only the explicit Loop loop/in cycle with a done boundary', () => {
+  it('keeps the Loop cluster when an internal or boundary edge is removed', () => {
     const loop = node('loop');
     loop.data.definition = {
       name: 'Loop', node_type: 'main',
@@ -215,6 +229,9 @@ describe('cluster validation', () => {
       edge('done', 'loop', 'after', { sourceHandle: 'done', targetHandle: 'input' }),
     ];
     expect(validateClusters(nodes, edges, [cluster(['loop', 'body'])]).valid).toBe(true);
+    for (const { id } of edges) {
+      expect(validateClusters(nodes, edges.filter((item) => item.id !== id), [cluster(['loop', 'body'])]).valid).toBe(true);
+    }
     const arbitraryCycle = edges.map((item) => item.id === 'done' ? { ...item, sourceHandle: 'loop' } : item);
     expect(validateClusters(nodes, arbitraryCycle, [cluster(['loop', 'body'])]).valid).toBe(false);
   });

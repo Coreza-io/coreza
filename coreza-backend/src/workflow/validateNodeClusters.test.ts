@@ -44,6 +44,13 @@ describe('validateNodeClusterDocument', () => {
       edges: loopEdges,
       node_clusters: [{ id, title: 'Loop group', memberNodeIds: ['loop', 'body'] }],
     })).toHaveLength(1);
+    for (const removed of loopEdges) {
+      expect(validateNodeClusterDocument({
+        nodes: loopNodes,
+        edges: loopEdges.filter((edge) => edge.id !== removed.id),
+        node_clusters: [{ id, title: 'Loop group', memberNodeIds: ['loop', 'body'] }],
+      })).toHaveLength(1);
+    }
 
     expect(() => validateNodeClusterDocument({
       nodes: loopNodes,

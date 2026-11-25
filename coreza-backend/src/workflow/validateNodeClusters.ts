@@ -159,25 +159,28 @@ function validateTopology(
   if (outgoing.size > 1) invalid("multiple-exit-members");
   const entry = incoming.size === 1 ? [...incoming][0] : undefined;
   const exit = outgoing.size === 1 ? [...outgoing][0] : undefined;
-  const loopBoundary = entry && exit
-    ? isAcceptedLoopBoundary(entry, exit, internalMain, incomingMain, outgoingMain, nodeById)
-    : false;
+  const loopBoundary = isAcceptedLoopBoundary(entry, exit, internalMain, incomingMain, outgoingMain, nodeById, requireConnectedMembers);
   if (entry && !loopBoundary && internalMain.some((edge) => edge.target === entry)) invalid("entry-not-root");
   if (exit && !loopBoundary && internalMain.some((edge) => edge.source === exit)) invalid("exit-not-leaf");
-  if (entry && exit && !hasDirectedPath(entry, exit, internalMain)) invalid("no-entry-exit-path");
+  if (requireConnectedMembers && entry && exit && !hasDirectedPath(entry, exit, internalMain)) invalid("no-entry-exit-path");
 }
 
 function isAcceptedLoopBoundary(
-  entry: string,
-  exit: string,
+  entry: string | undefined,
+  exit: string | undefined,
   internalEdges: readonly PersistedEdge[],
   incomingEdges: readonly PersistedEdge[],
   outgoingEdges: readonly PersistedEdge[],
   nodeById: ReadonlyMap<string, PersistedNode>,
+  requireConnectedMembers: boolean,
 ): boolean {
-  if (entry !== exit || nodeById.get(entry)?.name !== "Loop") return false;
+  const loopId = entry ?? exit;
+  if (!loopId || (entry && exit && entry !== exit) || nodeById.get(loopId)?.name !== "Loop") return false;
   if (!incomingEdges.every((edge) => edge.targetHandle == null || edge.targetHandle === "in")) return false;
   if (!outgoingEdges.every((edge) => edge.sourceHandle === "done")) return false;
+  // An existing Loop cluster can keep its boundary while a wire is removed.
+  if (!requireConnectedMembers) return true;
+  if (!entry || !exit) return false;
 
   const loopBranches = internalEdges.filter(
     (edge) => edge.source === entry && edge.sourceHandle === "loop",

@@ -95,11 +95,10 @@ import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  ExecutionFilters,
   ExecutionSummary,
   useExecutionHistory,
 } from "@/hooks/useExecutionHistory";
-import { ExecutionHistoryPanel, type BarHistoryFilters } from "@/components/workflow/ExecutionHistoryPanel";
+import { EMPTY_EXECUTION_HISTORY_FILTERS, ExecutionHistoryPanel } from "@/components/workflow/ExecutionHistoryPanel";
 import { ExecutionDetailView } from "@/components/workflow/ExecutionDetailView";
 import { WorkflowVersionHistory } from "@/components/workflow/WorkflowVersionHistory";
 import { ClusterMetadataEditor, type ClusterMetadataEditIntent } from "@/components/workflow/ClusterMetadataEditor";
@@ -372,12 +371,7 @@ const WorkflowEditorContent = () => {
   const [isAutoExecuting, setIsAutoExecuting] = useState(false);
   const [executionQueue, setExecutionQueue] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<"editor" | "executions">("editor");
-  const [statusFilter, setStatusFilter] =
-    useState<ExecutionFilters["status"]>("all");
-  const [dateFromInput, setDateFromInput] = useState<Date | null>(null);
-  const [dateToInput, setDateToInput] = useState<Date | null>(null);
-  const [dateFromFilter, setDateFromFilter] = useState<Date | null>(null);
-  const [dateToFilter, setDateToFilter] = useState<Date | null>(null);
+  const [historyFilters, setHistoryFilters] = useState(EMPTY_EXECUTION_HISTORY_FILTERS);
   const { timezone: preferredTimezone } = useUserPreferences();
   const timezone = useMemo(() => {
     try {
@@ -386,8 +380,6 @@ const WorkflowEditorContent = () => {
       return "UTC";
     }
   }, [preferredTimezone]);
-  const [barFilterInput, setBarFilterInput] = useState<BarHistoryFilters>({ symbol: "", from: "", to: "" });
-  const [barFilters, setBarFilters] = useState(barFilterInput);
   const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
   const [showSaveConfirmDialog, setShowSaveConfirmDialog] = useState(false);
   const [pendingSaveData, setPendingSaveData] = useState<{
@@ -407,36 +399,22 @@ const WorkflowEditorContent = () => {
     checkNodeReduction,
   } = useWorkflowPersistence({ projectId, workflowId });
 
-  useEffect(() => {
-    const timeout = setTimeout(() => setDateFromFilter(dateFromInput), 400);
-    return () => clearTimeout(timeout);
-  }, [dateFromInput]);
-
-  useEffect(() => {
-    const timeout = setTimeout(() => setDateToFilter(dateToInput), 400);
-    return () => clearTimeout(timeout);
-  }, [dateToInput]);
-
-  useEffect(() => {
-    const timeout = setTimeout(() => setBarFilters(barFilterInput), 400);
-    return () => clearTimeout(timeout);
-  }, [barFilterInput]);
-
   const executionFilters = useMemo(() => {
     const toUtc = (value: string) => {
       if (!value) return undefined;
       const date = fromZonedTime(value, timezone);
       return Number.isFinite(date.getTime()) ? date.toISOString() : undefined;
     };
+    const { status, dateFrom, dateTo, bars } = historyFilters;
     return {
-      status: statusFilter,
-      dateFrom: dateFromFilter,
-      dateTo: dateToFilter,
-      barSymbol: barFilters.symbol.trim().toUpperCase(),
-      barFrom: toUtc(barFilters.from),
-      barTo: toUtc(barFilters.to),
+      status,
+      dateFrom,
+      dateTo,
+      barSymbol: bars.symbol.trim().toUpperCase(),
+      barFrom: toUtc(bars.from),
+      barTo: toUtc(bars.to),
     };
-  }, [statusFilter, dateFromFilter, dateToFilter, barFilters, timezone]);
+  }, [historyFilters, timezone]);
 
   // Execution history hook
   const {
@@ -466,17 +444,6 @@ const WorkflowEditorContent = () => {
   const handleSelectExecution = useCallback((execution: ExecutionSummary) => {
     if (selectedExecution?.id !== execution.id) void setSelectedExecution(execution);
   }, [selectedExecution?.id, setSelectedExecution]);
-
-  const handleClearFilters = useCallback(() => {
-    setStatusFilter("all");
-    setDateFromInput(null);
-    setDateToInput(null);
-    setDateFromFilter(null);
-    setDateToFilter(null);
-    const emptyBars = { symbol: "", from: "", to: "" };
-    setBarFilterInput(emptyBars);
-    setBarFilters(emptyBars);
-  }, []);
 
   // CRITICAL FIX: Initialize with empty state for existing workflows to prevent race condition
   const [nodes, setNodes, applyNodeChanges] = useNodesState(
@@ -3022,18 +2989,9 @@ const WorkflowEditorContent = () => {
             hasMore={hasMore}
             loadingMore={loadingMore}
             onLoadMore={loadMore}
-            statusFilter={statusFilter || "all"}
-            onStatusFilterChange={(status) =>
-              setStatusFilter(status as ExecutionFilters["status"])
-            }
-            dateFrom={dateFromInput}
-            onDateFromChange={setDateFromInput}
-            dateTo={dateToInput}
-            onDateToChange={setDateToInput}
-            barFilters={barFilterInput}
-            onBarFiltersChange={setBarFilterInput}
+            filters={historyFilters}
+            onApplyFilters={setHistoryFilters}
             timezone={timezone}
-            onClearFilters={handleClearFilters}
             error={executionsError}
             onRetry={refreshExecutions}
           />

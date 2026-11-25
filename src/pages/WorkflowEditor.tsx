@@ -405,9 +405,10 @@ const WorkflowEditorContent = () => {
       const date = fromZonedTime(`${day}T${time}`, timezone);
       return Number.isFinite(date.getTime()) ? date.toISOString() : undefined;
     };
-    const { status, dateFrom, dateTo, bars } = historyFilters;
+    const { status, sort, dateFrom, dateTo, bars } = historyFilters;
     return {
       status,
+      sort,
       dateFrom,
       dateTo,
       barSymbol: bars.symbol.trim().toUpperCase(),

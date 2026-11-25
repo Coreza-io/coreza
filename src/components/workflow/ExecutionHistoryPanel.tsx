@@ -262,10 +262,10 @@ export function ExecutionHistoryPanel({
                   setClearTarget(null);
                   return;
                 }
-                const snapshot = selectedExecution?.scope_snapshot;
-                const selectedSummary = executions.find(({ id }) => id === selectedExecutionId);
-                const backtestRunId = selectedExecution?.parent_run_id ?? selectedSummary?.parent_run_id ??
-                  (snapshot?.executionMode === "backtest" || snapshot?.barHistory ? selectedExecution?.id : undefined);
+                const selectedRun = executions.find(({ id }) => id === selectedExecutionId) ??
+                  (selectedExecution?.id === selectedExecutionId ? selectedExecution : null);
+                const backtestRunId = selectedRun?.parent_run_id ??
+                  (selectedRun?.execution_mode === "backtest" || selectedRun?.bar_history === true ? selectedRun.id : undefined);
                 setClearTarget({ workflowId, backtestRunId });
               }}
             >

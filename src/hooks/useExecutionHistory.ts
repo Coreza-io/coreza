@@ -19,8 +19,8 @@ const MAX_CACHED_EXECUTIONS = 200;
 const BAR_PARENT = "scope_snapshot->>backtestParentRunId";
 const BAR_SYMBOL = "scope_snapshot->>backtestBarSymbol";
 const BAR_TIME = "scope_snapshot->>backtestBarTime";
-const SUMMARY_COLUMNS = `id,workflow_id,status,started_at,completed_at,error_message,initiated_by,node_count,edge_count,parent_run_id:${BAR_PARENT},bar_symbol:${BAR_SYMBOL},bar_time:${BAR_TIME}`;
-export type ExecutionSummary = Omit<ExecutionRun, "result" | "nodes" | "edges" | "node_clusters" | "scope_snapshot">;
+const SUMMARY_COLUMNS = `id,workflow_id,status,started_at,completed_at,error_message,initiated_by,node_count,edge_count,parent_run_id:${BAR_PARENT},bar_symbol:${BAR_SYMBOL},bar_time:${BAR_TIME},execution_mode:scope_snapshot->>executionMode,bar_history:scope_snapshot->barHistory`;
+export type ExecutionSummary = Omit<ExecutionRun, "result" | "nodes" | "edges" | "node_clusters">;
 
 export type ExecutionStatus =
   | "all"
@@ -88,12 +88,13 @@ export interface ExecutionRun {
   nodes: unknown[] | null;
   edges: unknown[] | null;
   node_clusters: unknown;
-  scope_snapshot?: { executionMode?: string; barHistory?: boolean } | null;
   node_count: number | null;
   edge_count: number | null;
   parent_run_id: string | null;
   bar_symbol: string | null;
   bar_time: string | null;
+  execution_mode: string | null;
+  bar_history: boolean | null;
 }
 
 // Compare only the selected run on refresh, with a bounded traversal of persisted JSON.
@@ -112,7 +113,7 @@ function sameExecution(previous: ExecutionRun, next: ExecutionRun): boolean {
   };
   const fields: (keyof ExecutionRun)[] = [
     "id", "workflow_id", "status", "started_at", "completed_at", "error_message",
-    "result", "initiated_by", "nodes", "edges", "node_clusters", "node_count", "edge_count", "parent_run_id", "bar_symbol", "bar_time",
+    "result", "initiated_by", "nodes", "edges", "node_clusters", "node_count", "edge_count", "parent_run_id", "bar_symbol", "bar_time", "execution_mode", "bar_history",
   ];
   return fields.every(field => equal(previous[field], next[field]));
 }
@@ -203,6 +204,8 @@ function barMetadata(snapshot: unknown) {
     parent_run_id: typeof fields.backtestParentRunId === "string" ? fields.backtestParentRunId : null,
     bar_symbol: typeof fields.backtestBarSymbol === "string" ? fields.backtestBarSymbol : null,
     bar_time: typeof fields.backtestBarTime === "string" ? fields.backtestBarTime : null,
+    execution_mode: typeof fields.executionMode === "string" ? fields.executionMode : null,
+    bar_history: typeof fields.barHistory === "boolean" ? fields.barHistory : null,
   };
 }
 
@@ -211,6 +214,7 @@ const toSummary = (run: ExecutionSummary): ExecutionSummary => ({
   completed_at: run.completed_at, error_message: run.error_message, initiated_by: run.initiated_by,
   node_count: run.node_count, edge_count: run.edge_count,
   parent_run_id: run.parent_run_id, bar_symbol: run.bar_symbol, bar_time: run.bar_time,
+  execution_mode: run.execution_mode, bar_history: run.bar_history,
 });
 
 type HistoryTime = "started_at" | "bar_time";
@@ -393,9 +397,23 @@ export function useExecutionHistory(
     }
   }, [enabled, workflowId, scope.owner, normalizedFilters, ascending, compare, timeQueryColumn, isCurrent, loadDetail]);
 
+  const refreshClearedHistory = useRef<(owner: string, workflowId: string) => Promise<void>>();
+  refreshClearedHistory.current = async (owner, clearedWorkflowId) => {
+    if (!isCurrent() || scope.owner !== owner || workflowId !== clearedWorkflowId) return;
+
+    // Invalidate requests and cached pages that may contain deleted runs.
+    firstFlight.current = pageFlight.current = null;
+    cursor.current = firstRow.current = null;
+    void setSelectedExecution(null);
+    details.current.clear();
+    setExecutions([]);
+    setHasMore(false);
+    await fetchExecutions(true);
+  };
+
   const clearHistory = useCallback(async (backtestRunId?: string): Promise<number> => {
     const token = session?.access_token;
-    if (!workflowId || !token || !isCurrent()) throw new Error("Sign in to clear execution history");
+    if (!workflowId || !scope.owner || !token || !isCurrent()) throw new Error("Sign in to clear execution history");
 
     const query = backtestRunId ? `?backtestRunId=${encodeURIComponent(backtestRunId)}` : "";
     try {
@@ -404,19 +422,12 @@ export function useExecutionHistory(
       if (!response.ok || typeof result?.deleted !== "number") {
         throw new Error(result?.message || "Failed to clear execution history");
       }
-      if (isCurrent()) {
-        await setSelectedExecution(null);
-        details.current.clear();
-      }
       return result.deleted;
     } finally {
-      if (isCurrent()) {
-        // Supersede any fetch that started before the deletion.
-        firstFlight.current = null;
-        await fetchExecutions(true);
-      }
+      // Earlier batches may have succeeded even if the request failed.
+      await refreshClearedHistory.current?.(scope.owner, workflowId);
     }
-  }, [workflowId, session?.access_token, isCurrent, setSelectedExecution, fetchExecutions]);
+  }, [workflowId, scope.owner, session?.access_token, isCurrent]);
 
   const loadMore = useCallback(async () => {
     if (!isCurrent() || !enabled || !workflowId || !scope.owner || !hasMore || pageFlight.current || firstFlight.current || !cursor.current) return;

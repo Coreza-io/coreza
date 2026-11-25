@@ -29,8 +29,11 @@ export type ExecutionStatus =
   | "pending"
   | "cancelled";
 
+export type ExecutionHistorySort = "newest" | "oldest";
+
 export interface ExecutionFilters {
   status?: ExecutionStatus;
+  sort?: ExecutionHistorySort;
   dateFrom?: Date | null;
   dateTo?: Date | null;
   barSymbol?: string;
@@ -218,7 +221,7 @@ function compareSummaries(a: ExecutionSummary, b: ExecutionSummary, timeColumn: 
 }
 
 function mergeSummaries(
-  current: ExecutionSummary[], incoming: ExecutionSummary[], timeColumn: HistoryTime,
+  current: ExecutionSummary[], incoming: ExecutionSummary[], compare: (a: ExecutionSummary, b: ExecutionSummary) => number,
 ): ExecutionSummary[] {
   const byId = new Map(current.map(run => [run.id, run]));
   for (const run of incoming) {
@@ -226,7 +229,7 @@ function mergeSummaries(
     const next = toSummary(run);
     byId.set(run.id, previous && Object.keys(next).every(key => previous[key as keyof ExecutionSummary] === next[key as keyof ExecutionSummary]) ? previous : next);
   }
-  return [...byId.values()].sort((a, b) => compareSummaries(a, b, timeColumn));
+  return [...byId.values()].sort(compare);
 }
 
 function getItemCount(data: unknown): number {
@@ -252,16 +255,20 @@ export function useExecutionHistory(
   const [loadingMore, setLoadingMore] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [hasMore, setHasMore] = useState(false);
+  const hasMoreRef = useRef(hasMore);
+  hasMoreRef.current = hasMore;
   const [selectedExecution, publishSelectedExecution] = useState<ExecutionRun | null>(null);
   const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { status, barSymbol, barFrom, barTo } = filters;
+  const ascending = filters.sort === "oldest";
   const dateFrom = filters.dateFrom?.getTime();
   const dateTo = filters.dateTo?.getTime();
   const dataScope = useMemo(() => ({}), [user?.id, workflowId, status, dateFrom, dateTo, barSymbol, barFrom, barTo]);
   const previousDataScope = useRef<object | null>(null);
-  const scope = useMemo(() => ({ owner: user?.id, workflowId, status, dateFrom, dateTo, barSymbol, barFrom, barTo, enabled }), [user?.id, workflowId, status, dateFrom, dateTo, barSymbol, barFrom, barTo, enabled]);
+  const previousAscending = useRef(ascending);
+  const scope = useMemo(() => ({ owner: user?.id, workflowId, status, dateFrom, dateTo, barSymbol, barFrom, barTo, ascending, enabled }), [user?.id, workflowId, status, dateFrom, dateTo, barSymbol, barFrom, barTo, ascending, enabled]);
   const currentScope = useRef<typeof scope | null>(scope);
   currentScope.current = scope;
   const selection = useRef<string | null>(null);
@@ -275,6 +282,8 @@ export function useExecutionHistory(
   const normalizedFilters = useMemo(() => ({ status, dateFrom: dateFrom === undefined ? undefined : new Date(dateFrom), dateTo: dateTo === undefined ? undefined : new Date(dateTo), barSymbol, barFrom, barTo }), [status, dateFrom, dateTo, barSymbol, barFrom, barTo]);
   const timeColumn: HistoryTime = filtersBars(normalizedFilters) ? "bar_time" : "started_at";
   const timeQueryColumn = timeColumn === "bar_time" ? BAR_TIME : timeColumn;
+  const compare = useCallback((a: ExecutionSummary, b: ExecutionSummary) =>
+    ascending ? compareSummaries(b, a, timeColumn) : compareSummaries(a, b, timeColumn), [ascending, timeColumn]);
   const isCurrent = useCallback(() => currentScope.current === scope, [scope]);
 
   const loadDetail = useCallback((runId: string, force = false): Promise<void> => {
@@ -348,26 +357,25 @@ export function useExecutionHistory(
     setLoading(true); setError(null);
     try {
       const { data, error: queryError } = await applyFiltersToQuery(workflowId, normalizedFilters)
-        .order(timeQueryColumn, { ascending: false }).order("id", { ascending: false }).limit(PAGE_SIZE);
+        .order(timeQueryColumn, { ascending }).order("id", { ascending }).limit(PAGE_SIZE);
       if (!isCurrent() || firstFlight.current !== flight) return;
       if (queryError) throw queryError;
       const rows = (data ?? []) as unknown as ExecutionSummary[];
       const boundary = rows[rows.length - 1];
-      const hasGap = boundary && firstRow.current && compareSummaries(boundary, firstRow.current, timeColumn) < 0;
+      const hasGap = boundary && firstRow.current && compare(boundary, firstRow.current) < 0;
       firstRow.current = rows[0] ?? null;
       if (manual || !cursor.current || rows.length < PAGE_SIZE || hasGap) {
         pageFlight.current = null;
         setLoadingMore(false);
-        setExecutions(mergeSummaries([], rows, timeColumn));
+        setExecutions(mergeSummaries([], rows, compare));
         cursor.current = boundary ?? null;
         setHasMore(rows.length === PAGE_SIZE);
       } else {
         setExecutions(previous => {
           // A first-page load is authoritative for its covered time range.
-          // Keep older pages; retain the oldest window so the cursor's boundary
-          // cannot disappear when a realtime row or a new first page arrives.
-          const retained = previous.filter(run => compareSummaries(run, boundary, timeColumn) > 0);
-          return mergeSummaries(retained, rows, timeColumn).slice(-MAX_CACHED_EXECUTIONS);
+          // Keep subsequent pages and retain the window nearest the pagination cursor.
+          const retained = previous.filter(run => compare(run, boundary) > 0);
+          return mergeSummaries(retained, rows, compare).slice(-MAX_CACHED_EXECUTIONS);
         });
       }
       const selectedId = selection.current;
@@ -381,7 +389,7 @@ export function useExecutionHistory(
     } finally {
       if (isCurrent() && firstFlight.current === flight) { firstFlight.current = null; setLoading(false); }
     }
-  }, [enabled, workflowId, scope.owner, normalizedFilters, timeColumn, timeQueryColumn, isCurrent, loadDetail]);
+  }, [enabled, workflowId, scope.owner, normalizedFilters, ascending, compare, timeQueryColumn, isCurrent, loadDetail]);
 
   const loadMore = useCallback(async () => {
     if (!isCurrent() || !enabled || !workflowId || !scope.owner || !hasMore || pageFlight.current || firstFlight.current || !cursor.current) return;
@@ -390,37 +398,43 @@ export function useExecutionHistory(
     setLoadingMore(true);
     try {
       const afterTime = after[timeColumn];
+      const operator = ascending ? "gt" : "lt";
       const { data, error: queryError } = await applyFiltersToQuery(workflowId, normalizedFilters)
-        .or(`${timeQueryColumn}.lt.${afterTime},and(${timeQueryColumn}.eq.${afterTime},id.lt.${after.id})`)
-        .order(timeQueryColumn, { ascending: false }).order("id", { ascending: false }).limit(PAGE_SIZE);
+        .or(`${timeQueryColumn}.${operator}.${afterTime},and(${timeQueryColumn}.eq.${afterTime},id.${operator}.${after.id})`)
+        .order(timeQueryColumn, { ascending }).order("id", { ascending }).limit(PAGE_SIZE);
       if (!isCurrent() || pageFlight.current !== flight) return;
       if (queryError) throw queryError;
       const rows = (data ?? []) as unknown as ExecutionSummary[];
-      // Cursor is independent of retained rows; old pages cannot skip/repeat after eviction.
+      // Keep the cursor independent of retained rows so eviction cannot skip or repeat a page.
       if (rows.length) cursor.current = rows[rows.length - 1]!;
-      setExecutions(previous => mergeSummaries(previous, rows, timeColumn).slice(-MAX_CACHED_EXECUTIONS));
+      setExecutions(previous => mergeSummaries(previous, rows, compare).slice(-MAX_CACHED_EXECUTIONS));
       setHasMore(rows.length === PAGE_SIZE);
     } catch (err) {
       if (isCurrent() && pageFlight.current === flight) setError(err instanceof Error ? err.message : "Failed to load more executions");
     } finally {
       if (isCurrent() && pageFlight.current === flight) { pageFlight.current = null; setLoadingMore(false); }
     }
-  }, [enabled, workflowId, scope.owner, hasMore, normalizedFilters, timeColumn, timeQueryColumn, isCurrent]);
+  }, [enabled, workflowId, scope.owner, hasMore, normalizedFilters, ascending, compare, timeColumn, timeQueryColumn, isCurrent]);
 
   useEffect(() => {
     currentScope.current = scope;
     detailRequest.current += 1;
     firstFlight.current = pageFlight.current = null; detailFlight.current = null;
-    if (previousDataScope.current !== dataScope) {
+    const filtersChanged = previousDataScope.current !== dataScope;
+    if (filtersChanged) {
       previousDataScope.current = dataScope;
-      selection.current = null; setSelectedExecutionId(null); details.current.clear(); cursor.current = firstRow.current = null;
-      setExecutions([]); publishSelectedExecution(null); setHasMore(false); setError(null);
+      selection.current = null; setSelectedExecutionId(null); details.current.clear(); publishSelectedExecution(null);
+    }
+    if (filtersChanged || previousAscending.current !== ascending) {
+      previousAscending.current = ascending;
+      cursor.current = firstRow.current = null;
+      setExecutions([]); setHasMore(false); setError(null);
     }
     setLoading(false); setLoadingMore(false); setDetailLoading(false);
     void fetchExecutions();
     if (enabled && selection.current) void loadDetail(selection.current, true);
     return () => { if (currentScope.current === scope) currentScope.current = null; };
-  }, [scope, dataScope, fetchExecutions, enabled, loadDetail]);
+  }, [scope, dataScope, ascending, fetchExecutions, enabled, loadDetail]);
 
   useEffect(() => {
     if (!enabled || !workflowId || !scope.owner) return;
@@ -455,8 +469,12 @@ export function useExecutionHistory(
         && summary.completed_at && !summaryTimer) {
         summaryTimer = setTimeout(refreshAfterBatch, 300);
       }
-      if (matchesExecutionFilters(summary, normalizedFilters)) setExecutions(previous => mergeSummaries(previous, [summary], timeColumn).slice(-MAX_CACHED_EXECUTIONS));
-      else {
+      if (matchesExecutionFilters(summary, normalizedFilters)) {
+        // Leave rows beyond the loaded window to pagination, especially new runs in oldest-first order.
+        if (!hasMoreRef.current || !cursor.current || compare(summary, cursor.current) <= 0) {
+          setExecutions(previous => mergeSummaries(previous, [summary], compare).slice(-MAX_CACHED_EXECUTIONS));
+        }
+      } else {
         setExecutions(previous => previous.filter(run => run.id !== id));
         if (selection.current === id) void setSelectedExecution(null);
       }
@@ -472,7 +490,7 @@ export function useExecutionHistory(
       if (summaryTimer) clearTimeout(summaryTimer);
       void supabase.removeChannel(channel);
     };
-  }, [enabled, workflowId, scope.owner, isCurrent, normalizedFilters, timeColumn, loadDetail, setSelectedExecution, fetchExecutions]);
+  }, [enabled, workflowId, scope.owner, isCurrent, normalizedFilters, compare, loadDetail, setSelectedExecution, fetchExecutions]);
 
   useEffect(() => {
     if (!enabled || !autoRefresh || !workflowId) return;

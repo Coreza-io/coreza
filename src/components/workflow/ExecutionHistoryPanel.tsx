@@ -24,7 +24,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import type { ExecutionStatus, ExecutionSummary } from "@/hooks/useExecutionHistory";
+import type { ExecutionHistorySort, ExecutionStatus, ExecutionSummary } from "@/hooks/useExecutionHistory";
 import {
   Select,
   SelectContent,
@@ -50,6 +50,7 @@ interface BarHistoryFilters {
 
 export interface ExecutionHistoryFilterValues {
   status: ExecutionStatus;
+  sort: ExecutionHistorySort;
   dateFrom: Date | null;
   dateTo: Date | null;
   bars: BarHistoryFilters;
@@ -57,13 +58,14 @@ export interface ExecutionHistoryFilterValues {
 
 export const EMPTY_EXECUTION_HISTORY_FILTERS: ExecutionHistoryFilterValues = {
   status: "all",
+  sort: "newest",
   dateFrom: null,
   dateTo: null,
   bars: { symbol: "", from: "", to: "", fromTime: "", toTime: "" },
 };
 
-const hasFilters = ({ status, dateFrom, dateTo, bars }: ExecutionHistoryFilterValues) =>
-  status !== "all" || Boolean(dateFrom || dateTo || bars.symbol.trim() || bars.from || bars.to);
+const hasFilters = ({ status, sort, dateFrom, dateTo, bars }: ExecutionHistoryFilterValues) =>
+  status !== "all" || sort !== "newest" || Boolean(dateFrom || dateTo || bars.symbol.trim() || bars.from || bars.to);
 
 interface ExecutionHistoryPanelProps {
   workflowId: string | null;
@@ -117,6 +119,7 @@ export function ExecutionHistoryPanel({
   const { dateFrom, dateTo, bars } = draft;
 
   const applyFilters = (values: ExecutionHistoryFilterValues) => {
+    if (values.sort !== filters.sort && listParentRef.current) listParentRef.current.scrollTop = 0;
     onApplyFilters(values);
     setIsFiltersOpen(false);
   };
@@ -273,6 +276,22 @@ export function ExecutionHistoryPanel({
                         <SelectItem value="running">Running</SelectItem>
                         <SelectItem value="pending">Pending</SelectItem>
                         <SelectItem value="cancelled">Cancelled</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium" htmlFor={`${filtersFormId}-sort`}>Sort order</label>
+                    <Select
+                      value={draft.sort}
+                      onValueChange={(sort) => setDraft({ ...draft, sort: sort as ExecutionHistorySort })}
+                    >
+                      <SelectTrigger id={`${filtersFormId}-sort`} className="h-9 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="text-sm">
+                        <SelectItem value="newest">Newest first</SelectItem>
+                        <SelectItem value="oldest">Oldest first</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

@@ -70,6 +70,8 @@ export function compilePlan(
   const nodes = [...graph.nodeById.values()];
   // The dynamic runtime owns per-node error continuation and its routing.
   if (nodes.some(node => node.values?.__continueOnError === true)) return null;
+  // Dependency skipping requires the dynamic runtime's queue ordering and input routing.
+  if (nodes.some(node => node.values?.checkDependency)) return null;
 
   for (const node of nodes) {
     if (INELIGIBLE_NODE_NAMES.has(node.name ?? "")) {

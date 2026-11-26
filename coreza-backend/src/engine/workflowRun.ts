@@ -44,6 +44,7 @@ interface ExecutionContextExtras {
   liveTiming?: LiveExecutionTiming;
   variableEventId?: string;
   multiBarContext?: MultiBarExecutionContext;
+  isWarmingUp?: boolean;
   runId?: string;
 }
 

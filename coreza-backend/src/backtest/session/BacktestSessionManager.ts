@@ -42,6 +42,7 @@ export class BacktestSessionManager {
     indicatorInitialization?: IndicatorInitialization,
     persistResults = true,
     parentRunId?: string,
+    strategyStartTime?: number,
   ): BacktestSession {
     const scopeKey = `${userId}:${workflowId}:${nodeId}:${persistResults ? "database" : runId}`;
     const existingBacktestId = this.scopeIndex.get(scopeKey);
@@ -65,6 +66,7 @@ export class BacktestSessionManager {
       indicatorInitialization,
       persistResults,
       parentRunId,
+      strategyStartTime,
     );
 
     this.sessions.set(backtestId, session);

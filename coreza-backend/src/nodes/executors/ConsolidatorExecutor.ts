@@ -1,5 +1,5 @@
 import { resultSuccess, resultFailure } from "../../contracts/nodeResult";
-import { ConsolidationError } from "../../engine/consolidation/TimeBarConsolidator";
+import { ConsolidationError, type ConsolidatorState } from "../../engine/consolidation/TimeBarConsolidator";
 import {
   buildConsolidatorStateKey,
   ConsolidatorValidationError,
@@ -36,6 +36,21 @@ export class ConsolidatorExecutor implements INodeExecutor {
         storedState,
       );
       dataContext.setData(stateKey, result.state);
+      const endTimestamp = result.state.workingBar.endTimestamp;
+      const barContext = context?.multiBarContext;
+      if (context?.isWarmingUp && result.state.lastEmittedEndTimestamp !== endTimestamp) {
+        barContext?.scheduleConsolidatorClose?.(
+          node.id, stateKey, Date.parse(endTimestamp),
+          () => {
+            const state: ConsolidatorState | undefined = dataContext.getDataByKey(stateKey);
+            if (state?.workingBar.endTimestamp !== endTimestamp || state.lastEmittedEndTimestamp === endTimestamp) return;
+            dataContext.setData(stateKey, { ...state, lastEmittedEndTimestamp: endTimestamp });
+            return resultSuccess({ ...result.payload, emitted: true, bar: state.workingBar, workingBar: state.workingBar });
+          },
+          context.getAllNodeResults,
+          barContext,
+        );
+      }
       return resultSuccess(result.payload);
     } catch (error) {
       return resultFailure(error instanceof Error ? error.message : String(error), { data: null, details: { code: error instanceof ConsolidationError ||

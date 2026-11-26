@@ -10,6 +10,7 @@
 
 import { WorkflowNode, NodeResult } from "../../nodes/types";
 import { ExecutionMode } from "../../engine/types";
+import type { MultiBarExecutionContext } from "../../engine/types/executionContext";
 
 /**
  * Compiled Plan VM Types
@@ -161,14 +162,7 @@ export interface CompiledExecContext {
   user_id: string;
   nodes: WorkflowNode[];
   edges: any[];
-  multiBarContext?: {
-    timestamp: string;
-    interval: string;
-    symbols: string[];
-    currentSymbol: string;
-    bars: Record<string, any>;
-    getBar: (symbol: string) => any;
-  };
+  multiBarContext?: MultiBarExecutionContext;
   dataContext: any;
   indicatorStateManager: any;
   abortSignal?: AbortSignal;

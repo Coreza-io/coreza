@@ -418,6 +418,12 @@ export abstract class BaseExecutionRuntime {
   }
 
   abstract primeEntry(nodeId: string, input: any): void;
+  publishResult(nodeId: string, result: NodeResult): void {
+    const node = this.graph.nodeById.get(nodeId);
+    if (!node) throw new Error(`Unknown node: ${nodeId}`);
+    this.assertNodeAllowed(nodeId, "execute");
+    this.routeNodeResult(node, result, performance.now());
+  }
   abstract routeEdge(edge: WorkflowEdge, payload: any, meta?: IterMeta): void;
   abstract areDependenciesSatisfied(nodeId: string): boolean;
   abstract resetForNextBar(full?: boolean): void;

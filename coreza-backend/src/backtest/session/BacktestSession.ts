@@ -7,6 +7,7 @@ import { DataContextManager } from "../../engine/DataContext";
 import { WorkflowPlan } from "../../engine/workflowPlan";
 import { WorkflowRun } from "../../engine/workflowRun";
 import { toExecutionError, type ExecutionError } from "../../engine/types";
+import type { MultiBarExecutionContext } from "../../engine/types/executionContext";
 import { BacktestBarCapture, BacktestBarHistory } from "./BacktestBarHistory";
 import { compilePlan, runBar, CompiledPlan } from "../compiled";
 import { resolveCategory } from "../compiled/adapters";
@@ -40,14 +41,15 @@ export interface MultiBarEvent {
 
 export interface SymbolExecutionContext {
   isWarmingUp: boolean;
-  multiBarContext: {
-    timestamp: string;
-    interval: string;
-    symbols: string[];
-    currentSymbol: string;
-    bars: Record<string, any>;
-    getBar: (symbol: string) => any;
-  };
+  multiBarContext: MultiBarExecutionContext;
+}
+
+interface PendingConsolidatorClose {
+  nodeId: string;
+  time: number;
+  emit: () => NodeResult | undefined;
+  sourceResults: Record<string, NodeResult>;
+  context: MultiBarExecutionContext;
 }
 
 export type BacktestSessionStatus = "ready" | "running" | "finished";
@@ -83,6 +85,8 @@ export class BacktestSession {
   private finalization: Promise<void> | null = null;
   private compiledPlan: CompiledPlan | null = null;
   private readonly reusableBarInput: { data: any } = { data: null };
+  private readonly pendingConsolidatorCloses = new Map<string, PendingConsolidatorClose>();
+  private readonly onBarNodeIds: string[];
   private currentMultiBarBars: Record<string, any> = Object.create(null);
   private readonly reusableSymbolExecutionContext: SymbolExecutionContext = {
     isWarmingUp: false,
@@ -93,6 +97,21 @@ export class BacktestSession {
       currentSymbol: "",
       bars: this.currentMultiBarBars,
       getBar: (symbol: string) => this.currentMultiBarBars[symbol],
+      scheduleConsolidatorClose: (nodeId, key, endTime, emit, getResults, context) => {
+        const time = Math.max(endTime, Date.parse(context.timestamp));
+        if (!Number.isFinite(time) || this.strategyStartTime === undefined || time >= this.strategyStartTime) return;
+
+        const results = getResults();
+        const sourceResults: Record<string, NodeResult> = Object.create(null);
+        for (const id of this.onBarNodeIds) {
+          if (results[id]) sourceResults[id] = structuredClone(results[id]);
+        }
+        const bars = context.bars;
+        this.pendingConsolidatorCloses.set(JSON.stringify([nodeId, key]), {
+          nodeId, time, emit, sourceResults,
+          context: { ...context, timestamp: new Date(time).toISOString(), getBar: symbol => bars[symbol] },
+        });
+      },
     },
   };
   private perf = {
@@ -133,11 +152,13 @@ export class BacktestSession {
     private readonly indicatorInitialization?: IndicatorInitialization,
     public readonly persistResults = true,
     parentRunId?: string,
+    private readonly strategyStartTime?: number,
   ) {
     if (persistResults && parentRunId && process.env.BACKTEST_EXECUTION_HISTORY_ENABLED === "true") {
       this.barHistory = new BacktestBarHistory(parentRunId, workflowId, userId);
     }
     this.totalBars = bars.filter((event) => !event.isWarmingUp).length;
+    this.onBarNodeIds = nodes.filter(node => node.name === "OnBar").map(node => node.id);
     this.stateManager = stateManager;
     this.plan = WorkflowPlan.compile(this.nodes, this.edges, "backtest");
     this.run = this.plan.createRun({
@@ -360,6 +381,34 @@ export class BacktestSession {
       this.indicatorWarmupCompleted = true;
     }
     this.setPhase("running");
+  }
+
+  private async scanWarmupConsolidators(before: number): Promise<void> {
+    if (!this.isWarmingUp) return;
+    while (this.pendingConsolidatorCloses.size > 0) {
+      const due = [...this.pendingConsolidatorCloses.entries()]
+        .filter(([, close]) => close.time < before)
+        .sort(([, left], [, right]) => left.time - right.time)[0];
+      if (!due) return;
+      const [key, { nodeId, emit, sourceResults, context }] = due;
+      this.pendingConsolidatorCloses.delete(key);
+      this.abortController.signal.throwIfAborted();
+      const result = emit();
+      if (!result) continue;
+
+      // This is a consolidator callback, with no new source candle to ingest.
+      if (this.compiledPlan) {
+        this.compiledPlan.ctx.multiBarContext = context;
+        this.compiledPlan.ctx.isWarmingUp = true;
+        await runBar(this.compiledPlan, null, true, undefined, { nodeId, result, sourceResults });
+      } else {
+        this.run.resetForNextBar();
+        this.run.setExecutionContextExtras({ multiBarContext: context, isWarmingUp: true });
+        this.run.seedContext(sourceResults);
+        const execution = await this.run.executeFromResult(nodeId, result);
+        if (!execution.success) throw new Error(execution.error?.message ?? "Backtest consolidation failed");
+      }
+    }
   }
 
   private advanceEvent(event: MultiBarEvent): boolean {
@@ -667,6 +716,7 @@ export class BacktestSession {
       }
 
       const event = this.bars[this.eventIndex];
+      if (!manual) await this.scanWarmupConsolidators(Date.parse(event.timestamp));
       this.beginEvent(event);
       if (manual) {
         const symbolIndex = this.currentSymbolIndex;
@@ -776,6 +826,9 @@ export class BacktestSession {
         const chunkEnd = Math.min(this.eventIndex + 5000, this.bars.length);
         while (this.eventIndex < chunkEnd && !signal.aborted) {
           const event = this.bars[this.eventIndex];
+          if (this.pendingConsolidatorCloses.size > 0) {
+            await this.scanWarmupConsolidators(Date.parse(event.timestamp));
+          }
           let startedAt = performance.now();
           this.beginEvent(event);
           this.perf.runnerBookkeepingMs += performance.now() - startedAt;
@@ -792,6 +845,9 @@ export class BacktestSession {
           lastProgressTime = now;
         }
         if (this.eventIndex < this.bars.length && !signal.aborted) await this.yieldToEventLoop();
+      }
+      if (this.strategyStartTime !== undefined && !signal.aborted) {
+        await this.scanWarmupConsolidators(Math.min(this.strategyStartTime, Date.now()));
       }
     } catch (error) {
       this.abortController.abort(error);
@@ -847,6 +903,7 @@ export class BacktestSession {
     this.eventIndex = 0;
     this.currentSymbolIndex = 0;
     this.status = "ready";
+    this.pendingConsolidatorCloses.clear();
     this.setPhase("initializing");
     this.indicatorWarmupCompleted = false;
     this.indicatorsReadyAtStart = 0;

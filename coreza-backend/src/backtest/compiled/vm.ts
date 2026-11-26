@@ -34,6 +34,7 @@ import type { NodeResult } from "../../nodes/types";
  */
 export async function runBar(
   plan: CompiledPlan, barInput: any, throwOnNodeFailure = false, observe?: NodeResultObserver,
+  scheduled?: { nodeId: string; result: NodeResult; sourceResults: Record<string, NodeResult> },
 ): Promise<void> {
   const {
     instructions, slots, active, activationCounts, satisfiedDependencyGroups,
@@ -80,8 +81,18 @@ export async function runBar(
   let activateMs = 0;
 
   // ── Activate entry nodes ──────────────────────────────────────────
-  for (let e = 0; e < entryIndices.length; e++) {
-    activate(entryIndices[e], -1, inputSlot);
+  if (scheduled) {
+    const index = plan.nodeIdToInstrIndex.get(scheduled.nodeId);
+    if (index === undefined) throw new Error(`Unknown scheduled node: ${scheduled.nodeId}`);
+    for (const [id, sourceResult] of Object.entries(scheduled.sourceResults)) {
+      const sourceIndex = plan.nodeIdToInstrIndex.get(id);
+      if (sourceIndex !== undefined) slots[instructions[sourceIndex].outSlot] = sourceResult;
+    }
+    activate(index, -1, inputSlot);
+  } else {
+    for (let e = 0; e < entryIndices.length; e++) {
+      activate(entryIndices[e], -1, inputSlot);
+    }
   }
 
   // ── Execute instruction scan ──────────────────────────────────────
@@ -95,13 +106,17 @@ export async function runBar(
     let execStart = resolveStart;
     let result: NodeResult;
     try {
-      const params = instr.resolveParams(slots);
-      if (timingEnabled) resolveParamsMs += performance.now() - resolveStart;
-      if (timingEnabled || observe) execStart = performance.now();
+      if (scheduled && scheduled.nodeId === instr.node.id) {
+        result = scheduled.result;
+      } else {
+        const params = instr.resolveParams(slots);
+        if (timingEnabled) resolveParamsMs += performance.now() - resolveStart;
+        if (timingEnabled || observe) execStart = performance.now();
 
-      const execution = instr.exec(instr.node, slots[activeInputSlots[i]], params, ctx);
-      // Sync adapters retain the thenable guard for contract regressions.
-      result = instr.isAsyncNode ? await execution : (execution as NodeResult);
+        const execution = instr.exec(instr.node, slots[activeInputSlots[i]], params, ctx);
+        // Sync adapters retain the thenable guard for contract regressions.
+        result = instr.isAsyncNode ? await execution : (execution as NodeResult);
+      }
     } catch (error) {
       observe?.(instr.node.id, error instanceof NodeResultError ? error.result
         : resultFailure(error instanceof Error ? error.message : String(error)), performance.now() - execStart);

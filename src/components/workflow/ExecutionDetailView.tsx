@@ -23,6 +23,7 @@ import {
 } from "@xyflow/react";
 import { format } from "date-fns";
 import { decodeControlResult } from "@/utils/controlResult";
+import { readNodeResult } from "@/utils/nodeResult";
 import { CheckCircle2, XCircle, Copy, Clock, Loader2, ChevronUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -148,6 +149,11 @@ export function ExecutionDetailView({
   const historyReferenceNodes = useMemo(() => Array.isArray(execution.nodes) ? hydratedNodes.map(node => ({
     id: node.id, type: node.type, data: { ...node.data, output: nodeExecutionMap.get(node.id)?.output },
   })) : [], [execution.nodes, hydratedNodes, nodeExecutionMap]);
+  const onBarNode = execution.bar_time && hydratedNodes.find(
+    (node) => (node.data.definition as { name?: string } | undefined)?.name === "OnBar" &&
+      nodeExecutionMap.has(node.id),
+  );
+  const isWarmingUp = onBarNode && readNodeResult(nodeExecutionMap.get(onBarNode.id)?.output).data?.isWarmingUp;
 
   // Transform nodes to show execution status with readOnly mode
   const executionNodes = useMemo(() => {
@@ -316,6 +322,7 @@ export function ExecutionDetailView({
             {execution.bar_time && (
               <div className="text-xs text-muted-foreground">
                 Historical bar · {execution.bar_symbol} · {formatInTimeZone(execution.bar_time, timezone, "MMM d, yyyy HH:mm:ss zzz")}
+                {typeof isWarmingUp === "boolean" && (isWarmingUp ? " · Warm-up" : " · Strategy")}
               </div>
             )}
             <div className="text-xs text-muted-foreground">

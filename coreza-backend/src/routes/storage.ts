@@ -23,6 +23,7 @@ import logger from "../utils/logger";
 import { buildExecutionScopedKey } from "../utils/executionKey";
 import { RollingWindow } from "../engine/RollingWindow";
 import { DataContextManager } from "../engine/DataContext";
+import { BacktestSessionManager } from "../backtest/session/BacktestSessionManager";
 import {
   buildRollingWindowPayload,
   clampWindowSize,
@@ -155,10 +156,11 @@ router.post("/consolidator", async (req: Request, res: Response) => {
       if (ownershipError || !ownedWorkflow) {
         return res.status(404).json(resultFailure("Workflow not found", { data: null, details: safeErrorDetails({ code: "WORKFLOW_NOT_FOUND" }) }));
       }
+      const backtest = BacktestSessionManager.getInstance().getEditorSession(userId, workflowId, workflowSessionId);
       const identity = {
         userId,
         workflowId,
-        workflowSessionId,
+        workflowSessionId: backtest?.editorConsolidatorScope ?? workflowSessionId,
         nodeId,
         configFingerprint,
       };
@@ -174,6 +176,7 @@ router.post("/consolidator", async (req: Request, res: Response) => {
         identity,
         operationId,
         seriesAction,
+        startIfMissing: !!backtest,
         sourceProvenance,
         parameters,
         candleData,

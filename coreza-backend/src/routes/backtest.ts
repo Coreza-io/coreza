@@ -57,6 +57,7 @@ router.post("/init", async (req: Request, res: Response) => {
       commission_value,
       broker,
       credential_id,
+      symbol,
       symbols,
       interval,
       asset_type,
@@ -64,7 +65,6 @@ router.post("/init", async (req: Request, res: Response) => {
       warmup_period,
       limit,
       adjustment,
-      warmup_mode,
       nodes,
       edges,
     } = req.body;
@@ -87,6 +87,7 @@ router.post("/init", async (req: Request, res: Response) => {
           commission_value,
           broker,
           credential_id,
+          symbol,
           symbols,
           interval,
           asset_type,
@@ -94,7 +95,6 @@ router.post("/init", async (req: Request, res: Response) => {
           warmup_period,
           limit,
           adjustment,
-          warmup_mode,
         },
       } as any,
       {},
@@ -239,8 +239,13 @@ router.post("/trade", async (req: Request, res: Response) => {
       return res.status(400).json(resultFailure("side and quantity are required for place_order", { data: null }));
     }
 
-    if (!getOwnedEditorSession(backtest_id, userId)) {
+    const session = getOwnedEditorSession(backtest_id, userId);
+    if (!session) {
       return res.status(404).json(resultFailure("Editor backtest session not found", { data: null }));
+    }
+    if (session.isTradingBlocked) {
+      const code = session.isWarmingUp ? "ORDER_DURING_WARMUP" : "BACKTEST_NOT_READY";
+      return res.status(session.isWarmingUp ? 400 : 409).json(resultFailure(code, { details: { code } }));
     }
 
     const result = await backtestExecutor.execute(

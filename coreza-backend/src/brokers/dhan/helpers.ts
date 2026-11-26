@@ -1,13 +1,64 @@
 import { v4 as uuidv4 } from "uuid";
+import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { lookupSecurityId } from "./scripMaster";
 import type {
   Bar,
   BarSeriesItem,
   BarSeriesOutput,
   BrokerOperationExecuteContext,
+  HistoricalBar,
+  HistoricalCandleAdapter,
 } from "../types";
 import { toBarSeries } from "../types";
 import { candleTimestamp } from "../../marketData/normalizeCandles";
+import { parseTimeframe } from "../../utils/timeframe";
+
+const DHAN_TIMEZONE = "Asia/Kolkata";
+const DHAN_INTRADAY_RANGE_MS = 89 * 86_400_000; // At most 90 calendar dates, including both endpoints.
+
+export const dhanHistoricalCandles: HistoricalCandleAdapter = {
+  timezone: () => DHAN_TIMEZONE,
+  async fetchRange(range, fetchPage) {
+    const parameters = { instrument: "EQUITY" };
+    if (/^(?:1)?d(?:ay)?$/i.test(range.interval)) {
+      const formatDate = (value: string | Date) => value instanceof Date
+        ? formatInTimeZone(value, DHAN_TIMEZONE, "yyyy-MM-dd") : value;
+      return fetchPage({
+        start: formatDate(range.start),
+        end: formatDate(range.end),
+        interval: "1Day",
+        parameters,
+      });
+    }
+
+    const interval = /^\d+$/.test(range.interval) ? range.interval
+      : String(parseTimeframe(range.interval).milliseconds / 60_000);
+    const toMillis = (value: string | Date) => {
+      if (value instanceof Date) return value.getTime();
+      return /(?:Z|[+-]\d{2}:?\d{2})$/i.test(value)
+        ? Date.parse(value) : fromZonedTime(value, DHAN_TIMEZONE).getTime();
+    };
+    let start = toMillis(range.start);
+    const end = toMillis(range.end);
+    if (!Number.isFinite(start) || !Number.isFinite(end)) throw new Error("Invalid Dhan candle range");
+
+    const formatDateTime = (time: number) => formatInTimeZone(time, DHAN_TIMEZONE, "yyyy-MM-dd HH:mm:ss");
+    const bars: HistoricalBar[] = [];
+    while (start <= end) {
+      const pageEnd = Math.min(start + DHAN_INTRADAY_RANGE_MS, end);
+      const page = await fetchPage({
+        start: formatDateTime(start),
+        end: formatDateTime(pageEnd),
+        interval,
+        parameters,
+      });
+      for (const bar of page) bars.push(bar);
+      if (pageEnd === end) break;
+      start = pageEnd;
+    }
+    return bars;
+  },
+};
 
 export interface DhanBar {
   time: number;

@@ -15,6 +15,7 @@ import { isSupportedBroker } from "../brokers";
 import CredentialManager from "../utils/credentialManager";
 import { requireAuth } from "../middleware/jwtAuth";
 import { BrokerExecutor } from "../nodes/executors/BrokerExecutor";
+import { BacktestSessionManager } from "../backtest/session/BacktestSessionManager";
 import { WorkflowNode } from "../nodes/types";
 import { deriveOAuthCredentialStatus } from "../utils/oauthTokenLifecycle";
 import { validateBrokerConnection } from "../utils/validateBrokerConnection";
@@ -167,6 +168,8 @@ router.post("/:broker/:operation", async (req, res, next) => {
       workflowId,
       executionMode: "manual",
       executionId: workflowSessionId || workflowId,
+      isWarmingUp: BacktestSessionManager.getInstance()
+        .getEditorSession(userId, workflowId || workflowSessionId, workflowSessionId)?.isTradingBlocked,
     });
 
     return res.status(result.status === "error" ? 400 : 200).json(toPublicNodeResult(result));

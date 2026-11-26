@@ -321,7 +321,7 @@ export class PortfolioExecutor implements INodeExecutor {
     ) {
       if (prices && Object.keys(prices).length > 0) {
         simBroker.updateAllPositionsMTM(prices);
-      } else if (currentBar && symbol) {
+      } else if (currentBar && symbol && params.currentBar?._sourceTimestamp == null) {
         const mtmEnvelope = toMarketBarEnvelope(symbol, params.currentBar);
         if (mtmEnvelope) simBroker.onBar(mtmEnvelope);
       }
@@ -358,6 +358,9 @@ export class PortfolioExecutor implements INodeExecutor {
 
     const operation = params.operation || "get_portfolio";
     let reportingOwner: OrderOwner | null = null;
+    if (context.isWarmingUp && !operation.startsWith("get_")) {
+      return createErrorOutput("ORDER_DURING_WARMUP");
+    }
     const currentActivationId = context.reportingExecutionId ?? context.executionId;
     if (operation === "sync_order_event" && (context.executionMode === "live" || context.reportingExecutionId) && params.broker) {
       const owner = await OrderOwnerRegistry.findOwner(`${params.broker}_trading`, {

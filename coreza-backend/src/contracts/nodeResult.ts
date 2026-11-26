@@ -12,6 +12,7 @@
 export type ResultStatus = "pending" | "running" | "success" | "error" | "waiting" | "listening" | "streaming" | "skipped" | "cancelled" | "not-executed";
 export interface ResultErrorDetails {
   code?: string;
+  field?: string;
   provider?: string;
   status?: number;
   recoverable?: boolean;
@@ -97,7 +98,7 @@ export function safeErrorDetails(value: unknown): ResultErrorDetails | undefined
   if (typeof value === "string") return { reason: value };
   if (!record(value)) return undefined;
   const details: ResultErrorDetails = {};
-  for (const key of ["code", "provider", "reason"] as const) if (typeof value[key] === "string") details[key] = value[key];
+  for (const key of ["code", "field", "provider", "reason"] as const) if (typeof value[key] === "string") details[key] = value[key];
   if (typeof value.status === "number" && Number.isFinite(value.status)) details.status = value.status;
   if (typeof value.recoverable === "boolean") details.recoverable = value.recoverable;
   if (record(value.response)) {

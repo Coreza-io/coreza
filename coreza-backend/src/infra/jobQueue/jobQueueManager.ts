@@ -27,6 +27,9 @@ import {
 import { WorkflowRunnerManager } from "../../services/workflowRunnerManager";
 import { BacktestSessionManager } from "../../backtest";
 import { BacktestExecutor } from "../../backtest";
+import { runPreparedBacktest } from "../../backtest/runPreparedBacktest";
+import { ParameterResolver } from "../../engine/parameterResolver";
+import type { WorkflowNode } from "../../nodes/types";
 import { RedisKeys } from "../redisKeys";
 import type { NodeResult } from "../../nodes/types";
 
@@ -330,12 +333,16 @@ export class BullMQJobQueue implements IWorkflowJobQueue {
     if (!started || abortSignal?.aborted) throw new Error("Backtest run cancelled before startup");
 
     const backtestExecutor = new BacktestExecutor();
-    const context = { userId, workflowId, runId, nodes, edges, abortSignal, persistence: "database" as const };
+    const resolver = new ParameterResolver([backtestInitNode]);
+    const context = {
+      userId, workflowId, runId, nodes, edges, abortSignal, persistence: "database" as const,
+      resolveNodeParameters: (node: WorkflowNode, input: unknown) => resolver.resolve(node, input, () => ({})),
+    };
     const input = backtestInitNode?.values || {};
 
     const result = await backtestExecutor.execute(backtestInitNode, input, context);
 
-    return result;
+    return runPreparedBacktest(result, abortSignal);
   }
 
   async stopBacktest(backtestId: string): Promise<void> {

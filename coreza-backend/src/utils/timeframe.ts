@@ -18,7 +18,7 @@ export interface TimeframeRatio {
 
 export function parseTimeframe(value: unknown): Timeframe {
   const input = String(value ?? "").trim().toLowerCase();
-  const match = /^(\d+)\s*(m|min|h|d|day|w|week)$/.exec(input);
+  const match = /^(\d+)\s*(m|min|h|hour|d|day|w|week)$/.exec(input);
   if (!match) {
     throw new Error(`Invalid timeframe "${String(value ?? "")}". Use minute, hour, day, or week intervals (for example 5m or 4h).`);
   }
@@ -29,6 +29,7 @@ export function parseTimeframe(value: unknown): Timeframe {
   }
   const aliases: Record<string, keyof typeof UNIT_MILLISECONDS> = {
     min: "m",
+    hour: "h",
     day: "d",
     week: "w",
   };

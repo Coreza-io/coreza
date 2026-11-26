@@ -45,6 +45,12 @@ export async function runBar(
   active.fill(0);
   activationCounts.fill(0);
   satisfiedDependencyGroups.fill(0);
+  if (ctx.isWarmingUp || plan.barCount === 0) {
+    // Warm-up results must not become inputs to a different candle or phase.
+    // Indicator, variable and consolidator state live outside the result slots.
+    slots.fill(null);
+    for (const { slotIndex, value } of plan.pinnedSlotEntries) slots[slotIndex] = value;
+  }
 
   const activate = (
     index: number,
@@ -66,9 +72,9 @@ export async function runBar(
   // ── Write bar input ───────────────────────────────────────────────
   slots[inputSlot] = barInput;
   plan.nodeResultsDirty = true;
-  plan.barCount += 1;
+  if (!ctx.isWarmingUp) plan.barCount += 1;
 
-  const timingEnabled = plan.timingSampleRate > 0 && (plan.barCount % plan.timingSampleRate === 0);
+  const timingEnabled = !ctx.isWarmingUp && plan.timingSampleRate > 0 && (plan.barCount % plan.timingSampleRate === 0);
   let resolveParamsMs = 0;
   let execMs = 0;
   let activateMs = 0;

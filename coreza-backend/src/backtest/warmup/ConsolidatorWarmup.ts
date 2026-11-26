@@ -62,10 +62,13 @@ export function resolveConsolidatorWarmup(
     if (downstreamRequiredBars === 0) continue;
 
     const values = consolidator.values ?? consolidator.data?.values ?? {};
-    const { ratio } = validateTimeframeRatio(
-      values.source_timeframe,
-      values.target_timeframe,
-    );
+    let ratio: number;
+    try {
+      ratio = validateTimeframeRatio(values.source_timeframe, values.target_timeframe).ratio;
+    } catch {
+      // Expressions and invalid values are handled by the Consolidator at execution.
+      continue;
+    }
     requiredSourceBars = Math.max(
       requiredSourceBars,
       downstreamRequiredBars * ratio + ratio,

@@ -1,7 +1,8 @@
+import { randomUUID } from "crypto";
 import { getRedisCache } from "../../config/redis";
 import { BacktestExecutor } from "../BacktestExecutor";
 import { NodeResult, WorkflowEdge, WorkflowNode } from "../../nodes/types";
-import { IndicatorStateManager } from "../../engine/indicatorStateManager";
+import { buildIndicatorKey, IndicatorStateManager } from "../../engine/indicatorStateManager";
 import { DataContextManager } from "../../engine/DataContext";
 import { WorkflowPlan } from "../../engine/workflowPlan";
 import { WorkflowRun } from "../../engine/workflowRun";
@@ -12,24 +13,14 @@ import { resolveCategory } from "../compiled/adapters";
 import { getNodeExecutor } from "../../nodes/registry";
 import { RedisKeys } from "../../infra/redisKeys";
 import { toMarketBarEnvelope } from "../simBroker/marketEnvelope";
-import { seedRollingWindows } from "../rollingWindowSeed";
-import type { RollingWindowSeed } from "../rollingWindowSeed";
-import { buildIndicatorKey } from "../../engine";
 import type { DiscoveredWarmupNode } from "../../nodes/executors/InitializeIndicatorsExecutor";
-import type { HistoricalBar } from "../../marketData/HistoricalDataService";
-import type { BacktestPhase, WarmupMode } from "../warmup/types";
+import type { BacktestPhase } from "../warmup/types";
 
-export interface IndicatorWarmupSeed {
+export interface IndicatorInitialization {
   interval: string;
   symbols: string[];
-  warmupBarsBySymbol: Map<string, HistoricalBar[]>;
   indicators: DiscoveredWarmupNode[];
 }
-
-export type IndicatorInitialization = Omit<
-  IndicatorWarmupSeed,
-  "warmupBarsBySymbol"
->;
 
 export interface BarEvent {
   bar: any;
@@ -39,6 +30,7 @@ export interface BarEvent {
 }
 
 export interface MultiBarEvent {
+  isWarmingUp?: boolean;
   timestamp: string;
   barIndex: number;
   interval: string;
@@ -68,14 +60,25 @@ export class BacktestSession {
   private readonly plan: WorkflowPlan;
   private readonly barHistory?: BacktestBarHistory;
   private run: WorkflowRun;
-  private readonly stateManager?: IndicatorStateManager;
-  private readonly abortController: AbortController;
-  private barsProcessed = 0;
+  readonly stateManager?: IndicatorStateManager;
+  indicatorsReadyAtStart = 0;
+  editorConsolidatorScope = randomUUID();
+  private abortController = new AbortController();
+  private eventIndex = 0;
+  private indicatorWarmupCompleted = false;
+  readonly totalBars: number;
   private currentSymbolIndex = 0;
   private stepping = false;
   private initializing = false;
   get isExecuting(): boolean {
     return this.stepping || this.initializing;
+  }
+  get isWarmingUp(): boolean {
+    return this.phase === "warming_up";
+  }
+  get isTradingBlocked(): boolean {
+    return this.isWarmingUp || this.phase === "initializing" || this.abortController.signal.aborted
+      || (this.status === "finished" && !this.indicatorWarmupCompleted);
   }
   private finalization: Promise<void> | null = null;
   private compiledPlan: CompiledPlan | null = null;
@@ -113,7 +116,6 @@ export class BacktestSession {
     snapshotTimestampMs: 0,
     runnerBookkeepingMs: 0,
     symbolExecutions: 0,
-    warmup: { events: 0, totalMs: 0 },
   };
 
   constructor(
@@ -128,10 +130,6 @@ export class BacktestSession {
     private readonly bars: MultiBarEvent[],
     public readonly executionId: string,
     stateManager?: IndicatorStateManager,
-    private readonly rollingWindowSeed?: RollingWindowSeed,
-    private readonly indicatorWarmupSeed?: IndicatorWarmupSeed,
-    private readonly warmupMode: WarmupMode = "seed",
-    private readonly warmupEvents: MultiBarEvent[] = [],
     private readonly indicatorInitialization?: IndicatorInitialization,
     public readonly persistResults = true,
     parentRunId?: string,
@@ -139,7 +137,7 @@ export class BacktestSession {
     if (persistResults && parentRunId && process.env.BACKTEST_EXECUTION_HISTORY_ENABLED === "true") {
       this.barHistory = new BacktestBarHistory(parentRunId, workflowId, userId);
     }
-    this.abortController = new AbortController();
+    this.totalBars = bars.filter((event) => !event.isWarmingUp).length;
     this.stateManager = stateManager;
     this.plan = WorkflowPlan.compile(this.nodes, this.edges, "backtest");
     this.run = this.plan.createRun({
@@ -265,10 +263,6 @@ export class BacktestSession {
     );
   }
 
-  get totalBars(): number {
-    return this.bars.length;
-  }
-
   private normalizeBarPayload(event: MultiBarEvent, isLast: boolean) {
     return {
       BarSeries: event.symbols
@@ -279,7 +273,7 @@ export class BacktestSession {
           bars: [event.bars[symbol]],
         })),
       barIndex: event.barIndex,
-      isWarmingUp: false,
+      isWarmingUp: event.isWarmingUp === true,
       isLast,
       total_bars: this.totalBars,
       timestamp: event.timestamp,
@@ -305,7 +299,7 @@ export class BacktestSession {
           ]
         : [],
       barIndex: event.barIndex,
-      isWarmingUp: false,
+      isWarmingUp: event.isWarmingUp === true,
       isLast,
       total_bars: this.totalBars,
       currentSymbol: symbol,
@@ -322,7 +316,7 @@ export class BacktestSession {
   ): SymbolExecutionContext {
     const multiBarContext = this.reusableSymbolExecutionContext.multiBarContext;
     this.reusableSymbolExecutionContext.isWarmingUp =
-      this.phase === "warming_up";
+      event.isWarmingUp === true;
     this.currentMultiBarBars = event.bars;
     multiBarContext.timestamp = event.timestamp;
     multiBarContext.interval = event.interval;
@@ -344,46 +338,35 @@ export class BacktestSession {
 
   private async initializeState(): Promise<void> {
     await this.run.initialize();
-    if (this.warmupMode === "workflow_replay" && this.indicatorWarmupSeed) {
-      throw new Error(
-        "Warm-up replay and direct indicator seeding are mutually exclusive",
-      );
-    }
-    if (this.warmupMode === "workflow_replay") {
-      await this.initializeIndicatorStates();
-    }
-    if (this.warmupMode === "workflow_replay" && this.warmupEvents.length > 0) {
-      this.phase = "warming_up";
-      const broker = BacktestExecutor.getSimBrokerForBacktest(this.backtestId);
-      broker?.setWarmingUp(true);
-      const startedAt = performance.now();
-      // Snapshot only the accumulator fields — `mode`/`totalStart` must keep
-      // whatever the strategy run sets, and `warmup` is written below.
-      const { mode, totalStart, warmup, ...strategyAccumulators } = this.perf;
-      try {
-        for (const event of this.warmupEvents) {
-          if (this.abortController.signal.aborted) {
-            throw this.abortController.signal.reason ?? new Error("Workflow cancelled by user");
-          }
-          await this.executeTimestampAsync(event);
-        }
-      } finally {
-        const totalMs = performance.now() - startedAt;
-        Object.assign(this.perf, strategyAccumulators);
-        this.perf.warmup = {
-          events: this.warmupEvents.length,
-          totalMs,
-        };
-        broker?.setWarmingUp(false);
-      }
-    }
-    if (this.warmupMode === "workflow_replay") {
-      this.completeIndicatorWarmup();
-    }
-    this.phase = "ready";
+    await this.initializeIndicatorStates();
+    this.setPhase(this.bars[0]?.isWarmingUp ? "warming_up" : "ready");
     this.status = "ready";
-    this.currentIndex = 0;
-    if (this.warmupMode === "workflow_replay") this.run.clearNodeTiming();
+  }
+
+  private setPhase(phase: BacktestPhase): void {
+    if (phase === this.phase) return;
+    this.phase = phase;
+    BacktestExecutor.getSimBrokerForBacktest(this.backtestId)?.setWarmingUp(phase === "warming_up");
+  }
+
+  private beginEvent(event: MultiBarEvent): void {
+    this.status = "running";
+    if (event.isWarmingUp) {
+      this.setPhase("warming_up");
+      return;
+    }
+    if (!this.indicatorWarmupCompleted) {
+      this.indicatorsReadyAtStart = this.stateManager?.completeWarmup() ?? 0;
+      this.indicatorWarmupCompleted = true;
+    }
+    this.setPhase("running");
+  }
+
+  private advanceEvent(event: MultiBarEvent): boolean {
+    this.eventIndex += 1;
+    this.currentSymbolIndex = 0;
+    if (!event.isWarmingUp) this.currentIndex += 1;
+    return this.eventIndex >= this.bars.length;
   }
 
   private async initializeIndicatorStates(): Promise<void> {
@@ -405,26 +388,6 @@ export class BacktestSession {
           indicator.type,
           { ...params, symbol, timeframe },
           true,
-        );
-      }
-    }
-  }
-
-  private completeIndicatorWarmup(): void {
-    if (!this.stateManager || !this.indicatorInitialization) return;
-    const { interval, symbols, indicators } = this.indicatorInitialization;
-    for (const symbol of symbols) {
-      for (const indicator of indicators) {
-        const timeframe = String(indicator.params.timeframe || interval);
-        this.stateManager.markWarmupCompleted(
-          buildIndicatorKey(
-            this.userId,
-            this.workflowId,
-            this.executionId,
-            symbol,
-            timeframe,
-            indicator.nodeId,
-          ),
         );
       }
     }
@@ -569,7 +532,7 @@ export class BacktestSession {
   }
 
   private async executeTimestamp(event: MultiBarEvent): Promise<void> {
-    const symbols = event.symbols;
+    const symbols = this.currentSymbolIndex ? event.symbols.slice(this.currentSymbolIndex) : event.symbols;
     let t0 = performance.now();
 
     for (const symbol of symbols) {
@@ -577,10 +540,7 @@ export class BacktestSession {
       if (bar) {
         const envelope = toMarketBarEnvelope(symbol, bar, event.timestamp);
         if (envelope) {
-          BacktestExecutor.getSimBrokerForBacktest(this.backtestId)?.onBar(
-            envelope,
-            { warmup: this.phase === "warming_up" },
-          );
+          BacktestExecutor.getSimBrokerForBacktest(this.backtestId)?.onBar(envelope);
         }
       }
     }
@@ -614,8 +574,8 @@ export class BacktestSession {
       }
       this.perf.contextBuildMs += performance.now() - t0;
 
-      if (this.barHistory && this.phase === "running" && this.abortController.signal.aborted) break;
-      if (this.barHistory && this.phase === "running" && !this.barHistory.failure) {
+      this.abortController.signal.throwIfAborted();
+      if (this.barHistory && !this.barHistory.failure) {
         await this.executeCapturedBar(this.barHistory, symbolEvent, event.timestamp);
       } else if (this.compiledPlan) {
         t0 = performance.now();
@@ -637,87 +597,7 @@ export class BacktestSession {
       this.perf.symbolExecutions += 1;
     }
 
-    if (this.phase === "warming_up") return;
-    const snapshotTimestamp = this.buildSnapshotTimestamp(event);
-    t0 = performance.now();
-    BacktestExecutor.getSimBrokerForBacktest(
-      this.backtestId,
-    )?.recordEquitySnapshot(snapshotTimestamp);
-    this.perf.equitySnapshotMs += performance.now() - t0;
-  }
-
-  private async executeTimestampAsync(event: MultiBarEvent): Promise<void> {
-    const symbols = event.symbols;
-    let t0 = performance.now();
-
-    for (const symbol of symbols) {
-      const bar = event.bars[symbol];
-      if (bar) {
-        const envelope = toMarketBarEnvelope(symbol, bar, event.timestamp);
-        if (envelope) {
-          BacktestExecutor.getSimBrokerForBacktest(this.backtestId)?.onBar(
-            envelope,
-            { warmup: this.phase === "warming_up" },
-          );
-        }
-      }
-    }
-    this.perf.simBrokerOnBarMs += performance.now() - t0;
-
-    for (const symbol of symbols) {
-      const bar = event.bars[symbol];
-      if (!bar) {
-        continue;
-      }
-
-      t0 = performance.now();
-      const symbolEvent: BarEvent = {
-        bar,
-        symbol,
-        interval: event.interval,
-        barIndex: event.barIndex,
-      };
-      this.perf.symbolEventBuildMs += performance.now() - t0;
-      t0 = performance.now();
-      const symbolExecutionContext = this.buildSymbolExecutionContext(
-        event,
-        symbol,
-      );
-      if (this.compiledPlan) {
-        this.compiledPlan.ctx.multiBarContext =
-          symbolExecutionContext.multiBarContext;
-        this.compiledPlan.ctx.isWarmingUp = symbolExecutionContext.isWarmingUp;
-      } else {
-        this.run.setExecutionContextExtras(symbolExecutionContext);
-      }
-      this.perf.contextBuildMs += performance.now() - t0;
-
-      if (this.barHistory && this.phase === "running" && this.abortController.signal.aborted) break;
-      if (this.barHistory && this.phase === "running" && !this.barHistory.failure) {
-        await this.executeCapturedBar(this.barHistory, symbolEvent, event.timestamp);
-      } else if (this.compiledPlan) {
-        t0 = performance.now();
-        await runBar(this.compiledPlan, { data: symbolEvent }, true);
-        this.perf.executeLoopMs += performance.now() - t0;
-      } else {
-        t0 = performance.now();
-        this.run.resetForNextBar();
-        this.perf.resetMs += performance.now() - t0;
-        this.perf.storeClearMs += this.run.lastStoreClearMs;
-        t0 = performance.now();
-        const result = await this.run.executeFromEntries(
-          { data: symbolEvent },
-          this.entryNodeIds,
-        );
-        this.perf.executeLoopMs += performance.now() - t0;
-        this.perf.buildResultMs += this.run.lastBuildResultMs;
-        if (!result.success) throw new Error(result.error?.message ?? "Backtest strategy failed");
-      }
-
-      this.perf.symbolExecutions += 1;
-    }
-
-    if (this.phase === "warming_up") return;
+    if (event.isWarmingUp || this.abortController.signal.aborted) return;
     const snapshotTimestamp = this.buildSnapshotTimestamp(event);
     t0 = performance.now();
     BacktestExecutor.getSimBrokerForBacktest(
@@ -774,133 +654,61 @@ export class BacktestSession {
   private async executeNextTimestamp(
     manual = false,
   ): Promise<Record<string, any>> {
-    if (this.stepping) {
+    if (this.isExecuting) {
       throw new Error("Step already in progress");
     }
 
     this.stepping = true;
     try {
-      if (this.status === "finished" || this.currentIndex >= this.bars.length) {
+      this.abortController.signal.throwIfAborted();
+      if (this.status === "finished" || this.eventIndex >= this.bars.length) {
         this.status = "finished";
-        this.phase = "finished";
         return { isLast: true, total_bars: this.totalBars };
       }
 
-      this.status = "running";
-      this.phase = "running";
-      const currentEvent = this.bars[this.currentIndex];
+      const event = this.bars[this.eventIndex];
+      this.beginEvent(event);
+      if (manual) {
+        const symbolIndex = this.currentSymbolIndex;
+        const symbol = event.symbols[symbolIndex];
+        const broker = BacktestExecutor.getSimBrokerForBacktest(this.backtestId);
+        const envelope = toMarketBarEnvelope(symbol, event.bars[symbol], event.timestamp);
+        if (envelope) broker?.onBar(envelope);
 
-      try {
-        if (manual) {
-          const availableSymbols = currentEvent.symbols.filter(
-            (symbol) => currentEvent.bars[symbol],
-          );
-
-          if (availableSymbols.length === 0) {
-            this.currentIndex += 1;
-            this.currentSymbolIndex = 0;
-            this.barsProcessed = this.currentIndex;
-
-            const isLast = this.currentIndex >= this.bars.length;
-            if (isLast) {
-              this.status = "finished";
-              this.phase = "finished";
-              await this.reportProgress();
-            }
-
-            return {
-              BarSeries: [],
-              barIndex: currentEvent.barIndex,
-              isWarmingUp: false,
-              isLast,
-              total_bars: this.totalBars,
-              symbolIndex: 0,
-              totalSymbols: 0,
-              symbols: [],
-              timestamp: currentEvent.timestamp,
-            };
-          }
-
-          const symbolIndex = Math.min(
-            this.currentSymbolIndex,
-            availableSymbols.length - 1,
-          );
-          const currentSymbol = availableSymbols[symbolIndex];
-          const currentBar = currentEvent.bars[currentSymbol];
-
-          const stepEnvelope = toMarketBarEnvelope(
-            currentSymbol,
-            currentBar,
-            currentEvent.timestamp,
-          );
-          if (stepEnvelope) {
-            BacktestExecutor.getSimBrokerForBacktest(this.backtestId)?.onBar(
-              stepEnvelope,
-            );
-          }
-
-          const nextSymbolIndex = symbolIndex + 1;
-          const consumedTimestamp = nextSymbolIndex >= availableSymbols.length;
-
-          if (consumedTimestamp) {
-            const snapshotTimestamp =
-              currentEvent.timestamp ||
-              String(
-                currentEvent.bars[currentEvent.symbols[0]]?.timestamp ??
-                  new Date().toISOString(),
-              );
-            BacktestExecutor.getSimBrokerForBacktest(
-              this.backtestId,
-            )?.recordEquitySnapshot(snapshotTimestamp);
-            this.currentIndex += 1;
-            this.currentSymbolIndex = 0;
-          } else {
-            this.currentSymbolIndex = nextSymbolIndex;
-          }
-
-          this.barsProcessed = this.currentIndex;
-          if (this.barsProcessed > 0 && this.barsProcessed % 1000 === 0) {
-            await this.reportProgress();
-          }
-
-          const isLast = this.currentIndex >= this.bars.length;
-          if (isLast) {
-            this.status = "finished";
-            this.phase = "finished";
-            await this.reportProgress();
-          }
-
-          return this.normalizeManualBarPayload(
-            currentEvent,
-            currentSymbol,
-            symbolIndex,
-            isLast,
-          );
+        this.currentSymbolIndex += 1;
+        const consumedTimestamp = this.currentSymbolIndex >= event.symbols.length;
+        let isLast = false;
+        if (consumedTimestamp) {
+          if (!event.isWarmingUp) broker?.recordEquitySnapshot(event.timestamp);
+          isLast = this.advanceEvent(event);
         }
-
-        await this.executeTimestampAsync(currentEvent);
-      } catch (error) {
-        console.error("[BacktestSession] Error processing bar:", error);
-        throw error;
+        await this.reportStepProgress(event, consumedTimestamp, isLast);
+        return this.normalizeManualBarPayload(event, symbol, symbolIndex, isLast);
       }
 
-      this.currentIndex += 1;
-      this.barsProcessed = this.currentIndex;
-
-      if (this.barsProcessed % 1000 === 0) {
-        await this.reportProgress();
-      }
-
-      const isLast = this.currentIndex >= this.bars.length;
-      if (isLast) {
-        this.status = "finished";
-        this.phase = "finished";
-        await this.reportProgress();
-      }
-
-      return this.normalizeBarPayload(currentEvent, isLast);
+      await this.executeTimestamp(event);
+      this.abortController.signal.throwIfAborted();
+      const isLast = this.advanceEvent(event);
+      await this.reportStepProgress(event, true, isLast);
+      return this.normalizeBarPayload(event, isLast);
+    } catch (error) {
+      this.abortController.abort(error);
+      this.status = "finished";
+      this.setPhase("finished");
+      throw error;
     } finally {
       this.stepping = false;
+    }
+  }
+
+  private async reportStepProgress(event: MultiBarEvent, consumedTimestamp: boolean, isLast: boolean): Promise<void> {
+    if (isLast) {
+      this.status = "finished";
+      // The last manual response still controls the broker until reset or Run.
+      if (!event.isWarmingUp) this.setPhase("finished");
+    }
+    if (isLast || (consumedTimestamp && !event.isWarmingUp && this.currentIndex % 1000 === 0)) {
+      await this.reportProgress();
     }
   }
 
@@ -926,13 +734,11 @@ export class BacktestSession {
     if (this.abortController.signal.aborted) {
       throw this.abortController.signal.reason ?? new Error("Workflow cancelled by user");
     }
+    if (this.isExecuting) throw new Error("Step already in progress");
     if (this.status === "finished") {
+      this.setPhase("finished");
       await this.finalize();
       return;
-    }
-
-    if (this.stepping) {
-      throw new Error("Step already in progress");
     }
 
     // Manual BacktestInit/OnBar sessions do not need strategy compilation.
@@ -963,109 +769,36 @@ export class BacktestSession {
         snapshotTimestampMs: 0,
         runnerBookkeepingMs: 0,
         symbolExecutions: 0,
-        warmup: { ...this.perf.warmup },
       };
 
-      if (this.compiledPlan) {
-        // ═══════════════════════════════════════════════════════════════
-        // COMPILED PLAN PATH — no engine, no queue, no routing
-        // ═══════════════════════════════════════════════════════════════
-        let lastProgressTime = performance.now();
-        while (this.currentIndex < this.bars.length && !signal.aborted) {
-          let t0 = performance.now();
-          this.status = "running";
-          this.phase = "running";
-          const chunkEnd = Math.min(this.currentIndex + 5000, this.bars.length);
-          this.perf.runnerBookkeepingMs += performance.now() - t0;
-
-          while (this.currentIndex < chunkEnd && !signal.aborted) {
-            const currentEvent = this.bars[this.currentIndex];
-            try {
-              await this.executeTimestamp(currentEvent);
-            } catch (error) {
-              console.error(
-                "[BacktestSession] Compiled plan error on bar:",
-                error,
-              );
-              throw error;
-            }
-            t0 = performance.now();
-            this.currentIndex += 1;
-            this.perf.runnerBookkeepingMs += performance.now() - t0;
-          }
-
-          t0 = performance.now();
-          this.barsProcessed = this.currentIndex;
-          const now = performance.now();
-          const shouldReportProgress =
-            now - lastProgressTime >= 2000 ||
-            this.currentIndex >= this.bars.length;
-          this.perf.runnerBookkeepingMs += performance.now() - t0;
-          if (shouldReportProgress) {
-            await this.reportProgressTimed();
-            lastProgressTime = now;
-          }
-
-          if (this.currentIndex >= this.bars.length) {
-            t0 = performance.now();
-            this.status = "finished";
-            this.phase = "finished";
-            this.perf.runnerBookkeepingMs += performance.now() - t0;
-            break;
-          }
-
-          await this.yieldToEventLoop();
+      let lastProgressTime = performance.now();
+      while (this.eventIndex < this.bars.length && !signal.aborted) {
+        const chunkEnd = Math.min(this.eventIndex + 5000, this.bars.length);
+        while (this.eventIndex < chunkEnd && !signal.aborted) {
+          const event = this.bars[this.eventIndex];
+          let startedAt = performance.now();
+          this.beginEvent(event);
+          this.perf.runnerBookkeepingMs += performance.now() - startedAt;
+          await this.executeTimestamp(event);
+          signal.throwIfAborted();
+          startedAt = performance.now();
+          this.advanceEvent(event);
+          this.perf.runnerBookkeepingMs += performance.now() - startedAt;
         }
-      } else {
-        // ═══════════════════════════════════════════════════════════════
-        // DYNAMIC ENGINE PATH — existing queue/routing engine
-        // ═══════════════════════════════════════════════════════════════
-        let lastProgressTime = performance.now();
-        while (this.currentIndex < this.bars.length && !signal.aborted) {
-          let t0 = performance.now();
-          this.status = "running";
-          this.phase = "running";
-          const chunkEnd = Math.min(this.currentIndex + 5000, this.bars.length);
-          this.perf.runnerBookkeepingMs += performance.now() - t0;
 
-          while (this.currentIndex < chunkEnd && !signal.aborted) {
-            const currentEvent = this.bars[this.currentIndex];
-            try {
-              await this.executeTimestampAsync(currentEvent);
-            } catch (error) {
-              console.error("[BacktestSession] Error processing bar:", error);
-              throw error;
-            }
-
-            t0 = performance.now();
-            this.currentIndex += 1;
-            this.perf.runnerBookkeepingMs += performance.now() - t0;
-          }
-
-          t0 = performance.now();
-          this.barsProcessed = this.currentIndex;
-          const now = performance.now();
-          const shouldReportProgress =
-            now - lastProgressTime >= 2000 ||
-            this.currentIndex >= this.bars.length;
-          this.perf.runnerBookkeepingMs += performance.now() - t0;
-          if (shouldReportProgress) {
-            await this.reportProgressTimed();
-            lastProgressTime = now;
-          }
-
-          if (this.currentIndex >= this.bars.length) {
-            t0 = performance.now();
-            this.status = "finished";
-            this.phase = "finished";
-            this.perf.runnerBookkeepingMs += performance.now() - t0;
-            break;
-          }
-
-          await this.yieldToEventLoop();
+        const now = performance.now();
+        if (now - lastProgressTime >= 2000 || this.eventIndex >= this.bars.length) {
+          await this.reportProgressTimed();
+          lastProgressTime = now;
         }
+        if (this.eventIndex < this.bars.length && !signal.aborted) await this.yieldToEventLoop();
       }
+    } catch (error) {
+      this.abortController.abort(error);
+      throw error;
     } finally {
+      this.status = "finished";
+      this.setPhase("finished");
       try {
         if (this.barHistory) await this.barHistory.flush();
       } finally {
@@ -1073,28 +806,19 @@ export class BacktestSession {
       }
     }
 
-    if (this.abortController.signal.aborted) {
-      throw this.abortController.signal.reason ?? new Error("Workflow cancelled by user");
-    }
-    if (this.bars.length === 0) {
-      this.status = "finished";
-      this.phase = "finished";
-    }
-    if (this.status === "finished") {
-      await this.finalize();
-      const elapsed = performance.now() - this.perf.totalStart;
-      this.logRunAllBenchmark(elapsed);
-    }
+    this.abortController.signal.throwIfAborted();
+    await this.finalize();
+    this.logRunAllBenchmark(performance.now() - this.perf.totalStart);
   }
 
   getLatestNodeSnapshots(): Record<string, NodeResult> {
     const results = this.compiledPlan
       ? this.compiledPlan.ctx.getAllNodeResults()
       : this.run.getLatestNodeResults();
-    const strategyNodeIds = new Set(this.nodes.map(({ id }) => id));
     const snapshots: Record<string, NodeResult> = {};
-    for (const [nodeId, result] of Object.entries(results)) {
-      if (strategyNodeIds.has(nodeId)) snapshots[nodeId] = result;
+    for (const { id } of this.nodes) {
+      const result = results[id];
+      if (Object.prototype.hasOwnProperty.call(results, id) && result != null) snapshots[id] = result;
     }
     return snapshots;
   }
@@ -1107,6 +831,11 @@ export class BacktestSession {
     try {
       if (this.finalization) await this.finalization;
       await this.resetState();
+    } catch (error) {
+      this.abortController.abort(error);
+      this.status = "finished";
+      this.setPhase("finished");
+      throw error;
     } finally {
       this.stepping = false;
     }
@@ -1115,45 +844,19 @@ export class BacktestSession {
   private async resetState(): Promise<void> {
     if (!this.persistResults) this.finalization = null;
     this.currentIndex = 0;
+    this.eventIndex = 0;
     this.currentSymbolIndex = 0;
-    this.barsProcessed = 0;
     this.status = "ready";
+    this.setPhase("initializing");
+    this.indicatorWarmupCompleted = false;
+    this.indicatorsReadyAtStart = 0;
+    this.editorConsolidatorScope = randomUUID();
+    this.abortController = new AbortController();
 
     BacktestExecutor.resetBacktestState(this.backtestId);
     this.run.destroy();
     if (this.stateManager) {
-      await this.stateManager.clearExecutionScope(
-        this.userId,
-        this.workflowId,
-        this.executionId,
-      );
-      if (this.indicatorWarmupSeed) {
-        for (const symbol of this.indicatorWarmupSeed.symbols) {
-          const bars =
-            this.indicatorWarmupSeed.warmupBarsBySymbol.get(symbol) ?? [];
-          for (const indicator of this.indicatorWarmupSeed.indicators) {
-            const { candle_data, ...params } = indicator.params;
-            await this.stateManager.warmUp(
-              buildIndicatorKey(
-                this.userId,
-                this.workflowId,
-                this.executionId,
-                symbol,
-                this.indicatorWarmupSeed.interval,
-                indicator.nodeId,
-              ),
-              indicator.type,
-              {
-                ...params,
-                symbol,
-                timeframe: this.indicatorWarmupSeed.interval,
-              },
-              bars,
-              false,
-            );
-          }
-        }
-      }
+      await this.stateManager.clearExecutionScope(this.userId, this.workflowId, this.executionId);
     }
     this.run = this.plan.createRun({
       executionId: this.executionId,
@@ -1164,39 +867,35 @@ export class BacktestSession {
       executionMode: "backtest",
     });
     if (this.stateManager) this.run.setIndicatorStateManager(this.stateManager);
-    if (this.rollingWindowSeed) {
-      seedRollingWindows({
-        ...this.rollingWindowSeed,
-        userId: this.userId,
-        workflowId: this.workflowId,
-        executionId: this.executionId,
-      });
-    }
     this.run.clearNodeTiming();
     this.run.pinResults(this.backtestInitResult);
     this.compiledPlan = null;
 
-    this.phase = "initializing";
     await this.initialize();
 
     await this.reportProgress();
   }
 
   cleanup(): void {
-    this.abortController.abort();
+    this.cancel();
+    this.setPhase("finished");
     BacktestExecutor.cleanupBacktestResources(this.backtestId);
     this.run.destroy();
   }
 
   cancel(reason?: unknown): void {
     this.abortController.abort(reason);
+    if (!this.isExecuting) {
+      this.status = "finished";
+      this.setPhase("finished");
+    }
   }
 
   private async reportProgress(): Promise<void> {
     if (!this.persistResults) return;
     const percent =
       this.totalBars > 0
-        ? Math.round((this.barsProcessed / this.totalBars) * 100)
+        ? Math.round((this.currentIndex / this.totalBars) * 100)
         : 100;
 
     const redis = getRedisCache();
@@ -1204,7 +903,7 @@ export class BacktestSession {
       RedisKeys.backtestProgress(this.userId, this.backtestId),
       JSON.stringify({
         backtestId: this.backtestId,
-        barsProcessed: this.barsProcessed,
+        barsProcessed: this.currentIndex,
         totalBars: this.totalBars,
         percent,
         updatedAt: new Date().toISOString(),

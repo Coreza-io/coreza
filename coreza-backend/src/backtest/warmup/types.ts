@@ -5,9 +5,6 @@ export type BacktestPhase =
   | "running"
   | "finished";
 
-export type WarmupMode = "seed" | "workflow_replay";
-export type WarmupNodePolicy = "execute" | "suppress" | "reject";
-
 export interface WarmupWarning {
   code: string;
   symbol?: string;

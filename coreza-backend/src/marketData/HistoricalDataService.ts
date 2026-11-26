@@ -11,15 +11,20 @@
 import { NodeResultError } from "../contracts/nodeResult";
 import { getBrokerConfig } from "../brokers";
 import { BrokerExecutor } from "../nodes/executors/BrokerExecutor";
-import type { Bar } from "../brokers/types";
+import type { HistoricalBar, HistoricalCandlePage } from "../brokers/types";
 import type { NodeInput, WorkflowNode } from "../nodes/types";
 import { parseTimeframe } from "../utils/timeframe";
+import { historicalBarTimestamp, normalizeHistoricalBars } from "./normalizeCandles";
+
+export type { HistoricalBar } from "../brokers/types";
+export { historicalBarTimestamp, normalizeHistoricalBars } from "./normalizeCandles";
 
 export interface HistoricalDataContext {
   userId?: string;
   workflowId?: string;
   runId?: string;
   workflowSessionId?: string;
+  abortSignal?: AbortSignal;
 }
 
 interface HistoricalRequestBase {
@@ -43,28 +48,10 @@ export interface PreviousBarsRequest extends HistoricalRequestBase {
   endExclusive: string | Date;
 }
 
-export type HistoricalBar = Omit<Bar, "time"> & { time?: number; t?: number };
-
 type BrokerCandleExecutor = Pick<BrokerExecutor, "execute">;
 
 const MAX_ATTEMPTS = 4;
 const DAY_MS = 86_400_000;
-
-export function historicalBarTimestamp(bar: Partial<HistoricalBar>): number {
-  return Number(bar.time ?? bar.t);
-}
-
-export function normalizeHistoricalBars(bars: HistoricalBar[]): HistoricalBar[] {
-  const byTimestamp = new Map<number, HistoricalBar>();
-  for (const bar of bars) {
-    const timestamp = historicalBarTimestamp(bar);
-    if (!Number.isFinite(timestamp)) continue;
-    byTimestamp.set(timestamp, { ...bar, time: timestamp });
-  }
-  return [...byTimestamp.values()].sort(
-    (left, right) => historicalBarTimestamp(left) - historicalBarTimestamp(right),
-  );
-}
 
 function initialLookbackMs(request: PreviousBarsRequest): number {
   let intervalMs = DAY_MS;
@@ -90,25 +77,40 @@ export class HistoricalDataService {
     request: HistoricalRangeRequest,
     context: HistoricalDataContext,
   ): Promise<HistoricalBar[]> {
-    const start = request.start instanceof Date
-      ? request.start.toISOString()
-      : request.start;
-    const end = request.end instanceof Date ? request.end.toISOString() : request.end;
-    const providerPageSize = getBrokerConfig(request.provider)?.operations.get_candle?.pagination?.pageSize;
+    const broker = getBrokerConfig(request.provider);
+    const providerPageSize = broker?.operations?.get_candle?.pagination?.pageSize;
+    const fetchPage = (page: HistoricalCandlePage) =>
+      this.fetchPage(request, page, providerPageSize, context);
+    const fetchProviderRange = broker?.historicalCandles?.fetchRange;
+    const bars = fetchProviderRange
+      ? await fetchProviderRange(request, fetchPage)
+      : await fetchPage(request);
+    return normalizeHistoricalBars(bars);
+  }
+
+  private async fetchPage(
+    request: HistoricalRangeRequest,
+    page: HistoricalCandlePage,
+    providerPageSize: number | undefined,
+    context: HistoricalDataContext,
+  ): Promise<HistoricalBar[]> {
+    context.abortSignal?.throwIfAborted();
+    const start = page.start instanceof Date ? page.start.toISOString() : page.start;
+    const end = page.end instanceof Date ? page.end.toISOString() : page.end;
     const suppliedPageSize = typeof request.pageSize === "string" && !request.pageSize.trim() ? undefined : request.pageSize;
-    // Only providers declaring this capability consume the editable page-size setting.
-    const pageSize = providerPageSize === undefined ? "50000" : suppliedPageSize ?? providerPageSize;
+    // Preserve the supplied type for broker validation when the page size is configurable.
+    const pageSize = page.limit ?? (providerPageSize === undefined ? "50000" : suppliedPageSize ?? providerPageSize);
     const input: NodeInput = {
+      ...page.parameters,
       operation: "get_candle",
       symbol: request.symbol,
-      interval: request.interval,
+      interval: page.interval,
       start,
       end,
       asset_type: request.assetType,
       feed: request.feed,
       adjustment: request.adjustment,
       credential_id: request.credentialId,
-      // Preserve the supplied type so broker validation cannot accept an array such as [1000] as "1000".
       limit: pageSize,
     };
     const node: WorkflowNode = {
@@ -123,7 +125,9 @@ export class HistoricalDataService {
       userId: context.userId,
       workflowId: context.workflowId || "backtest-init",
       runId: context.runId || context.workflowSessionId || `backtest-${Date.now()}`,
+      abortSignal: context.abortSignal,
     });
+    context.abortSignal?.throwIfAborted();
     if (result.status !== "success") {
       throw new NodeResultError({ ...result,
         error: `Historical data request failed (provider=${request.provider}, symbol=${request.symbol}, interval=${request.interval}, range=${input.start}..${input.end}): ${result.error}`,
@@ -135,7 +139,7 @@ export class HistoricalDataService {
       });
     }
     const bars = result.data?.BarSeries?.[0]?.bars;
-    return normalizeHistoricalBars(Array.isArray(bars) ? bars : []);
+    return Array.isArray(bars) ? bars : [];
   }
 
   async fetchPreviousBars(

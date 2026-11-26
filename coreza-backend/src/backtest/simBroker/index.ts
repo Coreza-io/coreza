@@ -545,7 +545,7 @@ export class SimBroker {
       };
     }
 
-    if (options?.warmup) {
+    if (this.warmingUp || options?.warmup) {
       return [];
     }
 
@@ -693,7 +693,12 @@ export class SimBroker {
     this.warmingUp = warmingUp;
   }
 
+  get isWarmingUp(): boolean {
+    return this.warmingUp;
+  }
+
   recordEquitySnapshot(timestamp: string | number): void {
+    if (this.warmingUp) return;
     const positionsValue = this.positionsValue;
     const currentEquity = this.state.cash + positionsValue;
 
@@ -723,6 +728,7 @@ export class SimBroker {
    * @param legacyBar deprecated; ignored (kept for one migration cycle)
    */
   tryFillImmediateOrder(orderId: string, legacyBar?: Bar): OrderEvent | null {
+    if (this.warmingUp) return null;
     if (legacyBar !== undefined) {
       this.legacyOnBarCalls++;
       if (process.env.NODE_ENV === "test") {
@@ -1353,6 +1359,7 @@ export class SimBroker {
   }
 
   public releaseAllReservations(): void {
+    if (this.warmingUp) return;
     this.state.reservationsByOrderId = {};
     this.state.reservedRateByOrderId = {};
     this.recomputeReservedCash();

@@ -1,4 +1,4 @@
-import { WorkflowEdge, WorkflowNode } from "../../nodes/types";
+import { NodeResult, WorkflowEdge, WorkflowNode } from "../../nodes/types";
 import { ExecutionMode } from "./executionError";
 
 export interface MultiBarExecutionContext {
@@ -8,6 +8,11 @@ export interface MultiBarExecutionContext {
   currentSymbol: string;
   bars: Record<string, any>;
   getBar: (symbol: string) => any | undefined;
+  scheduleConsolidatorClose?: (
+    nodeId: string, stateKey: string, endTime: number,
+    emit: () => NodeResult | undefined, getResults: () => Record<string, NodeResult>,
+    context: MultiBarExecutionContext,
+  ) => void;
 }
 
 export interface NodeExecutionContext {

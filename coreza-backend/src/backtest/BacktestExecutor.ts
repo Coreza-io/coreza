@@ -545,6 +545,7 @@ export class BacktestExecutor implements INodeExecutor {
         { interval, symbols, indicators: discoveredIndicators },
         persistBacktest,
         context.runId,
+        startTime,
       );
       await session.initialize();
       if (context.abortSignal?.aborted) throw new Error("Workflow cancelled by user");

@@ -1,5 +1,6 @@
 import { activeVariableSnapshots } from "../utils/metrics";
 import { readNodeResult } from "../contracts/nodeResult";
+import type { NodeResult } from "../nodes/types";
 import { LIVE_TIMING_ENABLED, timingNow, observeStage, type LiveExecutionTiming } from "../utils/liveTiming";
 import { DataContext, DataContextManager } from "./DataContext";
 import {
@@ -43,6 +44,7 @@ interface ExecutionContextExtras {
   liveTiming?: LiveExecutionTiming;
   variableEventId?: string;
   multiBarContext?: MultiBarExecutionContext;
+  isWarmingUp?: boolean;
   runId?: string;
 }
 
@@ -202,6 +204,10 @@ export class WorkflowRun {
         this.runtime.enqueueEntry(entryNodeId, input);
       }
     });
+  }
+
+  async executeFromResult(nodeId: string, result: NodeResult): Promise<WorkflowExecutionResult> {
+    return this.runExecution(() => this.runtime.publishResult(nodeId, result));
   }
 
   async executeFromActivations(activations: readonly WorkflowEntryActivation[]): Promise<WorkflowExecutionResult> {

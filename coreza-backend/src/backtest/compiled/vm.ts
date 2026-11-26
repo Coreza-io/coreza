@@ -66,9 +66,9 @@ export async function runBar(
   // ── Write bar input ───────────────────────────────────────────────
   slots[inputSlot] = barInput;
   plan.nodeResultsDirty = true;
-  plan.barCount += 1;
+  if (!ctx.isWarmingUp) plan.barCount += 1;
 
-  const timingEnabled = plan.timingSampleRate > 0 && (plan.barCount % plan.timingSampleRate === 0);
+  const timingEnabled = !ctx.isWarmingUp && plan.timingSampleRate > 0 && (plan.barCount % plan.timingSampleRate === 0);
   let resolveParamsMs = 0;
   let execMs = 0;
   let activateMs = 0;

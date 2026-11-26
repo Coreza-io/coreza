@@ -189,6 +189,9 @@ export class BrokerExecutor implements INodeExecutor {
     let acknowledgedClientOrderId: string | null = null;
     try {
       operation = node.values?.operation;
+      if (context?.isWarmingUp && /^(place|modify|replace|cancel|close|liquidate)(_|$)/.test(operation)) {
+        return resultFailure("ORDER_DURING_WARMUP");
+      }
       const brokerNode = node as WorkflowNode & { subCategory: string };
       broker = (brokerNode.subCategory ?? node.name).toLowerCase();
       timing.configure(broker, operation);

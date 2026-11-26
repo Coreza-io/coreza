@@ -12,7 +12,6 @@ import { readNodeResult, resultFailure } from "../../contracts/nodeResult";
 import { INodeExecutor, NodeResult, WorkflowNode } from "../../nodes/types";
 import { resolveCategory } from "../../nodes/categoryMap";
 import { ExecFn, CompiledExecContext } from "./types";
-import { enforceWarmupPolicy } from "../warmup/WarmupPolicy";
 
 export { resolveCategory };
 
@@ -27,10 +26,7 @@ export function buildExecAdapter(executor: INodeExecutor): ExecFn {
       ctx.nodeId = node.id;
       ctx.resolvedParams = resolvedParams;
 
-      const warmupResult = ctx.isWarmingUp
-        ? enforceWarmupPolicy(node)
-        : undefined;
-      const result = warmupResult ?? (await executor.execute(node, input, ctx));
+      const result = await executor.execute(node, input, ctx);
 
       return normalizeResult(result);
     };
@@ -45,9 +41,7 @@ export function buildExecAdapter(executor: INodeExecutor): ExecFn {
     ctx.nodeId = node.id;
     ctx.resolvedParams = resolvedParams;
 
-    const result =
-      (ctx.isWarmingUp ? enforceWarmupPolicy(node) : undefined) ??
-      executor.execute(node, input, ctx);
+    const result = executor.execute(node, input, ctx);
 
     if (result && typeof (result as any).then === "function") {
       return resultFailure(`Compiled plan requires synchronous executor for category ${executor.category} (node ${node.id})`);

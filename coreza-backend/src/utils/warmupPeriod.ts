@@ -10,6 +10,15 @@
 
 export const DEFAULT_WARMUP_PERIOD = 200;
 
+export function parseBacktestWarmupDays(raw: unknown): number {
+  if (raw == null || (typeof raw === "string" && !raw.trim())) return 0;
+  const days = typeof raw === "string" && /^\d+$/.test(raw.trim()) ? Number(raw) : raw;
+  if (typeof days !== "number" || !Number.isSafeInteger(days) || days < 0) {
+    throw new Error("Warm-up (days) must be a nonnegative whole number");
+  }
+  return days;
+}
+
 export function parseWarmupPeriod(raw: unknown): number {
   if (raw === undefined || raw === null || raw === "") {
     return DEFAULT_WARMUP_PERIOD;

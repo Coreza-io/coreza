@@ -15,6 +15,7 @@ import { Request, Response, Router } from "express";
 import { z } from "zod";
 import { requireAuth } from "../middleware/jwtAuth";
 import { getNodeExecutor } from "../nodes/registry";
+import { BacktestSessionManager } from "../backtest/session/BacktestSessionManager";
 
 const router = Router();
 const portfolioOperationSchema = z.enum([
@@ -166,6 +167,8 @@ router.post("/", async (req: Request, res: Response) => {
         userId,
         workflowId: body.workflowId,
         executionId: body.workflowSessionId || body.workflowId,
+        isWarmingUp: BacktestSessionManager.getInstance()
+          .getEditorSession(userId, body.workflowId || body.workflowSessionId, body.workflowSessionId)?.isWarmingUp,
       },
     );
 

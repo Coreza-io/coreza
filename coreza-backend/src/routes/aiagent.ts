@@ -6,6 +6,7 @@ import { randomUUID } from "crypto";
 import { Router, Request, Response } from "express";
 import { requireAuth } from "../middleware/jwtAuth";
 import { AIAgentExecutor } from "../nodes/executors/AIAgentExecutor";
+import { BacktestSessionManager } from "../backtest/session/BacktestSessionManager";
 import { WorkflowNode } from "../nodes/types";
 import { activityBinding, registerActivity, claimActivity, cancelActivity,
   activitySnapshot, getActivitySummary, verifyActivityRevision } from "../agents/manualActivity";
@@ -75,6 +76,8 @@ router.post("/execute", async (req: Request, res: Response) => {
     const context = {
       userId, nodes: workflowNodes, edges: workflowEdges,
       workflowId: workflowId || editorSession, executionId: editorSession,
+      isWarmingUp: BacktestSessionManager.getInstance()
+        .getEditorSession(userId, workflowId || editorSession, editorSession)?.isWarmingUp,
       abortSignal: controller.signal,
       clientInvocationId: scope ? req.body.clientInvocationId : undefined,
       agentActivitySink: scope, onAgentActivityRecorder: scope?.attach,

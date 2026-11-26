@@ -172,6 +172,7 @@ export class IndicatorsExecutor implements INodeExecutor {
           const { candle_data, ...params } = processedParams;
           this.validateDirectCandles(barsData, indicatorType, processedParams);
           state = stateManager.warmUpSync(key, indicatorType, params, barsData);
+          state.warmupCompleted = !context?.isWarmingUp;
         }
         if (
           !state ||
@@ -296,6 +297,7 @@ export class IndicatorsExecutor implements INodeExecutor {
                 barsData,
                 true,
               );
+              state.warmupCompleted = !context?.isWarmingUp;
             } else {
               const latestBar = barsData[barsData.length - 1];
               const latestBarTime = String(

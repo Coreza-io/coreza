@@ -9,17 +9,20 @@
  */
 
 import { NodeResultError } from "../contracts/nodeResult";
+import { formatInTimeZone } from "date-fns-tz";
 import { getBrokerConfig } from "../brokers";
 import { BrokerExecutor } from "../nodes/executors/BrokerExecutor";
 import type { Bar } from "../brokers/types";
 import type { NodeInput, WorkflowNode } from "../nodes/types";
 import { parseTimeframe } from "../utils/timeframe";
+import { candleTimestamp } from "./normalizeCandles";
 
 export interface HistoricalDataContext {
   userId?: string;
   workflowId?: string;
   runId?: string;
   workflowSessionId?: string;
+  abortSignal?: AbortSignal;
 }
 
 interface HistoricalRequestBase {
@@ -51,15 +54,18 @@ const MAX_ATTEMPTS = 4;
 const DAY_MS = 86_400_000;
 
 export function historicalBarTimestamp(bar: Partial<HistoricalBar>): number {
-  return Number(bar.time ?? bar.t);
+  return bar.time ?? bar.t ?? bar.closeTime ?? NaN;
 }
 
 export function normalizeHistoricalBars(bars: HistoricalBar[]): HistoricalBar[] {
   const byTimestamp = new Map<number, HistoricalBar>();
   for (const bar of bars) {
-    const timestamp = historicalBarTimestamp(bar);
-    if (!Number.isFinite(timestamp)) continue;
-    byTimestamp.set(timestamp, { ...bar, time: timestamp });
+    try {
+      const timestamp = candleTimestamp(historicalBarTimestamp(bar), "milliseconds");
+      byTimestamp.set(timestamp, { ...bar, time: timestamp });
+    } catch {
+      // An invalid timestamp cannot participate in chronological alignment.
+    }
   }
   return [...byTimestamp.values()].sort(
     (left, right) => historicalBarTimestamp(left) - historicalBarTimestamp(right),
@@ -90,20 +96,48 @@ export class HistoricalDataService {
     request: HistoricalRangeRequest,
     context: HistoricalDataContext,
   ): Promise<HistoricalBar[]> {
-    const start = request.start instanceof Date
-      ? request.start.toISOString()
-      : request.start;
-    const end = request.end instanceof Date ? request.end.toISOString() : request.end;
+    if (request.provider !== "binance") return this.fetchPage(request, context);
+
+    // Binance accepts at most 1000 bars and pages by candle open time.
+    const limit = 1000;
+    let start = new Date(request.start).getTime();
+    const end = new Date(request.end).getTime();
+    if (!Number.isFinite(start) || !Number.isFinite(end)) throw new Error("Invalid Binance candle range");
+    const bars: HistoricalBar[] = [];
+    while (start <= end) {
+      const page = await this.fetchPage({ ...request, start: new Date(start), pageSize: limit }, context);
+      bars.push(...page);
+      if (page.length < limit) break;
+      const latest = historicalBarTimestamp(page[page.length - 1]);
+      if (latest < start) throw new Error(`Binance historical data pagination stalled for ${request.symbol}`);
+      start = latest + 1;
+    }
+    return normalizeHistoricalBars(bars);
+  }
+
+  private async fetchPage(
+    request: HistoricalRangeRequest,
+    context: HistoricalDataContext,
+  ): Promise<HistoricalBar[]> {
+    context.abortSignal?.throwIfAborted();
+    const formatDate = (value: string | Date) => typeof value === "string" ? value
+      : request.provider === "dhan"
+        ? formatInTimeZone(value, "Asia/Kolkata", /(?:d|day)$/i.test(request.interval) ? "yyyy-MM-dd" : "yyyy-MM-dd HH:mm:ss")
+        : value.toISOString();
+    const start = formatDate(request.start);
+    const end = formatDate(request.end);
     const providerPageSize = getBrokerConfig(request.provider)?.operations.get_candle?.pagination?.pageSize;
     const suppliedPageSize = typeof request.pageSize === "string" && !request.pageSize.trim() ? undefined : request.pageSize;
     // Only providers declaring this capability consume the editable page-size setting.
-    const pageSize = providerPageSize === undefined ? "50000" : suppliedPageSize ?? providerPageSize;
+    const pageSize = request.provider === "binance" ? request.pageSize
+      : providerPageSize === undefined ? "50000" : suppliedPageSize ?? providerPageSize;
     const input: NodeInput = {
       operation: "get_candle",
       symbol: request.symbol,
       interval: request.interval,
       start,
       end,
+      ...(request.provider === "binance" ? { startTime: start, endTime: end } : {}),
       asset_type: request.assetType,
       feed: request.feed,
       adjustment: request.adjustment,
@@ -123,7 +157,9 @@ export class HistoricalDataService {
       userId: context.userId,
       workflowId: context.workflowId || "backtest-init",
       runId: context.runId || context.workflowSessionId || `backtest-${Date.now()}`,
+      abortSignal: context.abortSignal,
     });
+    context.abortSignal?.throwIfAborted();
     if (result.status !== "success") {
       throw new NodeResultError({ ...result,
         error: `Historical data request failed (provider=${request.provider}, symbol=${request.symbol}, interval=${request.interval}, range=${input.start}..${input.end}): ${result.error}`,

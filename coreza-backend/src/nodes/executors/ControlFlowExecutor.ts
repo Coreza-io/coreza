@@ -280,15 +280,16 @@ export class ControlFlowExecutor implements INodeExecutor {
     // Get loop configuration
     const inputArray = resolvedParams.inputArray || "items";
     const batchSize = Number(resolvedParams.batchSize) || 1;
-    const parallel = !!resolvedParams.parallel;
     const continueOnError = !!resolvedParams.continueOnError;
     const isBacktest = context?.executionMode === "backtest";
+    // Historical loops share the current bar and its session-local state.
+    const parallel = !isBacktest && !!resolvedParams.parallel;
     const throttleMs = isBacktest
       ? 0
       : Number(resolvedParams.throttleMs) || 200;
     const maxConcurrency = Number(resolvedParams.maxConcurrency) || 10;
 
-    if (resolvedParams.parallel && (context?.variables || context?.nodes?.some(node =>
+    if (parallel && (context?.variables || context?.nodes?.some(node =>
       referencesVariables(node.values) || isPersistentVariableEdit(node))))
       throw new Error("Workflow variables require sequential Loop execution; disable Parallel");
     // If parallel=true and we have required context, delegate to LoopExecutorV2 for BullMQ distributed execution

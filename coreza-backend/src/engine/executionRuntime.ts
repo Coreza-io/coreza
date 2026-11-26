@@ -21,7 +21,7 @@ import { NodeQueueManager } from "./nodeQueueManager";
 import { NodeStoreV2 } from "./nodeStoreV2";
 import { ParameterResolver } from "./parameterResolver";
 import { ExecutionMode, NodeExecutionContext, type NodeResultObserver } from "./types";
-import { enforceWarmupPolicy } from "../backtest/warmup/WarmupPolicy";
+import { runPreparedBacktest } from "../backtest/runPreparedBacktest";
 
 export type RuntimeOptions = {
   executionId: string;
@@ -354,13 +354,13 @@ export abstract class BaseExecutionRuntime {
       const context = this.getExecutionContext(node.id);
       const t0 = performance.now();
       startedAt = t0;
-      const warmupResult = context.isWarmingUp
-        ? enforceWarmupPolicy(node)
-        : undefined;
-      const raw = warmupResult ?? executor.execute(node, item.input, context);
+      const raw = executor.execute(node, item.input, context);
 
       if (raw instanceof Promise) {
-        return raw
+        const pending = node.name === "BacktestInit"
+          ? raw.then((result) => runPreparedBacktest(result, context.abortSignal))
+          : raw;
+        return pending
           .then((result) =>
             this.routeNodeResult(
               node,
@@ -559,10 +559,12 @@ export class BacktestExecutionRuntime extends BaseExecutionRuntime {
     meta?: IterMeta,
   ): void {
     const elapsed = performance.now() - t0;
-    const prev = this.nodeTiming.get(node.id) ?? { totalMs: 0, count: 0 };
-    prev.totalMs += elapsed;
-    prev.count += 1;
-    this.nodeTiming.set(node.id, prev);
+    if (!this.executionContextExtras.isWarmingUp) {
+      const prev = this.nodeTiming.get(node.id) ?? { totalMs: 0, count: 0 };
+      prev.totalMs += elapsed;
+      prev.count += 1;
+      this.nodeTiming.set(node.id, prev);
+    }
 
     this.executionOrder.push(node.id);
     this.store.setNodeResult(node.id, result);

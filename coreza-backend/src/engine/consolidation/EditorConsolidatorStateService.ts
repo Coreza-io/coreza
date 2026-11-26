@@ -145,6 +145,7 @@ export class EditorConsolidatorStateService {
     identity: EditorConsolidatorIdentity;
     operationId: string;
     seriesAction: EditorSeriesAction;
+    startIfMissing?: boolean;
     sourceProvenance: EditorSourceProvenance;
     parameters: ConsolidatorParameters;
     candleData: unknown;
@@ -169,7 +170,7 @@ export class EditorConsolidatorStateService {
 
     return this.withLock(key, async () => {
       const stored = await this.read(key);
-      if (!stored && seriesAction === "continue") {
+      if (!stored && seriesAction === "continue" && !args.startIfMissing) {
         throw new EditorConsolidatorStateError(
           "EDITOR_CONTEXT_EXPIRED",
           "Editor consolidator state expired; start a fresh series or reset it",

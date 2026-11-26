@@ -4,7 +4,7 @@
   "node_type": "main",
   "icon": "/assets/icons/backtest.svg",
   "category": "Backtest",
-  "description": "Receives each bar during backtest. Access: {{ $('OnBar').json.data.BarSeries[0].bars[0].close }}, {{ $('OnBar').json.data.BarSeries[0].symbol }}, {{ $('OnBar').json.data.barIndex }}. The boolean {{ $(\"OnBar\").json.data.isWarmingUp }} is true for Workflow Replay warm-up bars and false for regular bars, including manual steps. Direct Seed emits no warm-up bars.",
+  "description": "Receives each backtest candle, including manual steps. Access the close with {{ $('OnBar').json.data.BarSeries[0].bars[0].close }}. The boolean {{ $(\"OnBar\").json.data.isWarmingUp }} is true before Start Date and false from Start Date onward.",
   "color": "text-orange-500",
   "size": {
     "width": 280,

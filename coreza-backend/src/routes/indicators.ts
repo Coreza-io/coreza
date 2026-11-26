@@ -11,6 +11,7 @@
 import express from "express";
 import { requireAuth } from "../middleware/jwtAuth";
 import { InitializeIndicatorsExecutor } from "../nodes/executors/InitializeIndicatorsExecutor";
+import { BacktestSessionManager } from "../backtest/session/BacktestSessionManager";
 import { WorkflowNode } from "../nodes/types";
 import {
   buildIndicatorKey,
@@ -65,6 +66,20 @@ async function executeIndicatorWithState(
     );
 
     const candles = parseCandles(req.body.candle_data);
+    const session = BacktestSessionManager.getInstance().getEditorSession(userId, workflowId, executionId);
+    const backtestState = session?.stateManager;
+    if (session && backtestState) {
+      let state = backtestState.getStateSync(key);
+      if (candles.length > 0) {
+        if (!state || !isIndicatorStateCompatible(state, indicatorType, req.body)) {
+          state = backtestState.warmUpSync(key, indicatorType, req.body, candles);
+          state.warmupCompleted = !session.isWarmingUp;
+        } else {
+          for (const bar of candles) state = backtestState.updateSync(key, bar);
+        }
+      }
+      if (state) return { status: "success", data: toIndicatorOutput(indicatorType, state) };
+    }
     let state = await indicatorStateManager.getState(key);
     if (
       state &&

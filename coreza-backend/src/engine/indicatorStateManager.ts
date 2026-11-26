@@ -319,6 +319,14 @@ export class IndicatorStateManager {
     return state;
   }
 
+  completeWarmup(): number {
+    let ready = 0;
+    for (const key of this.l1Cache.keys()) {
+      if (this.markWarmupCompleted(key)?.isReady) ready++;
+    }
+    return ready;
+  }
+
   async warmUp(
     key: string,
     indicator: string,

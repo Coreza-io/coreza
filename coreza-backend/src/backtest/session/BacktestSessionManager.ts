@@ -1,12 +1,7 @@
 import { WorkflowEdge, WorkflowNode } from "../../nodes/types";
 import { BacktestSession, MultiBarEvent } from "./BacktestSession";
-import type {
-  IndicatorInitialization,
-  IndicatorWarmupSeed,
-} from "./BacktestSession";
+import type { IndicatorInitialization } from "./BacktestSession";
 import { IndicatorStateManager } from "../../engine/indicatorStateManager";
-import type { RollingWindowSeed } from "../rollingWindowSeed";
-import type { WarmupMode } from "../warmup/types";
 
 export class BacktestSessionManager {
   private static instance: BacktestSessionManager;
@@ -44,10 +39,6 @@ export class BacktestSessionManager {
     bars: MultiBarEvent[],
     runId: string,
     stateManager?: IndicatorStateManager,
-    rollingWindowSeed?: RollingWindowSeed,
-    indicatorWarmupSeed?: IndicatorWarmupSeed,
-    warmupMode: WarmupMode = "seed",
-    warmupEvents: MultiBarEvent[] = [],
     indicatorInitialization?: IndicatorInitialization,
     persistResults = true,
     parentRunId?: string,
@@ -71,10 +62,6 @@ export class BacktestSessionManager {
       bars,
       runId,
       stateManager,
-      rollingWindowSeed,
-      indicatorWarmupSeed,
-      warmupMode,
-      warmupEvents,
       indicatorInitialization,
       persistResults,
       parentRunId,
@@ -91,6 +78,17 @@ export class BacktestSessionManager {
     const session = this.sessions.get(backtestId);
     if (session && !session.persistResults) this.renewEditorSession(backtestId);
     return session;
+  }
+
+  getEditorSession(userId: string, workflowId: unknown, executionId: unknown): BacktestSession | undefined {
+    if (typeof workflowId !== "string" || typeof executionId !== "string") return;
+    for (const session of this.sessions.values()) {
+      if (!session.persistResults && session.userId === userId && session.workflowId === workflowId
+        && session.executionId === executionId) {
+        this.renewEditorSession(session.backtestId);
+        return session;
+      }
+    }
   }
 
   deleteSession(backtestId: string): void {

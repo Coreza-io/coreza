@@ -216,7 +216,6 @@
         "fill_model": "immediate",
         "start_date": "2025-01-01",
         "credential_id": "My Alpaca3",
-        "warmup_period": "200",
         "slippage_model": "percentage",
         "slippage_value": "0.001",
         "initial_capital": "1000000",

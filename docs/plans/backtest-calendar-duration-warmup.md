@@ -1,0 +1,46 @@
+# Backtest Init: QuantConnect-compatible calendar-duration warm-up
+
+## Objective
+Support the equivalent of LEAN `SetWarmUp(timedelta(days=60))` with hourly subscriptions and downstream 4-hour consolidation, without breaking existing bar-count workflows. This is a design plan, not implementation.
+
+## Current dev behavior
+- `src/nodes/BacktestInit.json`: warmup_period is a bar count (default 200); warmup_mode selects seed or workflow_replay.
+- `coreza-backend/src/utils/warmupPeriod.ts`: parseWarmupPeriod parses a nonnegative integer.
+- `coreza-backend/src/backtest/BacktestExecutor.ts`: takes max(configured bars, requiredSourceBars), calls HistoricalDataService.fetchPreviousBars with interval/count/endExclusive, and forces workflow replay where consolidation requires it.
+- `coreza-backend/src/marketData/HistoricalDataService.ts`: fetchPreviousBars expands lookback to satisfy count; fetchRange already supports date bounds, provider pagination, normalized sorted/deduplicated bars.
+- BacktestSession.initializeState and WarmupReplay already support replay; reuse them rather than a parallel engine.
+
+## 1. UI and persisted parameters
+Add warmup_unit select: bars (default for old and new workflows), days (Calendar Days). Keep warmup_period and existing expression support. Conditional label/help: Pre-start Warm-up (Bars) vs Pre-start Warm-up (Calendar Days). In days mode explain that the selected Interval determines source resolution and no count is guaranteed. Default warmup mode for days should be workflow replay; enforce replay in backend for days (or reject incompatible explicit seed selection with actionable message; prefer enforce and report effective mode). Keep seed/replay behavior unchanged for bars. Zero in days disables duration warm-up; do not silently extend it for automatic requirements. Validate unknown units, negative, nonfinite, fractional and malformed day inputs explicitly; preserve legacy parsing for bars. Update node types, validation/AI metadata and any schema consumers discovered during implementation.
+
+Example: warmup_unit=days, warmup_period=60, interval=1Hour, warmup_mode=workflow_replay, start_date=2021-05-01 (use actual existing start-date parameter key). No automatic conversion to 294 bars.
+
+## 2. Resolve exact duration window
+Add typed warm-up config/resolver in warmupPeriod.ts or backtest/warmup. Separate count and duration contracts. For days, subtract N calendar dates from the strategy start boundary in the algorithm/backtest timezone, then convert to provider timestamps. Define and document timezone: for US equity parity use America/New_York (LEAN default algorithm timezone); verify current Coreza date normalization and use the same effective strategy boundary for warm-up and trading. Do not change legacy timezone semantics silently; if Coreza has no explicit algorithm timezone, document the mismatch and introduce an explicit compatible timezone option or require alignment before claiming parity. Cover DST (March 2021) without assuming every local day is 24 hours. Date-only May 1, 2021 minus 60 calendar days = March 2, 2021 local midnight. Window is [start, strategyStart), not a trading-day count. No weekend/holiday candles should be fabricated solely to meet duration. No lookback expansion or last-N slicing in days mode.
+
+## 3. Historical data fetching
+In BacktestExecutor branch by unit after discovery. Bars: keep existing fetchPreviousBars and max count behavior. Days: reuse HistoricalDataService.fetchRange with start/end, identical provider/symbol/interval/assetType/feed/adjustment/credential/pageSize as strategy, then normalize/filter timestamps >= start and < strategyStart; ensure no bar with availability/end time after strategy boundary enters warm-up (define provider timestamp semantics and test). Fetch independently per symbol over the same window; preserve provider pagination and error propagation. Skip fetch for zero days. Do not use count to extend date range. Keep insufficient-history diagnostics for downstream readiness; for days report actual bar count and required minimum separately, not a misleading requested candle count. Handle IPO, missing data, empty range, holidays, crypto and provider failures; no silently swallowed errors.
+
+## 4. Replay and strategy state
+Use existing buildWarmupEvents, BacktestSession.initializeState, phase transitions and WarmupPolicy. Replay chronologically using the same compiled workflow and source resolution, same state manager and node semantics as strategy bars. Permit consolidator, ATR, rolling windows, Compute, Edit, If, Loop, Store and strategy initialization/state updates. Do not double-seed indicators/windows and do not reset warmed state at transition. Keep warm-up events out of trade/equity/performance statistics and block all trading/order side effects defensively. Preserve existing execution history configuration. Audit OnBar warm-up flag propagation (see docs/plans/onbar-warmup-status.md); expose it consistently throughout replay, and false for first strategy bar. The reference Python algorithm processes pivot/BOS/trend/Fibonacci/regime state before its IsWarmingUp return; user workflow should place the guard at the equivalent point (not merely suppress orders if downstream state mutations differ). Retain partial consolidator state across the boundary; do not flush/reset solely on phase transition. Verify existing alignment/fill-forward behavior against LEAN; do not invent off-session bars, and document differences for multi-symbol alignment.
+
+## 5. Consolidation and parity limits
+Keep existing resolveConsolidatorWarmup for topology validation/replay selection and readiness diagnostics. In days mode never take max with requiredSourceBars to extend duration; report insufficient history if readiness is not met. LEAN TradeBarConsolidator(timedelta(hours=4)) uses time boundaries rather than simply grouping every four samples; verify Coreza consolidation anchoring, session gaps, partial bars, timezone, bar timestamps and ATR update ordering against LEAN before claiming exact strategy equivalence. Match regular-hours subscriptions for the example (Alpaca SIP alone does not imply regular-hours filtering). Ensure configurable session/fill-forward behavior or explicitly document differences; no implicit changes to existing workflows. Data-provider corporate-action adjustments and execution/fill models may also differ; this feature targets warm-up semantics, not guaranteed identical P&L.
+
+## 6. Outputs and observability
+Extend Backtest Init result metadata additively: warmup_unit, warmup_period_configured, warmup_mode_effective, warmup_range_start, warmup_range_end_exclusive, warmup_timezone, warmup_bars_by_symbol, first/last warmup timestamp, first strategy timestamp, readiness warnings and actual replay event count. Preserve legacy fields for bars; for days use null/omitted warmup_bars_requested with documented consumer handling, never conflate days with bars. Update UI result display and persisted metadata consumers. Log one summary rather than per-bar logs unless existing debug configuration is enabled.
+
+## 7. Tests
+- warmupPeriod.test.ts: missing unit defaults to bars, legacy 60 bars, valid/invalid days, zero, DST and date arithmetic.
+- Historical service mocked provider: exact fixed date range, pagination, duplicate/unsorted data, inclusive API end excluded, incomplete pages error, no expansion/count slicing, missing/empty data and multi-symbol.
+- backtestWarmup.test.ts / backtestRollingWindowWarmup.test.ts / consolidatorWarmup.test.ts: bars regression (including auto minimum), days replay even when minimum insufficient, no double seed, chronological replay, IsWarmingUp flag, Store and state updates, blocked orders, preserved state/partial consolidation at boundary, no warm-up trades or equity samples, first trading bar processed once.
+- Integration fixture OTLK hourly, 2021-05-01 through 2022-01-01, 60 calendar days, 4h consolidator, ATR(14) SMA, window(21), pivot queues(8), ATR history(30). Fixed mock data for CI; optional real provider/LEAN comparison with matching session/timezone and adjustments. Compare actual source timestamps, 4h bars, ATR, pivots, trend, impulse, zones and regime score at the boundary, not just count. Verify no trading before start. Include crypto 24/7 and US holidays; don't assert approximate 294 as exact.
+- Run existing test suite, typecheck, frontend build and targeted integration tests. Report any mismatches explicitly.
+
+## 8. Implementation order / acceptance
+1. UI/schema + typed unit resolver and tests.
+2. Fixed-window retrieval and executor integration; metadata and diagnostics.
+3. Replay/guard/consolidation parity audit and targeted fixes, preserving existing bar mode.
+4. Regression/integration tests and docs with migration examples.
+
+Acceptance: saved old workflows remain unchanged; 60 days fetches all available 1h bars within exact calendar range, not 60 bars or 60 trading days; no extra fetch to satisfy indicator counts; strategy state is warmed by replay with no orders; boundary timestamps and actual counts observable; timezone/session differences explicitly addressed. No production changes are part of this plan commit.

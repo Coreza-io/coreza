@@ -3,6 +3,7 @@ import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { aggregateDailyEquity } from "../reporting/equityOhlc";
 import { finiteMetrics, reportingTradeId } from "../reporting/persistence";
 import { resultSuccess } from "../contracts/nodeResult";
+import { getBrokerConfig } from "../brokers";
 /**
  * Coreza - Open-source trading workflow automation platform
  * Copyright (C) 2026 Coreza-io
@@ -380,13 +381,17 @@ export class BacktestExecutor implements INodeExecutor {
           );
       }
 
-      if (broker !== "yahoo_finance" && !credentialId) {
+      const brokerConfig = getBrokerConfig(broker);
+      if (!brokerConfig?.operations?.get_candle) {
+        return createErrorOutput(`Unsupported historical data provider: ${broker}`);
+      }
+      if (!credentialId) {
         return createErrorOutput("credential_id is required for selected broker");
       }
 
-      const timezone = broker === "dhan" ? "Asia/Kolkata"
-        : (broker === "alpaca" && assetType !== "crypto" || broker === "schwab")
-          ? "America/New_York" : "UTC";
+      const historicalCandles = brokerConfig.historicalCandles;
+      const timezone = historicalCandles?.timezone?.(assetType) ?? "UTC";
+      const closeTimeOffsetMs = historicalCandles?.closeTimeOffsetMs ?? 0;
       const strategyStart = backtestDate(startDate, timezone);
       const strategyEnd = backtestDate(endDate, timezone);
       const startTime = strategyStart.getTime();
@@ -409,8 +414,7 @@ export class BacktestExecutor implements INodeExecutor {
           : time + direction * intervalMs;
       const candleEnd = (bar: HistoricalBar): number => {
         const time = historicalBarTimestamp(bar);
-        // Binance reports the final millisecond inside its candle.
-        if (bar.closeTime != null) return bar.closeTime + (broker === "binance" ? 1 : 0);
+        if (bar.closeTime != null) return bar.closeTime + closeTimeOffsetMs;
         return shiftBarTime(time, 1);
       };
       // Date-only End Date keeps the provider's inclusive candle date. An

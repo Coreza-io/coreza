@@ -1,4 +1,4 @@
-import type { Bar } from "../brokers/types";
+import type { Bar, HistoricalBar } from "../brokers/types";
 import { parseTimeframe } from "../utils/timeframe";
 
 export function sameMarketSymbol(left: unknown, right: unknown, assetType?: string): boolean {
@@ -37,6 +37,25 @@ export function candleTimestamp(value: unknown, unit: 'milliseconds' | 'auto' = 
     throw new Error("Invalid candle timestamp");
   }
   return milliseconds;
+}
+
+export function historicalBarTimestamp(bar: Partial<HistoricalBar>): number {
+  return bar.time ?? bar.t ?? bar.closeTime ?? NaN;
+}
+
+export function normalizeHistoricalBars(bars: HistoricalBar[]): HistoricalBar[] {
+  const byTimestamp = new Map<number, HistoricalBar>();
+  for (const bar of bars) {
+    try {
+      const timestamp = candleTimestamp(historicalBarTimestamp(bar), "milliseconds");
+      byTimestamp.set(timestamp, { ...bar, time: timestamp });
+    } catch {
+      // An invalid timestamp cannot participate in chronological alignment.
+    }
+  }
+  return [...byTimestamp.values()].sort(
+    (left, right) => historicalBarTimestamp(left) - historicalBarTimestamp(right),
+  );
 }
 
 export function normalizeCandle(bar: any): Bar {

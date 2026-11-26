@@ -1,4 +1,5 @@
 import { BrokerConfig } from "../../types";
+import { binanceHistoricalCandles } from "../helpers";
 import { binanceOperations } from "./operations";
 
 export const binanceConfig: BrokerConfig = {
@@ -18,4 +19,5 @@ export const binanceConfig: BrokerConfig = {
     "X-MBX-APIKEY": creds.api_key,
   }),
   operations: binanceOperations,
+  historicalCandles: binanceHistoricalCandles,
 };

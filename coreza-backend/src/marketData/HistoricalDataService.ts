@@ -9,13 +9,15 @@
  */
 
 import { NodeResultError } from "../contracts/nodeResult";
-import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { getBrokerConfig } from "../brokers";
 import { BrokerExecutor } from "../nodes/executors/BrokerExecutor";
-import type { Bar } from "../brokers/types";
+import type { HistoricalBar, HistoricalCandlePage } from "../brokers/types";
 import type { NodeInput, WorkflowNode } from "../nodes/types";
 import { parseTimeframe } from "../utils/timeframe";
-import { candleTimestamp } from "./normalizeCandles";
+import { historicalBarTimestamp, normalizeHistoricalBars } from "./normalizeCandles";
+
+export type { HistoricalBar } from "../brokers/types";
+export { historicalBarTimestamp, normalizeHistoricalBars } from "./normalizeCandles";
 
 export interface HistoricalDataContext {
   userId?: string;
@@ -46,33 +48,10 @@ export interface PreviousBarsRequest extends HistoricalRequestBase {
   endExclusive: string | Date;
 }
 
-export type HistoricalBar = Omit<Bar, "time"> & { time?: number; t?: number };
-
 type BrokerCandleExecutor = Pick<BrokerExecutor, "execute">;
 
 const MAX_ATTEMPTS = 4;
 const DAY_MS = 86_400_000;
-const DHAN_TIMEZONE = "Asia/Kolkata";
-const DHAN_INTRADAY_RANGE_MS = 89 * DAY_MS; // At most 90 calendar dates, including both endpoints.
-
-export function historicalBarTimestamp(bar: Partial<HistoricalBar>): number {
-  return bar.time ?? bar.t ?? bar.closeTime ?? NaN;
-}
-
-export function normalizeHistoricalBars(bars: HistoricalBar[]): HistoricalBar[] {
-  const byTimestamp = new Map<number, HistoricalBar>();
-  for (const bar of bars) {
-    try {
-      const timestamp = candleTimestamp(historicalBarTimestamp(bar), "milliseconds");
-      byTimestamp.set(timestamp, { ...bar, time: timestamp });
-    } catch {
-      // An invalid timestamp cannot participate in chronological alignment.
-    }
-  }
-  return [...byTimestamp.values()].sort(
-    (left, right) => historicalBarTimestamp(left) - historicalBarTimestamp(right),
-  );
-}
 
 function initialLookbackMs(request: PreviousBarsRequest): number {
   let intervalMs = DAY_MS;
@@ -98,87 +77,40 @@ export class HistoricalDataService {
     request: HistoricalRangeRequest,
     context: HistoricalDataContext,
   ): Promise<HistoricalBar[]> {
-    if (request.provider === "dhan") return this.fetchDhanRange(request, context);
-    if (request.provider !== "binance") {
-      return normalizeHistoricalBars(await this.fetchPage(request, context));
-    }
-
-    // Binance accepts at most 1000 bars and pages by candle open time.
-    const limit = 1000;
-    let start = new Date(request.start).getTime();
-    const end = new Date(request.end).getTime();
-    if (!Number.isFinite(start) || !Number.isFinite(end)) throw new Error("Invalid Binance candle range");
-    const bars: HistoricalBar[] = [];
-    while (start <= end) {
-      const page = await this.fetchPage({ ...request, start: new Date(start), pageSize: limit }, context);
-      const normalized = normalizeHistoricalBars(page);
-      bars.push(...normalized);
-      if (page.length < limit) break;
-      const latest = normalized[normalized.length - 1];
-      if (!latest || historicalBarTimestamp(latest) < start) {
-        throw new Error(`Binance historical data pagination stalled for ${request.symbol}`);
-      }
-      start = historicalBarTimestamp(latest) + 1;
-    }
-    return normalizeHistoricalBars(bars);
-  }
-
-  private async fetchDhanRange(
-    request: HistoricalRangeRequest,
-    context: HistoricalDataContext,
-  ): Promise<HistoricalBar[]> {
-    if (/^(?:1)?d(?:ay)?$/i.test(request.interval)) {
-      return normalizeHistoricalBars(await this.fetchPage({ ...request, interval: "1Day" }, context));
-    }
-
-    const interval = /^\d+$/.test(request.interval) ? request.interval
-      : String(parseTimeframe(request.interval).milliseconds / 60_000);
-    const toMillis = (value: string | Date) => value instanceof Date ? value.getTime()
-      : /(?:Z|[+-]\d{2}:?\d{2})$/i.test(value) ? Date.parse(value) : fromZonedTime(value, DHAN_TIMEZONE).getTime();
-    let start = toMillis(request.start);
-    const end = toMillis(request.end);
-    if (!Number.isFinite(start) || !Number.isFinite(end)) throw new Error("Invalid Dhan candle range");
-
-    const bars: HistoricalBar[] = [];
-    while (start <= end) {
-      const pageEnd = Math.min(start + DHAN_INTRADAY_RANGE_MS, end);
-      const page = await this.fetchPage({ ...request, interval, start: new Date(start), end: new Date(pageEnd) }, context);
-      for (const bar of page) bars.push(bar);
-      if (pageEnd === end) break;
-      start = pageEnd;
-    }
+    const broker = getBrokerConfig(request.provider);
+    const providerPageSize = broker?.operations?.get_candle?.pagination?.pageSize;
+    const fetchPage = (page: HistoricalCandlePage) =>
+      this.fetchPage(request, page, providerPageSize, context);
+    const fetchProviderRange = broker?.historicalCandles?.fetchRange;
+    const bars = fetchProviderRange
+      ? await fetchProviderRange(request, fetchPage)
+      : await fetchPage(request);
     return normalizeHistoricalBars(bars);
   }
 
   private async fetchPage(
     request: HistoricalRangeRequest,
+    page: HistoricalCandlePage,
+    providerPageSize: number | undefined,
     context: HistoricalDataContext,
   ): Promise<HistoricalBar[]> {
     context.abortSignal?.throwIfAborted();
-    const formatDate = (value: string | Date) => typeof value === "string" ? value
-      : request.provider === "dhan"
-        ? formatInTimeZone(value, DHAN_TIMEZONE, request.interval === "1Day" ? "yyyy-MM-dd" : "yyyy-MM-dd HH:mm:ss")
-        : value.toISOString();
-    const start = formatDate(request.start);
-    const end = formatDate(request.end);
-    const providerPageSize = getBrokerConfig(request.provider)?.operations.get_candle?.pagination?.pageSize;
+    const start = page.start instanceof Date ? page.start.toISOString() : page.start;
+    const end = page.end instanceof Date ? page.end.toISOString() : page.end;
     const suppliedPageSize = typeof request.pageSize === "string" && !request.pageSize.trim() ? undefined : request.pageSize;
-    // Only providers declaring this capability consume the editable page-size setting.
-    const pageSize = request.provider === "binance" ? request.pageSize
-      : providerPageSize === undefined ? "50000" : suppliedPageSize ?? providerPageSize;
+    // Preserve the supplied type for broker validation when the page size is configurable.
+    const pageSize = page.limit ?? (providerPageSize === undefined ? "50000" : suppliedPageSize ?? providerPageSize);
     const input: NodeInput = {
+      ...page.parameters,
       operation: "get_candle",
       symbol: request.symbol,
-      interval: request.interval,
+      interval: page.interval,
       start,
       end,
-      ...(request.provider === "binance" ? { startTime: start, endTime: end } : {}),
-      ...(request.provider === "dhan" ? { instrument: "EQUITY" } : {}),
       asset_type: request.assetType,
       feed: request.feed,
       adjustment: request.adjustment,
       credential_id: request.credentialId,
-      // Preserve the supplied type so broker validation cannot accept an array such as [1000] as "1000".
       limit: pageSize,
     };
     const node: WorkflowNode = {

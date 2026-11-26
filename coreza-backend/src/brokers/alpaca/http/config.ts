@@ -20,5 +20,6 @@ export const alpacaConfig: BrokerConfig = {
     'APCA-API-SECRET-KEY': creds.secret_key,
   }),
   operations: alpacaOperations,
+  historicalCandles: { timezone: assetType => assetType === 'crypto' ? 'UTC' : 'America/New_York' },
   resolvePortfolioInventoryQuantity: resolveAlpacaInventoryQuantity,
 };

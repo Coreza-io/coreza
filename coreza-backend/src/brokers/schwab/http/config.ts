@@ -14,4 +14,5 @@ export const schwabConfig: BrokerConfig = {
     Authorization: `Bearer ${creds.access_token}`,
   }),
   operations: schwabOperations,
+  historicalCandles: { timezone: () => 'America/New_York' },
 };

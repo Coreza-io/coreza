@@ -1,5 +1,6 @@
 import { BrokerConfig } from '../../types';
 import { getDhanRestBaseUrl, resolveDhanEnvironment } from '../environment';
+import { dhanHistoricalCandles } from '../helpers';
 import { dhanOperations } from './operations';
 
 export const dhanConfig: BrokerConfig = {
@@ -10,4 +11,5 @@ export const dhanConfig: BrokerConfig = {
     'Content-Type': 'application/json',
   }),
   operations: dhanOperations,
+  historicalCandles: dhanHistoricalCandles,
 };

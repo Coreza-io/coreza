@@ -45,6 +45,24 @@ export interface BrokerOperation {
   preRegisterOrderOwner?: boolean;
 }
 
+export interface HistoricalCandlePage {
+  start: string | Date;
+  end: string | Date;
+  interval: string;
+  limit?: number;
+  parameters?: Record<string, unknown>;
+}
+
+export interface HistoricalCandleAdapter {
+  timezone?: (assetType?: string) => string;
+  /** Offset from the provider's close timestamp to the first available instant. */
+  closeTimeOffsetMs?: number;
+  fetchRange?: (
+    range: { symbol: string; start: string | Date; end: string | Date; interval: string },
+    fetchPage: (page: HistoricalCandlePage) => Promise<HistoricalBar[]>,
+  ) => Promise<HistoricalBar[]>;
+}
+
 export interface BrokerConfig {
   toolContract?: import('../nodes/logic/toolInputContract').ToolInputContract;
   normalizeInput?: (input: Record<string, any>) => Record<string, any>;
@@ -52,6 +70,7 @@ export interface BrokerConfig {
   baseUrl: string | ((creds: any, input?: any) => string);
   makeAuthHeaders: (creds: any) => Record<string, string> | Promise<Record<string, string>>;
   operations: Record<string, BrokerOperation>;
+  historicalCandles?: HistoricalCandleAdapter;
   resolvePortfolioInventoryQuantity?: InventoryQuantityResolver;
 }
 
@@ -69,6 +88,8 @@ export interface Bar {
   takerBuyQuoteVolume?: number;
   closeTime?: number;
 }
+
+export type HistoricalBar = Omit<Bar, "time"> & { time?: number; t?: number };
 
 export interface BarSeriesItem {
   symbol: string;

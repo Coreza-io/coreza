@@ -169,7 +169,7 @@ router.post("/:broker/:operation", async (req, res, next) => {
       executionMode: "manual",
       executionId: workflowSessionId || workflowId,
       isWarmingUp: BacktestSessionManager.getInstance()
-        .getEditorSession(userId, workflowId || workflowSessionId, workflowSessionId)?.isWarmingUp,
+        .getEditorSession(userId, workflowId || workflowSessionId, workflowSessionId)?.isTradingBlocked,
     });
 
     return res.status(result.status === "error" ? 400 : 200).json(toPublicNodeResult(result));

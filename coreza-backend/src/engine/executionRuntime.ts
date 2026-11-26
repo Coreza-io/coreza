@@ -241,18 +241,21 @@ export abstract class BaseExecutionRuntime {
   protected normalizeResult(raw: any, category: string): NodeResult {
     const result = readNodeResult(raw);
     if (isFailedResult(result)) {
-      if (result.control?.ownedNodeResults) {
-        const order = result.control.ownedExecutionOrder ?? Object.keys(result.control.ownedNodeResults);
-        for (const nodeId of order) {
-          const owned = result.control.ownedNodeResults[nodeId];
-          if (owned === undefined) continue;
-          this.store.setNodeResult(nodeId, owned);
-          if (!this.executionOrder.includes(nodeId)) this.executionOrder.push(nodeId);
-        }
-      }
+      this.recordOwnedResults(result);
       throw new NodeResultError(result);
     }
     return result;
+  }
+
+  protected recordOwnedResults(result: NodeResult, ownerId?: string): void {
+    const owned = result.control?.ownedNodeResults;
+    if (!owned) return;
+    const order = result.control?.ownedExecutionOrder ?? Object.keys(owned);
+    for (const nodeId of order) {
+      if (nodeId === ownerId || owned[nodeId] == null) continue;
+      this.store.setNodeResult(nodeId, owned[nodeId]);
+      if (!this.executionOrder.includes(nodeId)) this.executionOrder.push(nodeId);
+    }
   }
 
   protected routeLoop(
@@ -398,15 +401,7 @@ export abstract class BaseExecutionRuntime {
     this.executionOrder.push(node.id);
     this.store.setNodeResult(node.id, result);
 
-    if (result.control?.ownedNodeResults) {
-      const order = result.control.ownedExecutionOrder ?? Object.keys(result.control.ownedNodeResults);
-      for (const nodeId of order) {
-        const ownedResult = result.control.ownedNodeResults[nodeId];
-        if (ownedResult === undefined || nodeId === node.id) continue;
-        this.store.setNodeResult(nodeId, ownedResult);
-        if (!this.executionOrder.includes(nodeId)) this.executionOrder.push(nodeId);
-      }
-    }
+    this.recordOwnedResults(result, node.id);
     if (result.control?.suppressRouting) return;
 
     if (node.name === "Loop") {
@@ -570,6 +565,7 @@ export class BacktestExecutionRuntime extends BaseExecutionRuntime {
     this.store.setNodeResult(node.id, result);
     this.nodeResultObserver?.(node.id, result, elapsed);
 
+    this.recordOwnedResults(result, node.id);
     if (result.control?.suppressRouting) return;
 
     if (node.name === "Loop") {

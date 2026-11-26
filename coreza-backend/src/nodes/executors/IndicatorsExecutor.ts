@@ -161,13 +161,11 @@ export class IndicatorsExecutor implements INodeExecutor {
         }
 
         let state = stateManager.getStateSync(key);
-        // A resolved timeframe can differ from discovery's raw expression.
-        // Conditional indicators may also receive their first bar after replay.
+        // Registration holds raw workflow parameters. The first invocation can
+        // resolve different parameters in either phase.
         if (
           context?.executionMode === "backtest" &&
-          (!state ||
-            (context?.isWarmingUp &&
-              !isIndicatorStateCompatible(state, indicatorType, processedParams)))
+          (!state || !isIndicatorStateCompatible(state, indicatorType, processedParams))
         ) {
           const { candle_data, ...params } = processedParams;
           this.validateDirectCandles(barsData, indicatorType, processedParams);

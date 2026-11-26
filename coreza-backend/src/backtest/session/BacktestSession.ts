@@ -76,6 +76,10 @@ export class BacktestSession {
   get isWarmingUp(): boolean {
     return this.phase === "warming_up";
   }
+  get isTradingBlocked(): boolean {
+    return this.isWarmingUp || this.phase === "initializing" || this.abortController.signal.aborted
+      || (this.status === "finished" && !this.indicatorWarmupCompleted);
+  }
   private finalization: Promise<void> | null = null;
   private compiledPlan: CompiledPlan | null = null;
   private readonly reusableBarInput: { data: any } = { data: null };
@@ -688,6 +692,7 @@ export class BacktestSession {
       await this.reportStepProgress(event, true, isLast);
       return this.normalizeBarPayload(event, isLast);
     } catch (error) {
+      this.abortController.abort(error);
       this.status = "finished";
       this.setPhase("finished");
       throw error;
@@ -788,6 +793,9 @@ export class BacktestSession {
         }
         if (this.eventIndex < this.bars.length && !signal.aborted) await this.yieldToEventLoop();
       }
+    } catch (error) {
+      this.abortController.abort(error);
+      throw error;
     } finally {
       this.status = "finished";
       this.setPhase("finished");
@@ -809,7 +817,8 @@ export class BacktestSession {
       : this.run.getLatestNodeResults();
     const snapshots: Record<string, NodeResult> = {};
     for (const { id } of this.nodes) {
-      if (Object.prototype.hasOwnProperty.call(results, id)) snapshots[id] = results[id];
+      const result = results[id];
+      if (Object.prototype.hasOwnProperty.call(results, id) && result != null) snapshots[id] = result;
     }
     return snapshots;
   }
@@ -822,6 +831,11 @@ export class BacktestSession {
     try {
       if (this.finalization) await this.finalization;
       await this.resetState();
+    } catch (error) {
+      this.abortController.abort(error);
+      this.status = "finished";
+      this.setPhase("finished");
+      throw error;
     } finally {
       this.stepping = false;
     }

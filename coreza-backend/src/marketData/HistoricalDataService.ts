@@ -9,7 +9,7 @@
  */
 
 import { NodeResultError } from "../contracts/nodeResult";
-import { formatInTimeZone } from "date-fns-tz";
+import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { getBrokerConfig } from "../brokers";
 import { BrokerExecutor } from "../nodes/executors/BrokerExecutor";
 import type { Bar } from "../brokers/types";
@@ -52,6 +52,8 @@ type BrokerCandleExecutor = Pick<BrokerExecutor, "execute">;
 
 const MAX_ATTEMPTS = 4;
 const DAY_MS = 86_400_000;
+const DHAN_TIMEZONE = "Asia/Kolkata";
+const DHAN_INTRADAY_RANGE_MS = 89 * DAY_MS; // At most 90 calendar dates, including both endpoints.
 
 export function historicalBarTimestamp(bar: Partial<HistoricalBar>): number {
   return bar.time ?? bar.t ?? bar.closeTime ?? NaN;
@@ -96,7 +98,10 @@ export class HistoricalDataService {
     request: HistoricalRangeRequest,
     context: HistoricalDataContext,
   ): Promise<HistoricalBar[]> {
-    if (request.provider !== "binance") return this.fetchPage(request, context);
+    if (request.provider === "dhan") return this.fetchDhanRange(request, context);
+    if (request.provider !== "binance") {
+      return normalizeHistoricalBars(await this.fetchPage(request, context));
+    }
 
     // Binance accepts at most 1000 bars and pages by candle open time.
     const limit = 1000;
@@ -106,11 +111,41 @@ export class HistoricalDataService {
     const bars: HistoricalBar[] = [];
     while (start <= end) {
       const page = await this.fetchPage({ ...request, start: new Date(start), pageSize: limit }, context);
-      bars.push(...page);
+      const normalized = normalizeHistoricalBars(page);
+      bars.push(...normalized);
       if (page.length < limit) break;
-      const latest = historicalBarTimestamp(page[page.length - 1]);
-      if (latest < start) throw new Error(`Binance historical data pagination stalled for ${request.symbol}`);
-      start = latest + 1;
+      const latest = normalized[normalized.length - 1];
+      if (!latest || historicalBarTimestamp(latest) < start) {
+        throw new Error(`Binance historical data pagination stalled for ${request.symbol}`);
+      }
+      start = historicalBarTimestamp(latest) + 1;
+    }
+    return normalizeHistoricalBars(bars);
+  }
+
+  private async fetchDhanRange(
+    request: HistoricalRangeRequest,
+    context: HistoricalDataContext,
+  ): Promise<HistoricalBar[]> {
+    if (/^(?:1)?d(?:ay)?$/i.test(request.interval)) {
+      return normalizeHistoricalBars(await this.fetchPage({ ...request, interval: "1Day" }, context));
+    }
+
+    const interval = /^\d+$/.test(request.interval) ? request.interval
+      : String(parseTimeframe(request.interval).milliseconds / 60_000);
+    const toMillis = (value: string | Date) => value instanceof Date ? value.getTime()
+      : /(?:Z|[+-]\d{2}:?\d{2})$/i.test(value) ? Date.parse(value) : fromZonedTime(value, DHAN_TIMEZONE).getTime();
+    let start = toMillis(request.start);
+    const end = toMillis(request.end);
+    if (!Number.isFinite(start) || !Number.isFinite(end)) throw new Error("Invalid Dhan candle range");
+
+    const bars: HistoricalBar[] = [];
+    while (start <= end) {
+      const pageEnd = Math.min(start + DHAN_INTRADAY_RANGE_MS, end);
+      const page = await this.fetchPage({ ...request, interval, start: new Date(start), end: new Date(pageEnd) }, context);
+      for (const bar of page) bars.push(bar);
+      if (pageEnd === end) break;
+      start = pageEnd;
     }
     return normalizeHistoricalBars(bars);
   }
@@ -122,7 +157,7 @@ export class HistoricalDataService {
     context.abortSignal?.throwIfAborted();
     const formatDate = (value: string | Date) => typeof value === "string" ? value
       : request.provider === "dhan"
-        ? formatInTimeZone(value, "Asia/Kolkata", /(?:d|day)$/i.test(request.interval) ? "yyyy-MM-dd" : "yyyy-MM-dd HH:mm:ss")
+        ? formatInTimeZone(value, DHAN_TIMEZONE, request.interval === "1Day" ? "yyyy-MM-dd" : "yyyy-MM-dd HH:mm:ss")
         : value.toISOString();
     const start = formatDate(request.start);
     const end = formatDate(request.end);
@@ -138,6 +173,7 @@ export class HistoricalDataService {
       start,
       end,
       ...(request.provider === "binance" ? { startTime: start, endTime: end } : {}),
+      ...(request.provider === "dhan" ? { instrument: "EQUITY" } : {}),
       asset_type: request.assetType,
       feed: request.feed,
       adjustment: request.adjustment,
@@ -171,7 +207,7 @@ export class HistoricalDataService {
       });
     }
     const bars = result.data?.BarSeries?.[0]?.bars;
-    return normalizeHistoricalBars(Array.isArray(bars) ? bars : []);
+    return Array.isArray(bars) ? bars : [];
   }
 
   async fetchPreviousBars(

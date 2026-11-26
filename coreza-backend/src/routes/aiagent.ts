@@ -77,7 +77,7 @@ router.post("/execute", async (req: Request, res: Response) => {
       userId, nodes: workflowNodes, edges: workflowEdges,
       workflowId: workflowId || editorSession, executionId: editorSession,
       isWarmingUp: BacktestSessionManager.getInstance()
-        .getEditorSession(userId, workflowId || editorSession, editorSession)?.isWarmingUp,
+        .getEditorSession(userId, workflowId || editorSession, editorSession)?.isTradingBlocked,
       abortSignal: controller.signal,
       clientInvocationId: scope ? req.body.clientInvocationId : undefined,
       agentActivitySink: scope, onAgentActivityRecorder: scope?.attach,

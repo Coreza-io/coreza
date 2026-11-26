@@ -40,12 +40,15 @@ import { clampWindowSize } from "../engine/rollingWindowHelpers";
 import {
   HistoricalDataService,
   historicalBarTimestamp,
+  normalizeHistoricalBars,
 } from "../marketData/HistoricalDataService";
 import type { HistoricalBar } from "../marketData/HistoricalDataService";
 import { parseBacktestWarmupDays } from "../utils/warmupPeriod";
 import { parseTimeframe } from "../utils/timeframe";
 import { alignMultiSymbolBars } from "./warmup/WarmupReplay";
 import { resolveConsolidatorWarmup } from "./warmup/ConsolidatorWarmup";
+
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 
 function backtestDate(value: string, timezone: string): Date {
   return /^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)?$/.test(value)
@@ -410,7 +413,9 @@ export class BacktestExecutor implements INodeExecutor {
         if (bar.closeTime != null) return bar.closeTime + (broker === "binance" ? 1 : 0);
         return shiftBarTime(time, 1);
       };
-      const latestAvailable = Math.min(endTime, Date.now());
+      // Date-only End Date keeps the provider's inclusive candle date. An
+      // explicit timestamp is an availability cutoff as well as a fetch bound.
+      const latestAvailable = Math.min(DATE_ONLY.test(endDate) ? Infinity : endTime, Date.now());
       const history = await Promise.all(symbols.map(async (currentSymbol) => {
         const request = {
           provider: broker,
@@ -429,17 +434,18 @@ export class BacktestExecutor implements INodeExecutor {
           historicalDataService.fetchRange({ ...request, start: strategyStart, end: strategyEnd }, context),
         ]);
 
-        // The provider can return both endpoints or overlap pages. Keep one
-        // candle per symbol and availability time across both responses.
+        // Resolve overlapping responses by source timestamp before filtering
+        // by availability. A candle ending exactly at Start Date is strategy data.
         const unique = new Map<number, HistoricalBar>();
-        for (const bar of [...warmup, ...strategy]) {
+        for (const bar of normalizeHistoricalBars([...warmup, ...strategy])) {
+          const time = historicalBarTimestamp(bar);
           const availableAt = candleEnd(bar);
-          if (historicalBarTimestamp(bar) >= warmupStart.getTime() && availableAt <= latestAvailable
-            && (warmupDays > 0 || availableAt >= startTime)) {
-            unique.set(availableAt, bar.closeTime === historicalBarTimestamp(bar)
-              ? { ...bar, time: shiftBarTime(availableAt, -1) }
-              : bar);
-          }
+          if (!Number.isFinite(availableAt) || availableAt < time || availableAt > latestAvailable || time > endTime) continue;
+          if (time < warmupStart.getTime() && availableAt !== startTime) continue;
+          if (warmupDays === 0 && availableAt < startTime) continue;
+          unique.set(availableAt, bar.closeTime === time
+            ? { ...bar, time: shiftBarTime(availableAt, -1) }
+            : bar);
         }
         const bars = [...unique].sort(([a], [b]) => a - b).map(([, bar]) => bar);
         return {
@@ -451,12 +457,12 @@ export class BacktestExecutor implements INodeExecutor {
       }));
 
       const primarySymbol = symbols[0];
-      if (!context.runId && history[0].bars.length === 0) {
-        return createErrorOutput(`No historical bars returned for ${primarySymbol}`);
+      if (!context.runId && history.every(({ bars }) => bars.length === 0)) {
+        return createErrorOutput(`No historical bars returned for ${symbols.join(", ")}`);
       }
-      for (const entry of history.slice(1)) {
+      for (const entry of history) {
         if (entry.strategy.length === 0) {
-          console.warn(`[BacktestExecutor] No strategy bars returned for secondary symbol ${entry.symbol}`);
+          console.warn(`[BacktestExecutor] No strategy bars returned for ${entry.symbol}`);
         }
       }
 
@@ -546,8 +552,8 @@ export class BacktestExecutor implements INodeExecutor {
           persistence: persistBacktest ? "database" : "memory",
           total_bars: strategyEvents,
           initial_capital: config.initialCapital,
-        start_date: startDate,
-        end_date: endDate,
+          start_date: startDate,
+          end_date: endDate,
           symbol: primarySymbol,
           symbols,
           interval,
@@ -859,7 +865,11 @@ export class BacktestExecutor implements INodeExecutor {
       const equityCurve = simBroker.getEquityCurve();
       const finalEquity = simBroker.getTotalEquity();
 
-      await this.portfolioFinalize(simBroker, backtestId);
+      // A node in an active graph can read results during any candle. The
+      // session owns persistence after the final strategy candle and snapshot.
+      if (!BacktestSessionManager.getInstance().getSession(backtestId)) {
+        await this.portfolioFinalize(simBroker, backtestId);
+      }
 
       return resultSuccess({
         backtest_id: backtestId,
@@ -1083,7 +1093,8 @@ export class BacktestExecutor implements INodeExecutor {
   }
 
   async finalizeBacktestById(backtestId: string, signal?: AbortSignal): Promise<void> {
-    const simBroker = this.getSimBroker(backtestId);
+    const simBroker = BacktestExecutor.getSimBrokerForBacktest(backtestId);
+    if (!simBroker) throw new Error("Backtest broker no longer exists");
     if (simBroker.editorOwnerId) simBroker.releaseAllReservations();
     await this.portfolioFinalize(simBroker, backtestId, signal);
   }

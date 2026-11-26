@@ -168,7 +168,7 @@ router.post("/", async (req: Request, res: Response) => {
         workflowId: body.workflowId,
         executionId: body.workflowSessionId || body.workflowId,
         isWarmingUp: BacktestSessionManager.getInstance()
-          .getEditorSession(userId, body.workflowId || body.workflowSessionId, body.workflowSessionId)?.isWarmingUp,
+          .getEditorSession(userId, body.workflowId || body.workflowSessionId, body.workflowSessionId)?.isTradingBlocked,
       },
     );
 

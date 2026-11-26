@@ -88,7 +88,9 @@ export async function runBar(
       const sourceIndex = plan.nodeIdToInstrIndex.get(id);
       if (sourceIndex !== undefined) slots[instructions[sourceIndex].outSlot] = sourceResult;
     }
-    activate(index, -1, inputSlot);
+    // The consolidator already produced this result. Its input edges were
+    // satisfied on the original candle, and are not part of this dispatch.
+    active[index] = 1;
   } else {
     for (let e = 0; e < entryIndices.length; e++) {
       activate(entryIndices[e], -1, inputSlot);
@@ -101,7 +103,7 @@ export async function runBar(
 
     const instr = instructions[i];
 
-    if (observe && ctx.abortSignal?.aborted) throw new Error("Workflow cancelled by user");
+    if ((observe || scheduled) && ctx.abortSignal?.aborted) throw new Error("Workflow cancelled by user");
     const resolveStart = timingEnabled || observe ? performance.now() : 0;
     let execStart = resolveStart;
     let result: NodeResult;

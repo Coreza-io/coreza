@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto";
+import { stringifyNodeResult } from "../../contracts/nodeResult";
 import { getRedisCache } from "../../config/redis";
 import { BacktestExecutor } from "../BacktestExecutor";
 import { NodeResult, WorkflowEdge, WorkflowNode } from "../../nodes/types";
@@ -86,7 +87,7 @@ export class BacktestSession {
   private compiledPlan: CompiledPlan | null = null;
   private readonly reusableBarInput: { data: any } = { data: null };
   private readonly pendingConsolidatorCloses = new Map<string, PendingConsolidatorClose>();
-  private readonly onBarNodeIds: string[];
+  private readonly consolidatorCloseOrder: ReadonlyMap<string, number>;
   private currentMultiBarBars: Record<string, any> = Object.create(null);
   private readonly reusableSymbolExecutionContext: SymbolExecutionContext = {
     isWarmingUp: false,
@@ -101,10 +102,15 @@ export class BacktestSession {
         const time = Math.max(endTime, Date.parse(context.timestamp));
         if (!Number.isFinite(time) || this.strategyStartTime === undefined || time >= this.strategyStartTime) return;
 
-        const results = getResults();
         const sourceResults: Record<string, NodeResult> = Object.create(null);
-        for (const id of this.onBarNodeIds) {
-          if (results[id]) sourceResults[id] = structuredClone(results[id]);
+        for (const [id, result] of Object.entries(getResults())) {
+          if (result == null || Object.prototype.hasOwnProperty.call(this.backtestInitResult, id)) continue;
+          // Some executors reuse result objects on the next candle.
+          try {
+            sourceResults[id] = structuredClone(result);
+          } catch {
+            sourceResults[id] = JSON.parse(stringifyNodeResult(result));
+          }
         }
         const bars = context.bars;
         this.pendingConsolidatorCloses.set(JSON.stringify([nodeId, key]), {
@@ -158,9 +164,9 @@ export class BacktestSession {
       this.barHistory = new BacktestBarHistory(parentRunId, workflowId, userId);
     }
     this.totalBars = bars.filter((event) => !event.isWarmingUp).length;
-    this.onBarNodeIds = nodes.filter(node => node.name === "OnBar").map(node => node.id);
     this.stateManager = stateManager;
     this.plan = WorkflowPlan.compile(this.nodes, this.edges, "backtest");
+    this.consolidatorCloseOrder = new Map(this.plan.graph.topoSort().map((id, index) => [id, index]));
     this.run = this.plan.createRun({
       executionId: this.executionId,
       workflowId: this.workflowId,
@@ -366,6 +372,7 @@ export class BacktestSession {
 
   private setPhase(phase: BacktestPhase): void {
     if (phase === this.phase) return;
+    if (phase === "finished") this.pendingConsolidatorCloses.clear();
     this.phase = phase;
     BacktestExecutor.getSimBrokerForBacktest(this.backtestId)?.setWarmingUp(phase === "warming_up");
   }
@@ -388,7 +395,9 @@ export class BacktestSession {
     while (this.pendingConsolidatorCloses.size > 0) {
       const due = [...this.pendingConsolidatorCloses.entries()]
         .filter(([, close]) => close.time < before)
-        .sort(([, left], [, right]) => left.time - right.time)[0];
+        .sort(([, left], [, right]) => left.time - right.time
+          || (this.consolidatorCloseOrder.get(left.nodeId) ?? this.nodes.length)
+            - (this.consolidatorCloseOrder.get(right.nodeId) ?? this.nodes.length))[0];
       if (!due) return;
       const [key, { nodeId, emit, sourceResults, context }] = due;
       this.pendingConsolidatorCloses.delete(key);
@@ -408,6 +417,7 @@ export class BacktestSession {
         const execution = await this.run.executeFromResult(nodeId, result);
         if (!execution.success) throw new Error(execution.error?.message ?? "Backtest consolidation failed");
       }
+      this.abortController.signal.throwIfAborted();
     }
   }
 
@@ -739,6 +749,9 @@ export class BacktestSession {
       await this.executeTimestamp(event);
       this.abortController.signal.throwIfAborted();
       const isLast = this.advanceEvent(event);
+      if (isLast && this.strategyStartTime !== undefined) {
+        await this.scanWarmupConsolidators(Math.min(this.strategyStartTime, Date.now()));
+      }
       await this.reportStepProgress(event, true, isLast);
       return this.normalizeBarPayload(event, isLast);
     } catch (error) {

@@ -7,6 +7,7 @@ import {
 } from "../../engine/consolidation/consolidatorShared";
 import type { NodeExecutionContext } from "../../engine/types/executionContext";
 import type { INodeExecutor, NodeInput, NodeResult, WorkflowNode } from "../types";
+import { parseTimeframe } from "../../utils/timeframe";
 
 export class ConsolidatorExecutor implements INodeExecutor {
   readonly category = "Consolidator";
@@ -39,17 +40,26 @@ export class ConsolidatorExecutor implements INodeExecutor {
       const endTimestamp = result.state.workingBar.endTimestamp;
       const barContext = context?.multiBarContext;
       if (context?.isWarmingUp && result.state.lastEmittedEndTimestamp !== endTimestamp) {
-        barContext?.scheduleConsolidatorClose?.(
-          node.id, stateKey, Date.parse(endTimestamp),
-          () => {
-            const state: ConsolidatorState | undefined = dataContext.getDataByKey(stateKey);
-            if (state?.workingBar.endTimestamp !== endTimestamp || state.lastEmittedEndTimestamp === endTimestamp) return;
-            dataContext.setData(stateKey, { ...state, lastEmittedEndTimestamp: endTimestamp });
-            return resultSuccess({ ...result.payload, emitted: true, bar: state.workingBar, workingBar: state.workingBar });
-          },
-          context.getAllNodeResults,
-          barContext,
-        );
+        const endTime = Date.parse(endTimestamp);
+        const sourceMs = parseTimeframe(sourceTimeframe).milliseconds;
+        const isAligned = (state: ConsolidatorState) =>
+          (endTime - new Date(state.lastInput.timestamp).getTime()) % sourceMs === 0;
+        // A source candle may straddle an offset bucket boundary. Let its
+        // normal update deliver that bucket after the source candle closes.
+        if (isAligned(result.state)) {
+          barContext?.scheduleConsolidatorClose?.(
+            node.id, stateKey, endTime,
+            () => {
+              const state: ConsolidatorState | undefined = dataContext.getDataByKey(stateKey);
+              if (state?.workingBar.endTimestamp !== endTimestamp || state.lastEmittedEndTimestamp === endTimestamp
+                || !isAligned(state)) return;
+              dataContext.setData(stateKey, { ...state, lastEmittedEndTimestamp: endTimestamp });
+              return resultSuccess({ ...result.payload, emitted: true, bar: state.workingBar, workingBar: state.workingBar });
+            },
+            context.getAllNodeResults,
+            barContext,
+          );
+        }
       }
       return resultSuccess(result.payload);
     } catch (error) {

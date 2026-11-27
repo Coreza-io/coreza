@@ -326,7 +326,7 @@ describe("Rolling Window operations", () => {
       success: true,
       data: {
         found: true,
-        window: [{ close: 2 }, { close: 3 }],
+        window: [{ close: 3 }, { close: 2 }],
         count: 2,
         size: 2,
       },

@@ -107,14 +107,16 @@ export function useNodeFieldState({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [getSchemaSignature(definition), nodeId, readOnly]);
 
-  // Writes are synchronous; a delayed mirror must not overwrite a document restore.
   useEffect(() => {
-    const restored = data.values ?? data.fieldState;
-    if (restored && restored !== ownWrite.current) {
-      const { merged } = reconcileNodeValues(definition, restored, data.fieldState ?? {});
+    // Execution can repaint the projected node before its props catch up.
+    const canonical = !readOnly && nodeId ? getNodeById(nodeId)?.data : undefined;
+    const source = canonical && canonical.workflowSessionId === data.workflowSessionId ? canonical : data;
+    const restored = source.values ?? source.fieldState;
+    if (restored && restored !== draft.current) {
+      const { merged } = reconcileNodeValues(definition, restored, source.fieldState ?? {});
       draft.current = merged; setFieldState(merged);
     }
-  }, [data.values, data.fieldState, data.workflowSessionId]);
+  }, [data.values, data.fieldState, data.workflowSessionId, readOnly, nodeId, getNodeById]);
 
   const commit = (updates: Record<string, any>, changedKey?: string): boolean => {
     if (!allowed()) return false;

@@ -531,6 +531,20 @@ export class BacktestExecutionRuntime extends BaseExecutionRuntime {
   private readonly pendingLoopEntries = new Map<string, QueueItem>();
   private readonly activeLoops = new Map<string, BacktestLoopActivation>();
 
+  primeScheduledInputs(edges: readonly WorkflowEdge[]): void {
+    // These inputs were available on the source candle. Only a fresh edge
+    // from the scheduled execution can enqueue a destination.
+    for (const edge of edges) {
+      if (this.graph.isLoopNode(edge.target)) {
+        const arrivals = this.loopStartupArrivals.get(edge.target) ?? new Set<string>();
+        arrivals.add(edge.id);
+        this.loopStartupArrivals.set(edge.target, arrivals);
+      } else {
+        this.satisfiedCounts.set(edge.target, (this.satisfiedCounts.get(edge.target) ?? 0) + 1);
+      }
+    }
+  }
+
   override enqueueEntry(nodeId: string, input: unknown): void {
     const node = this.graph.nodeById.get(nodeId);
     if (node?.name === "Loop" && !node.values?.checkDependency &&

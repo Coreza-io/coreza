@@ -315,6 +315,7 @@ export function compilePlan(
     activationCounts: new Uint32Array(instructions.length),
     satisfiedDependencyGroups: new Uint8Array(dependencyGroupCount),
     requiredActivationCounts,
+    dependencyGroupByEdgeId,
     activeInputSlots: new Int32Array(instructions.length),
     entryIndices,
     pinnedSlotEntries,

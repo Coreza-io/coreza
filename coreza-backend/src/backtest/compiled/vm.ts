@@ -11,7 +11,7 @@ import { isFailedResult, NodeResultError, resultFailure } from "../../contracts/
 
 import { OpCode, BranchEnum, CompiledPlan, type ActivationTarget } from "./types";
 import type { NodeResultObserver } from "../../engine/types";
-import type { NodeResult } from "../../nodes/types";
+import type { NodeResult, WorkflowEdge } from "../../nodes/types";
 
 /**
  * Compiled Plan VM
@@ -34,7 +34,12 @@ import type { NodeResult } from "../../nodes/types";
  */
 export async function runBar(
   plan: CompiledPlan, barInput: any, throwOnNodeFailure = false, observe?: NodeResultObserver,
-  scheduled?: { nodeId: string; result: NodeResult; sourceResults: Record<string, NodeResult> },
+  scheduled?: {
+    nodeId: string;
+    result: NodeResult;
+    sourceResults: Record<string, NodeResult>;
+    inputEdges: readonly WorkflowEdge[];
+  },
 ): Promise<void> {
   const {
     instructions, slots, active, activationCounts, satisfiedDependencyGroups,
@@ -53,17 +58,19 @@ export async function runBar(
     for (const { slotIndex, value } of plan.pinnedSlotEntries) slots[slotIndex] = value;
   }
 
+  const restoredGroups = scheduled ? new Set<number>() : undefined;
   const activate = (
     index: number,
     dependencyGroupIndex: number,
     activatingInputSlot: number,
   ): void => {
+    const restored = restoredGroups?.delete(dependencyGroupIndex);
     if (dependencyGroupIndex >= 0) {
-      if (satisfiedDependencyGroups[dependencyGroupIndex]) return;
+      if (satisfiedDependencyGroups[dependencyGroupIndex] && !restored) return;
       satisfiedDependencyGroups[dependencyGroupIndex] = 1;
     }
     activeInputSlots[index] = activatingInputSlot;
-    activationCounts[index] += 1;
+    if (!restored) activationCounts[index] += 1;
     if (activationCounts[index] >= requiredActivationCounts[index]) active[index] = 1;
   };
   const activateTarget = (target: ActivationTarget): void =>
@@ -87,6 +94,14 @@ export async function runBar(
     for (const [id, sourceResult] of Object.entries(scheduled.sourceResults)) {
       const sourceIndex = plan.nodeIdToInstrIndex.get(id);
       if (sourceIndex !== undefined) slots[instructions[sourceIndex].outSlot] = sourceResult;
+    }
+    for (const edge of scheduled.inputEdges) {
+      const target = plan.nodeIdToInstrIndex.get(edge.target);
+      const group = plan.dependencyGroupByEdgeId?.get(edge.id);
+      if (target === undefined || group === undefined || satisfiedDependencyGroups[group]) continue;
+      restoredGroups!.add(group);
+      satisfiedDependencyGroups[group] = 1;
+      activationCounts[target] += 1;
     }
     // The consolidator already produced this result. Its input edges were
     // satisfied on the original candle, and are not part of this dispatch.

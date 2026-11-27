@@ -73,7 +73,7 @@ export function buildRollingWindowPayload(
   }
 
   return {
-    window: [...window.values()],
+    window: [...window.values()].reverse(),
     count: window.count,
     size: window.size,
     isReady: window.isReady,

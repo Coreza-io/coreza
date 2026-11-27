@@ -5,7 +5,7 @@
   "icon": "/assets/icons/store.svg",
   "category": "Data",
   "subCategory": "RollingWindow",
-  "description": "Bounded in-memory FIFO buffer. Receives candle data, holds most recent N bars. Returns window state and readiness.",
+  "description": "Holds the most recent N candles and returns them newest to oldest, with the newest candle at index 0.",
   "color": "#8b5cf6",
   "size": {
     "width": 280,
@@ -64,7 +64,7 @@
       "label": "Candle Data",
       "required": true,
       "placeholder": "Bar or bars to add (single bar, array, or {{ $('Node').json.data }})",
-      "description": "OHLCV bar(s) to push into the window",
+      "description": "OHLCV bars to add. Supply batches from oldest to newest.",
       "displayOptions": {
         "show": {
           "operation": ["set"]

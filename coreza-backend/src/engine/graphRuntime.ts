@@ -1,4 +1,5 @@
 import { NodeResult, WorkflowEdge, WorkflowNode } from "../nodes/types";
+import { isFailedResult } from "../contracts/nodeResult";
 import { buildBranchOrders, orderedReadyIndex, type OrderedBranches } from "./branchOrder";
 
 type BranchOriginInfo = { ifNodeId: string; handle: string; edgeId: string };
@@ -139,11 +140,12 @@ export class GraphRuntime {
     return this.outgoingEdgesBySource.get(sourceId) ?? [];
   }
 
-  topoSort(): string[] {
+  topoSort(excludedEdges?: ReadonlySet<string>): string[] {
     const inDegree = new Map<string, number>();
 
     for (const nodeId of this.nodeById.keys()) {
-      inDegree.set(nodeId, this.getIncomingEdges(nodeId).length);
+      const incoming = this.getIncomingEdges(nodeId);
+      inDegree.set(nodeId, excludedEdges ? incoming.filter(edge => !excludedEdges.has(edge.id)).length : incoming.length);
     }
 
     const queue: string[] = [];
@@ -159,6 +161,7 @@ export class GraphRuntime {
       topoOrder.push(nodeId);
 
       for (const edge of this.getOutgoingEdges(nodeId)) {
+        if (excludedEdges?.has(edge.id)) continue;
         const nextDegree = (inDegree.get(edge.target) ?? 1) - 1;
         inDegree.set(edge.target, nextDegree);
         if (nextDegree === 0) queue.push(edge.target);
@@ -166,6 +169,36 @@ export class GraphRuntime {
     }
 
     return topoOrder;
+  }
+
+  getScheduledInputEdges(nodeId: string, sourceResults: Readonly<Record<string, NodeResult>>): WorkflowEdge[] {
+    const downstream = new Set([nodeId]);
+    const pending = [nodeId];
+    while (pending.length > 0) {
+      for (const edge of this.getOutgoingEdges(pending.pop()!)) {
+        if (this.isSubNode(edge.target) || downstream.has(edge.target) || this.isLoopFeedbackEdge(edge)) continue;
+        downstream.add(edge.target);
+        pending.push(edge.target);
+      }
+    }
+
+    const inputs: WorkflowEdge[] = [];
+    for (const [id, result] of Object.entries(sourceResults)) {
+      const node = this.nodeById.get(id);
+      if (!node || this.isSubNode(id) || downstream.has(id) ||
+        isFailedResult(result) || result.control?.suppressRouting || result.control?.parallelDistributed) continue;
+      const edges = this.isLoopNode(id)
+        ? (result.control?.loopCompleted ? this.doneEdges(id) : [])
+        : this.selectEdges(node, result);
+      for (const edge of edges) {
+        if (edge.target !== nodeId && downstream.has(edge.target) && !this.isLoopFeedbackEdge(edge)) inputs.push(edge);
+      }
+    }
+    return inputs;
+  }
+
+  private isLoopFeedbackEdge(edge: WorkflowEdge): boolean {
+    return this.isLoopNode(edge.target) && this.getLoopScheduling(edge.target).feedbackEdgeIds.has(edge.id);
   }
 
   isLoopNode(nodeId: string): boolean {

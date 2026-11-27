@@ -126,6 +126,8 @@ export interface CompiledPlan {
   satisfiedDependencyGroups: Uint8Array;
   /** Incoming dependency groups required before each instruction can execute. */
   requiredActivationCounts: Uint32Array;
+  /** Dependency groups used to restore the prerequisites of a scheduled result. */
+  dependencyGroupByEdgeId?: ReadonlyMap<string, number>;
   /** Input slot delivered by the most recently satisfied dependency. */
   activeInputSlots: Int32Array;
   /** Instruction indices that are entry points (receive bar input) */

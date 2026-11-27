@@ -87,6 +87,7 @@ export class BacktestSession {
   private compiledPlan: CompiledPlan | null = null;
   private readonly reusableBarInput: { data: any } = { data: null };
   private readonly pendingConsolidatorCloses = new Map<string, PendingConsolidatorClose>();
+  private readonly consolidatorClosesInInvocation = new Set<PendingConsolidatorClose>();
   private readonly consolidatorCloseOrder: ReadonlyMap<string, number>;
   private currentMultiBarBars: Record<string, any> = Object.create(null);
   private readonly reusableSymbolExecutionContext: SymbolExecutionContext = {
@@ -104,19 +105,18 @@ export class BacktestSession {
 
         const sourceResults: Record<string, NodeResult> = Object.create(null);
         for (const [id, result] of Object.entries(getResults())) {
-          if (result == null || Object.prototype.hasOwnProperty.call(this.backtestInitResult, id)) continue;
-          // Some executors reuse result objects on the next candle.
-          try {
-            sourceResults[id] = structuredClone(result);
-          } catch {
-            sourceResults[id] = JSON.parse(stringifyNodeResult(result));
-          }
+          this.copyConsolidatorSource(sourceResults, id, result);
         }
         const bars = context.bars;
-        this.pendingConsolidatorCloses.set(JSON.stringify([nodeId, key]), {
+        const close = {
           nodeId, time, emit, sourceResults,
-          context: { ...context, timestamp: new Date(time).toISOString(), getBar: symbol => bars[symbol] },
-        });
+          context: { ...context, timestamp: new Date(time).toISOString(), getBar: (symbol: string) => bars[symbol] },
+        };
+        const pendingKey = JSON.stringify([nodeId, key]);
+        const previous = this.pendingConsolidatorCloses.get(pendingKey);
+        if (previous) this.consolidatorClosesInInvocation.delete(previous);
+        this.pendingConsolidatorCloses.set(pendingKey, close);
+        this.consolidatorClosesInInvocation.add(close);
       },
     },
   };
@@ -166,7 +166,9 @@ export class BacktestSession {
     this.totalBars = bars.filter((event) => !event.isWarmingUp).length;
     this.stateManager = stateManager;
     this.plan = WorkflowPlan.compile(this.nodes, this.edges, "backtest");
-    this.consolidatorCloseOrder = new Map(this.plan.graph.topoSort().map((id, index) => [id, index]));
+    const loopFeedback = new Set(nodes.filter(node => node.name === "Loop")
+      .flatMap(node => [...this.plan.graph.getLoopScheduling(node.id).feedbackEdgeIds]));
+    this.consolidatorCloseOrder = new Map(this.plan.graph.topoSort(loopFeedback).map((id, index) => [id, index]));
     this.run = this.plan.createRun({
       executionId: this.executionId,
       workflowId: this.workflowId,
@@ -372,7 +374,10 @@ export class BacktestSession {
 
   private setPhase(phase: BacktestPhase): void {
     if (phase === this.phase) return;
-    if (phase === "finished") this.pendingConsolidatorCloses.clear();
+    if (phase === "finished") {
+      this.pendingConsolidatorCloses.clear();
+      this.consolidatorClosesInInvocation.clear();
+    }
     this.phase = phase;
     BacktestExecutor.getSimBrokerForBacktest(this.backtestId)?.setWarmingUp(phase === "warming_up");
   }
@@ -404,21 +409,45 @@ export class BacktestSession {
       this.abortController.signal.throwIfAborted();
       const result = emit();
       if (!result) continue;
+      const inputEdges = this.plan.graph.getScheduledInputEdges(nodeId, sourceResults);
 
       // This is a consolidator callback, with no new source candle to ingest.
       if (this.compiledPlan) {
         this.compiledPlan.ctx.multiBarContext = context;
         this.compiledPlan.ctx.isWarmingUp = true;
-        await runBar(this.compiledPlan, null, true, undefined, { nodeId, result, sourceResults });
+        await runBar(this.compiledPlan, null, true, undefined, { nodeId, result, sourceResults, inputEdges });
       } else {
         this.run.resetForNextBar();
         this.run.setExecutionContextExtras({ multiBarContext: context, isWarmingUp: true });
         this.run.seedContext(sourceResults);
-        const execution = await this.run.executeFromResult(nodeId, result);
+        const execution = await this.run.executeFromResult(nodeId, result, inputEdges);
         if (!execution.success) throw new Error(execution.error?.message ?? "Backtest consolidation failed");
       }
       this.abortController.signal.throwIfAborted();
+      this.finishConsolidatorSourceSnapshot();
     }
+  }
+
+  private copyConsolidatorSource(target: Record<string, NodeResult>, id: string, result: NodeResult): void {
+    if (result == null || id in target || Object.prototype.hasOwnProperty.call(this.backtestInitResult, id)) return;
+    // Some executors reuse result objects on the next candle.
+    try {
+      target[id] = structuredClone(result);
+    } catch {
+      target[id] = JSON.parse(stringifyNodeResult(result));
+    }
+  }
+
+  private finishConsolidatorSourceSnapshot(): void {
+    if (this.consolidatorClosesInInvocation.size === 0) return;
+    const results = this.compiledPlan?.ctx.getAllNodeResults() ?? this.run.getLatestNodeResults();
+    // A prerequisite branch can finish after the Consolidator on the same candle.
+    for (const close of this.consolidatorClosesInInvocation) {
+      for (const { source } of this.plan.graph.getScheduledInputEdges(close.nodeId, results)) {
+        this.copyConsolidatorSource(close.sourceResults, source, results[source]);
+      }
+    }
+    this.consolidatorClosesInInvocation.clear();
   }
 
   private advanceEvent(event: MultiBarEvent): boolean {
@@ -653,6 +682,7 @@ export class BacktestSession {
         this.perf.executeLoopMs += performance.now() - t0;
       }
 
+      this.finishConsolidatorSourceSnapshot();
       this.perf.symbolExecutions += 1;
     }
 
@@ -917,6 +947,7 @@ export class BacktestSession {
     this.currentSymbolIndex = 0;
     this.status = "ready";
     this.pendingConsolidatorCloses.clear();
+    this.consolidatorClosesInInvocation.clear();
     this.setPhase("initializing");
     this.indicatorWarmupCompleted = false;
     this.indicatorsReadyAtStart = 0;

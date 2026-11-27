@@ -7,7 +7,18 @@ let mockExists = true;
 let mockNode = { data: { values: { value: "original", other: "keep" } } };
 const mockUpdate = jest.fn((_id: string, patch: any) => { mockNode = { data: { ...mockNode.data, ...patch } }; return true; });
 jest.mock("@xyflow/react", () => ({ useNodeId: () => "edit" }));
-jest.mock("@/contexts/StableNodeContext", () => ({ useStableNodes: () => ({ updateNodeData: mockUpdate, getNodeById: () => mockExists ? mockNode : undefined }) }));
+const mockGetNode = () => mockExists ? mockNode : undefined;
+const mockConfigListeners = new Set<() => void>();
+const mockSubscribeNode = (_id: string, listener: () => void) => {
+  mockConfigListeners.add(listener);
+  return () => { mockConfigListeners.delete(listener); };
+};
+jest.mock("@/contexts/StableNodeContext", () => ({ useStableNodes: () => ({
+  updateNodeData: mockUpdate,
+  getNodeById: mockGetNode,
+  getNodeConfigSnapshot: mockGetNode,
+  subscribeNodeConfig: mockSubscribeNode,
+}) }));
 jest.mock("@/services/editorNodeExecution", () => ({ isEditorExecutionLocked: () => mockLocked }));
 
 const definition = { fields: [{ key: "value", type: "string" }, { key: "other", type: "string" }] };
@@ -40,12 +51,14 @@ test("stale callbacks cannot mutate locked, deleted, read-only or another-sessio
   expect(mockNode.data.values.value).toBe("original");
 });
 
-test("document restores replace drafts without a deferred mirror overwrite", () => {
+test("document restores replace drafts even while projected props are stale", () => {
   jest.useFakeTimers();
   act(() => { renderer = create(React.createElement(Harness, { data: mockNode.data })); });
   act(() => hook.handleChange("value", "typed"));
-  mockNode = { data: { values: { value: "restored", other: "restored-neighbor" } } };
-  act(() => renderer.update(React.createElement(Harness, { data: mockNode.data })));
+  act(() => {
+    mockNode = { data: { values: { value: "restored", other: "restored-neighbor" } } };
+    mockConfigListeners.forEach(listener => listener());
+  });
   mockUpdate.mockClear(); act(() => jest.advanceTimersByTime(100));
   expect(mockUpdate).not.toHaveBeenCalled(); expect(hook.fieldState).toEqual(mockNode.data.values);
   jest.useRealTimers();

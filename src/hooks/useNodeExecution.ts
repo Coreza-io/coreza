@@ -25,6 +25,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useExecutionStore, useExecutionStoreNotify } from "@/contexts/ExecutionStoreContext";
 import { useStableNodes } from "@/contexts/StableNodeContext";
 import { resolveReferences } from "@/utils/resolveReferences";
+import { reconcileNodeValues } from "@/utils/reconcileNodeValues";
 import { isFixedField, parameterEntries } from "../../coreza-backend/src/utils/fieldValueModes";
 import { freezeVariableSnapshot, referencesVariables, type VariableSnapshot } from "../../coreza-backend/src/variables/contract";
 import { supabase } from "@/integrations/supabase/client";
@@ -98,7 +99,7 @@ interface UseNodeExecutionReturn {
  */
 export function useNodeExecution({
   definition,
-  fieldState,
+  fieldState: renderedFieldState,
   data,
   selectedInputNodeId,
   selectedInputData,
@@ -393,7 +394,7 @@ export function useNodeExecution({
     ],
   );
 
-  const publishFailure = useCallback((message: string, executionIsCurrent: () => boolean, code?: string, details?: ResultErrorDetails, partialData?: unknown, meta?: ResultMeta): NodeExecutionOutcome => {
+  const publishFailure = useCallback((message: string, executionIsCurrent: () => boolean, fieldState: Record<string, any>, code?: string, details?: ResultErrorDetails, partialData?: unknown, meta?: ResultMeta): NodeExecutionOutcome => {
     const outcomeNodeId = nodeId ?? "unknown";
     if (!executionIsCurrent()) return { nodeId: outcomeNodeId, status: "cancelled", reason: "The editor execution changed." };
     if (overrideOutput !== null && overrideOutput !== undefined) {
@@ -415,7 +416,7 @@ export function useNodeExecution({
     return { nodeId: outcomeNodeId, status: continued ? "success" : "failed", error: { message, ...(code !== undefined ? { code } : {}) }, output,
       ...(continuation?.control?.sourceHandle ? { selectedContinuation: continuation.control?.sourceHandle } : {}),
     };
-  }, [nodeId, overrideOutput, definition?.name, fieldState, setLastOutput, executionStore, updateNodeData, notifyExecutionStoreUpdate]);
+  }, [nodeId, overrideOutput, definition?.name, setLastOutput, executionStore, updateNodeData, notifyExecutionStoreUpdate]);
 
   // Main execution handler
   const executeAction = useCallback(
@@ -472,6 +473,14 @@ export function useNodeExecution({
         );
       }
 
+      // The registered action may precede the render that displays the latest edit.
+      const canonical = getNodeById(outcomeNodeId)?.data;
+      const recordedFields = canonical?.fieldState as Record<string, any> | undefined;
+      const values = (canonical?.values as Record<string, any> | undefined) ?? recordedFields;
+      const fieldState = values
+        ? reconcileNodeValues(definition, values, recordedFields ?? {}).merged
+        : renderedFieldState;
+
       // Validate required fields using payload inclusion rules.
       // Tabs are UI-only groupings, so hidden tab fields still validate when relevant.
       for (const f of definition?.fields || []) {
@@ -490,7 +499,7 @@ export function useNodeExecution({
           value === undefined || value === null || value === "" || isEmptyArray;
 
         if (f.required && isMissingValue) {
-          return publishFailure(`${f.label || f.key} is required`, executionIsCurrent);
+          return publishFailure(`${f.label || f.key} is required`, executionIsCurrent, fieldState);
         }
       }
 
@@ -945,7 +954,7 @@ export function useNodeExecution({
         if (definition?.name === "Consolidator" && code === "EDITOR_CONTEXT_EXPIRED") {
           setEditorConsolidatorSeries(executionSessionId, outcomeNodeId);
         }
-        return publishFailure(message, executionIsCurrent, code, parsed?.details, parsed?.data, parsed?.meta);
+        return publishFailure(message, executionIsCurrent, fieldState, code, parsed?.details, parsed?.data, parsed?.meta);
       } finally {
         agentActivity?.finish(undefined, !executionIsCurrent() ? "cancelled" : "incomplete");
         if (activeAgentRef.current === agentActivity) activeAgentRef.current = undefined;
@@ -956,7 +965,7 @@ export function useNodeExecution({
     },
     [
       definition,
-      fieldState,
+      renderedFieldState,
       userId,
       selectedInputData,
       selectedInputNodeId,

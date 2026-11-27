@@ -520,11 +520,11 @@ const WorkflowEditorContent = () => {
 
   useEffect(() => stableNodes.registerNodeDataUpdater((nodeId, patch) => {
     const fields = "values" in patch || "fieldState" in patch || "pinnedOutput" in patch;
-    if (fields && (!canMutateDocument() || !nodesRef.current.some(node => node.id === nodeId))) return false;
+    if (fields && (!canMutateDocument() || !nodesRef.current.some(node => node.id === nodeId && node.data.workflowSessionId === workflowSessionId))) return false;
     // React can replay this updater after execution locks the editor. Apply
     // edits accepted before the lock using the queued document state.
     const publish = () => setNodes((current) =>
-      current.map((node) => node.id === nodeId
+      current.map((node) => node.id === nodeId && (!fields || node.data.workflowSessionId === workflowSessionId)
         ? { ...node, data: { ...node.data, ...patch } }
         : node),
     );
@@ -532,7 +532,7 @@ const WorkflowEditorContent = () => {
     if (Object.keys(patch).every(key => key === "output" || key === "input")) startTransition(publish);
     else publish();
     return true;
-  }), [setNodes, stableNodes, canMutateDocument]);
+  }), [setNodes, stableNodes, canMutateDocument, workflowSessionId]);
 
   useEffect(() => setFocusedClusterId((current) => {
     const reconciled = reconcileFocusedCluster(current, clusters, new Set(nodes.map(({ id }) => id)));

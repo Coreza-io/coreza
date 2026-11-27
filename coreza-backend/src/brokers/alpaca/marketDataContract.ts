@@ -11,7 +11,7 @@ const intervals = ['1Min', '5Min', '15Min', '1Hour', '1Day'];
 const adjustments = ['raw', 'split', 'dividend', 'spin-off', 'all'];
 const own = (object: any, key: string) => Object.prototype.hasOwnProperty.call(object ?? {}, key);
 const present = (value: any) => value !== undefined && value !== null && value !== '';
-const fields = new Set(['operation', 'assetType', 'asset_type', 'symbol', 'symbols', 'crypto_base', 'interval', 'limit', 'start', 'end', 'feed', 'sort', 'adjustment', 'currency', 'page_token', 'auto_paginate', 'max_pages']);
+const fields = new Set(['operation', 'assetType', 'asset_type', 'symbol', 'symbols', 'crypto_base', 'interval', 'limit', 'start', 'end', 'feed', 'sort', 'adjustment', 'currency', 'page_token', 'auto_paginate', 'max_pages', 'include_extended_hours']);
 
 /** Calendar validation is separate from parsing; preserve the original timestamp and precision. */
 function validDate(value: any): boolean {
@@ -81,6 +81,7 @@ export function validateAlpacaMarketData(input: Record<string, any>, configured?
   const historical = values.operation === 'get_candle';
   const ignored = historical ? (crypto ? ['feed', 'adjustment', 'currency'] : [])
     : ['interval', 'start', 'end', 'limit', 'sort', 'adjustment', 'auto_paginate', 'max_pages', 'page_token', ...(crypto ? ['feed', 'currency'] : [])];
+  if (!historical || crypto || values.interval === '1Day') ignored.push('include_extended_hours');
   for (const key of ignored) {
     if (raw && own(raw, key) && !own(configured, key)) issue(key, 'inactive_parameter', 'Parameter is not supported for the selected operation and asset');
     delete values[key];
@@ -108,6 +109,12 @@ export function validateAlpacaMarketData(input: Record<string, any>, configured?
   }
   if (historical) {
     if (!intervals.includes(values.interval)) issue('interval', 'invalid_interval', `interval must be one of ${intervals.join(', ')}`);
+    if (values.include_extended_hours === 'false' || values.include_extended_hours === 'true') {
+      values.include_extended_hours = values.include_extended_hours === 'true';
+    }
+    if (present(values.include_extended_hours) && typeof values.include_extended_hours !== 'boolean') {
+      issue('include_extended_hours', 'invalid_boolean', 'include_extended_hours must be a boolean');
+    }
     integer('limit', 10000, ALPACA_DEFAULT_BAR_PAGE_SIZE);
     integer('max_pages', 100, 100);
     if (values.auto_paginate === undefined && !own(configured, 'auto_paginate')) values.auto_paginate = true;

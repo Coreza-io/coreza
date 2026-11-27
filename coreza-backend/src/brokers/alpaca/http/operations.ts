@@ -2,8 +2,9 @@ import { ALPACA_DEFAULT_BAR_PAGE_SIZE, validateAlpacaMarketData } from "../marke
 import { normalizeCandles } from "../../../marketData/normalizeCandles";
 import { convertToISO8601 } from "../../../utils/dates";
 import { BrokerOperation } from "../../types";
-import { fromAlpacaBar, parseAlpacaRawBar } from "../helpers";
+import { filterAlpacaRegularHours, fromAlpacaBar, parseAlpacaRawBar } from "../helpers";
 import { validateAlpacaCryptoSymbol } from "../cryptoOrderSymbol";
+import { parseTimeframe } from "../../../utils/timeframe";
 
 function validateBarsResponse(raw: any, input: any): void {
   if (!raw?.bars || typeof raw.bars !== 'object' || Array.isArray(raw.bars)) {
@@ -246,6 +247,12 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
         next_page_token: raw.next_page_token || null,
         has_more: !!raw.next_page_token,
       };
+    },
+    finalizeResult: async (output, context) => {
+      const { input } = context;
+      return input.include_extended_hours === false
+        ? filterAlpacaRegularHours(output, parseTimeframe(input.interval).milliseconds, context)
+        : output;
     },
   },
   get_latest_bar: {

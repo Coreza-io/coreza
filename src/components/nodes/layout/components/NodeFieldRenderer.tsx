@@ -26,6 +26,14 @@ import GroupedSelect from "./GroupedSelect";
 import CredentialSelect from "./CredentialSelect";
 import DependentSelect from "./DependentSelect";
 
+const timezoneOptions = [
+  ...new Set([
+    "UTC",
+    ...((Intl as typeof Intl & { supportedValuesOf?: (key: "timeZone") => string[] })
+      .supportedValuesOf?.("timeZone") ?? [Intl.DateTimeFormat().resolvedOptions().timeZone]),
+  ]),
+].map((zone) => ({ id: zone, name: zone }));
+
 interface NodeFieldRendererProps {
   field: any;
   definition: any;
@@ -572,7 +580,12 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
         }
 
         let displayOptions: any[] = [];
-        if (
+        if (field.optionsSource === "timezones") {
+          // Keep saved aliases and expressions visible even if the browser doesn't list them.
+          displayOptions = fieldValue && !timezoneOptions.some(({ id }) => id === fieldValue)
+            ? [...timezoneOptions, { id: fieldValue, name: fieldValue }]
+            : timezoneOptions;
+        } else if (
           field.dynamicOptions?.dependsOn &&
           field.dynamicOptions?.optionsByValue
         ) {
@@ -589,7 +602,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
 
         return (
           <Select
-            value={fieldValue}
+            value={field.optionsSource === "timezones" ? fieldValue || field.default : fieldValue}
             onValueChange={(val) => {
               onChange(field.key, val);
               if (field.conditionalOptions) {

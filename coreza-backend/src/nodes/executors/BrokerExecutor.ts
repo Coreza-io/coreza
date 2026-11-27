@@ -461,6 +461,10 @@ export class BrokerExecutor implements INodeExecutor {
         }
       }
 
+      if (op.finalizeResult) {
+        data = await op.finalizeResult(data, { input: resolvedParams, creds: workingCreds, baseUrl, headers, request });
+      }
+
       timing.mark("responseProcessing");
       context?.agentDataTrace?.('broker_fetch', () => ({ durationMs: performance.now() - fetchStart!, broker, operation,
         requestCount: requestCount(), transformedRowCount: operation === 'get_candle' ? historicalRowCount(data, resolvedParams.symbol) : null }));

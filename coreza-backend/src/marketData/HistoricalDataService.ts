@@ -34,6 +34,7 @@ interface HistoricalRequestBase {
   assetType?: string;
   feed?: string;
   adjustment?: string;
+  includeExtendedHours?: boolean | string;
   credentialId?: string;
   pageSize?: unknown;
 }
@@ -110,6 +111,7 @@ export class HistoricalDataService {
       asset_type: request.assetType,
       feed: request.feed,
       adjustment: request.adjustment,
+      ...(request.includeExtendedHours === undefined ? {} : { include_extended_hours: request.includeExtendedHours }),
       credential_id: request.credentialId,
       limit: pageSize,
     };

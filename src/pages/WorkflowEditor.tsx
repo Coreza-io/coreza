@@ -521,12 +521,13 @@ const WorkflowEditorContent = () => {
   useEffect(() => stableNodes.registerNodeDataUpdater((nodeId, patch) => {
     const fields = "values" in patch || "fieldState" in patch || "pinnedOutput" in patch;
     if (fields && (!canMutateDocument() || !nodesRef.current.some(node => node.id === nodeId))) return false;
-    const publish = () => setNodes((current) => {
-      if (fields && !canMutateDocument()) return current;
-      return current.map((node) => node.id === nodeId
-      ? { ...node, data: { ...node.data, ...patch } }
-      : node);
-    });
+    // React can replay this updater after execution locks the editor. Apply
+    // edits accepted before the lock using the queued document state.
+    const publish = () => setNodes((current) =>
+      current.map((node) => node.id === nodeId
+        ? { ...node, data: { ...node.data, ...patch } }
+        : node),
+    );
     // Runtime results are already in the execution store; canvas input takes priority.
     if (Object.keys(patch).every(key => key === "output" || key === "input")) startTransition(publish);
     else publish();

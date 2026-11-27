@@ -13,7 +13,8 @@ export class RollingWindow<T> {
   private oldestIndex = 0;
 
   constructor(public readonly size: number) {
-    if (size <= 0) throw new Error("RollingWindow size must be > 0");
+    if (!Number.isInteger(size) || size <= 0)
+      throw new Error("RollingWindow size must be a positive integer");
     if (size > 500)
       throw new Error("RollingWindow size exceeds Coreza hard limit (500)");
   }
@@ -54,8 +55,10 @@ export class RollingWindow<T> {
   valuesNewestFirst(): T[] {
     const count = this.buffer.length;
     const values = new Array<T>(count);
+    let index = this.oldestIndex;
     for (let offset = 0; offset < count; offset++) {
-      values[offset] = this.buffer[(this.oldestIndex + count - 1 - offset) % count];
+      if (index === 0) index = count;
+      values[offset] = this.buffer[--index];
     }
     return values;
   }

@@ -72,13 +72,14 @@ export function buildRollingWindowPayload(
     };
   }
 
+  const values = window.valuesNewestFirst();
   return {
-    window: [...window.values()].reverse(),
+    window: values,
     count: window.count,
     size: window.size,
     isReady: window.isReady,
     remaining: window.size - window.count,
-    latest: window.count > 0 ? window.at(0) : null,
+    latest: values.length > 0 ? values[0] : null,
     found: true,
   };
 }

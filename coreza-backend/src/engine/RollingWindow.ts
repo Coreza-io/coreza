@@ -9,19 +9,23 @@
  */
 
 export class RollingWindow<T> {
-  private buffer: T[] = [];
+  private readonly buffer: T[] = [];
+  private oldestIndex = 0;
 
   constructor(public readonly size: number) {
-    if (size <= 0) throw new Error("RollingWindow size must be > 0");
+    if (!Number.isInteger(size) || size <= 0)
+      throw new Error("RollingWindow size must be a positive integer");
     if (size > 500)
       throw new Error("RollingWindow size exceeds Coreza hard limit (500)");
   }
 
   add(item: T): void {
-    this.buffer.push(item);
-    if (this.buffer.length > this.size) {
-      this.buffer.shift();
+    if (this.buffer.length < this.size) {
+      this.buffer.push(item);
+      return;
     }
+    this.buffer[this.oldestIndex] = item;
+    this.oldestIndex = (this.oldestIndex + 1) % this.buffer.length;
   }
 
   get isReady(): boolean {
@@ -40,14 +44,27 @@ export class RollingWindow<T> {
         `RollingWindow index out of bounds: offset ${offsetFromLatest}, count ${this.buffer.length}`,
       );
 
-    return this.buffer[index];
+    return this.buffer[(this.oldestIndex + index) % this.buffer.length];
   }
 
+  /** Returns the window from oldest to newest. */
   values(): readonly T[] {
-    return this.buffer;
+    return this.buffer.slice(this.oldestIndex).concat(this.buffer.slice(0, this.oldestIndex));
+  }
+
+  valuesNewestFirst(): T[] {
+    const count = this.buffer.length;
+    const values = new Array<T>(count);
+    let index = this.oldestIndex;
+    for (let offset = 0; offset < count; offset++) {
+      if (index === 0) index = count;
+      values[offset] = this.buffer[--index];
+    }
+    return values;
   }
 
   clear(): void {
     this.buffer.length = 0;
+    this.oldestIndex = 0;
   }
 }

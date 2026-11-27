@@ -41,6 +41,7 @@ export interface BrokerOperation {
   validateResponse?: (data: any, input: any) => void;
   pagination?: PaginationConfig;
   execute?: (ctx: BrokerOperationExecuteContext) => Promise<any>;
+  finalizeResult?: (data: any, ctx: BrokerOperationExecuteContext) => Promise<any>;
   /** Custom operation submits _idempotencyKey as the broker client order ID. */
   preRegisterOrderOwner?: boolean;
 }

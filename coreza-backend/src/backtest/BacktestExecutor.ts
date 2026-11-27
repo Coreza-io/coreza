@@ -428,6 +428,7 @@ export class BacktestExecutor implements INodeExecutor {
           assetType,
           feed,
           adjustment,
+          includeExtendedHours: params.include_extended_hours,
           pageSize: params.limit,
           credentialId,
         };

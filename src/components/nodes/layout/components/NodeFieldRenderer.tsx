@@ -26,6 +26,12 @@ import GroupedSelect from "./GroupedSelect";
 import CredentialSelect from "./CredentialSelect";
 import DependentSelect from "./DependentSelect";
 
+const supportedTimezones = (Intl as typeof Intl & { supportedValuesOf?: (key: "timeZone") => string[] })
+  .supportedValuesOf?.("timeZone");
+const timezoneOptions = supportedTimezones
+  ? [...new Set(["UTC", ...supportedTimezones])].map((zone) => ({ id: zone, name: zone }))
+  : undefined;
+
 interface NodeFieldRendererProps {
   field: any;
   definition: any;
@@ -144,9 +150,11 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
   }
 
   const fieldValue = value ?? fieldState[field.key];
-  const supportsValueMode = ["string", "number", "text", "textarea", "password"].includes(field.type)
-    && !field.options?.length && !!onBatchChange;
+  const isTimezoneSelect = field.type === "select" && field.optionsSource === "timezones";
+  const supportsTextValue = ["string", "number", "text", "textarea", "password"].includes(field.type);
+  const supportsValueMode = (supportsTextValue || isTimezoneSelect) && !field.options?.length && !!onBatchChange;
   const valueMode = getFieldValueMode({ ...fieldState, [field.key]: fieldValue }, field.key);
+  const useTimezoneDropdown = isTimezoneSelect && timezoneOptions && valueMode === "fixed";
   const variableQuery = useVariableSnapshot(shouldRender && !readOnly && supportsValueMode && valueMode === "expression", workflowId, workflowSessionId);
   const variableListId = React.useId();
   const updateValueMode = (mode: FieldValueMode, updates: Record<string, any> = {}) =>
@@ -301,7 +309,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
   if (!shouldRender) return null;
 
   const renderField = () => {
-    switch (field.type) {
+    switch (isTimezoneSelect && !useTimezoneDropdown ? "text" : field.type) {
       case "webhookUrl": {
         const baseUrl =
           import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
@@ -572,7 +580,12 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
         }
 
         let displayOptions: any[] = [];
-        if (
+        if (useTimezoneDropdown) {
+          // Keep saved aliases visible even if the browser doesn't list them.
+          displayOptions = fieldValue && !timezoneOptions.some(({ id }) => id === fieldValue)
+            ? [...timezoneOptions, { id: fieldValue, name: fieldValue }]
+            : timezoneOptions;
+        } else if (
           field.dynamicOptions?.dependsOn &&
           field.dynamicOptions?.optionsByValue
         ) {
@@ -589,7 +602,7 @@ const NodeFieldRenderer: React.FC<NodeFieldRendererProps> = ({
 
         return (
           <Select
-            value={fieldValue}
+            value={useTimezoneDropdown ? fieldValue || field.default : fieldValue}
             onValueChange={(val) => {
               onChange(field.key, val);
               if (field.conditionalOptions) {

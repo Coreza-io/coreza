@@ -18,7 +18,7 @@
     { "key": "symbol", "type": "text", "label": "Symbol", "required": true, "placeholder": "e.g. BTCUSDT" },
     { "key": "source_timeframe", "type": "text", "label": "Source Timeframe", "required": true, "default": "1h", "placeholder": "e.g. 1h" },
     { "key": "target_timeframe", "type": "text", "label": "Target Timeframe", "required": true, "default": "4h", "placeholder": "e.g. 4h" },
-    { "key": "timezone", "type": "text", "label": "Timezone", "default": "UTC", "placeholder": "e.g. America/New_York", "description": "Optional IANA timezone used for bucket alignment and DST." },
+    { "key": "timezone", "type": "select", "optionsSource": "timezones", "label": "Timezone", "default": "UTC", "description": "IANA timezone used for bucket alignment and daylight saving time." },
     { "key": "anchor_time", "type": "text", "label": "Anchor Time", "placeholder": "09:30", "description": "Optional local HH:mm bucket anchor." }
   ],
   "output": {

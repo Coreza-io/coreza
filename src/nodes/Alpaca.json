@@ -392,6 +392,20 @@
       }
     },
     {
+      "key": "include_extended_hours",
+      "label": "Include Extended Hours",
+      "type": "checkbox",
+      "default": true,
+      "description": "Turn off to keep only bars fully inside Alpaca's regular trading session.",
+      "displayOptions": {
+        "show": {
+          "operation": ["get_candle"],
+          "assetType": ["stock"],
+          "interval": ["1Min", "5Min", "15Min", "1Hour"]
+        }
+      }
+    },
+    {
       "key": "currency",
       "label": "Currency",
       "type": "text",

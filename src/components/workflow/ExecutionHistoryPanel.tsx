@@ -205,6 +205,7 @@ export function ExecutionHistoryPanel({
   };
 
   const renderExecutionRow = (execution: ExecutionSummary) => {
+    const isSelected = (selectedExecutionId ?? selectedExecution?.id) === execution.id;
     const title = execution.bar_time
       ? `${execution.bar_symbol} · ${formatInTimeZone(execution.bar_time, timezone, "MMM d, yyyy HH:mm:ss zzz")}`
       : format(new Date(execution.started_at), "MMM d, HH:mm:ss");
@@ -214,10 +215,10 @@ export function ExecutionHistoryPanel({
         onClick={() => onSelectExecution(execution)}
         className={cn(
           "w-full text-left p-3 mb-1 transition-colors border-l-4",
-          "hover:bg-muted/50",
           getStatusAccent(execution.status),
-          (selectedExecutionId ?? selectedExecution?.id) === execution.id && "bg-muted",
+          isSelected ? "bg-primary/15 ring-1 ring-inset ring-primary/60" : "hover:bg-muted/50",
         )}
+        aria-current={isSelected ? "true" : undefined}
         aria-label={execution.bar_time ? `Backtest bar ${title}` : `Execution from ${title}`}
       >
         <div className="text-sm font-medium">

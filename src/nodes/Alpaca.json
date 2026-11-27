@@ -191,10 +191,7 @@
       "required": false,
       "displayOptions": {
         "show": {
-          "operation": [
-            "cancel_order",
-            "get_order"
-          ]
+          "operation": ["cancel_order", "get_order"]
         }
       },
       "description": "Only for get_order/cancel_order operations."
@@ -214,9 +211,7 @@
             "place_order",
             "close_position"
           ],
-          "assetType": [
-            "stock"
-          ]
+          "assetType": ["stock"]
         }
       },
       "description": "Ticker symbol for market data operations."
@@ -236,9 +231,7 @@
             "place_order",
             "close_position"
           ],
-          "assetType": [
-            "crypto"
-          ]
+          "assetType": ["crypto"]
         }
       }
     },
@@ -272,9 +265,7 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "operation": [
-            "get_candle"
-          ]
+          "operation": ["get_candle"]
         }
       },
       "description": "Time interval between bars. For 1Day bars spanning multiple days, provide start for the historical lookback. Intraday intervals below 1Day can omit dates for the current day's available data only."
@@ -287,10 +278,7 @@
       "required": false,
       "displayOptions": {
         "show": {
-          "operation": [
-            "get_candle",
-            "fetch_news"
-          ]
+          "operation": ["get_candle", "fetch_news"]
         }
       },
       "description": "Maximum rows per response page (1-10000), for every timeframe. Historical bars default to 1000 when omitted; news retains its provider default. Does not expand the date range: without start, only the current day's available data is searched and no bars may exist before trading or on non-trading days. Auto-pagination may return more rows in total."
@@ -329,13 +317,8 @@
       "required": false,
       "displayOptions": {
         "show": {
-          "operation": [
-            "get_latest_bar",
-            "get_candle"
-          ],
-          "assetType": [
-            "stock"
-          ]
+          "operation": ["get_latest_bar", "get_candle"],
+          "assetType": ["stock"]
         }
       },
       "description": "Feed choices depend on the operation. Historical: sip, iex, otc, boats. Latest also supports delayed_sip and overnight. Availability depends on your entitlement; feeds are never substituted.",
@@ -395,7 +378,7 @@
       "key": "include_extended_hours",
       "label": "Include Extended Hours",
       "type": "checkbox",
-      "default": true,
+      "default": false,
       "description": "Turn off to keep only bars fully inside Alpaca's regular trading session.",
       "displayOptions": {
         "show": {
@@ -414,13 +397,8 @@
       "required": false,
       "displayOptions": {
         "show": {
-          "operation": [
-            "get_candle",
-            "get_latest_bar"
-          ],
-          "assetType": [
-            "stock"
-          ]
+          "operation": ["get_candle", "get_latest_bar"],
+          "assetType": ["stock"]
         }
       },
       "description": "Currency for pricing data."
@@ -455,12 +433,8 @@
       "required": false,
       "displayOptions": {
         "show": {
-          "operation": [
-            "get_candle"
-          ],
-          "assetType": [
-            "stock"
-          ]
+          "operation": ["get_candle"],
+          "assetType": ["stock"]
         }
       },
       "description": "Corporate-action adjustment for historical bars. Comma-separated values such as split,spin-off are also accepted."
@@ -483,10 +457,7 @@
       "required": false,
       "displayOptions": {
         "show": {
-          "operation": [
-            "get_candle",
-            "fetch_news"
-          ]
+          "operation": ["get_candle", "fetch_news"]
         }
       },
       "description": "Sort order for historical bars: ascending (oldest first) or descending (newest first)."
@@ -499,10 +470,7 @@
       "required": false,
       "displayOptions": {
         "show": {
-          "operation": [
-            "get_candle",
-            "fetch_news"
-          ]
+          "operation": ["get_candle", "fetch_news"]
         }
       },
       "description": "Inclusive RFC-3339 or YYYY-MM-DD start. Omitted means the current day's beginning, subject to feed delay. Supply an earlier start for multiple daily bars, prior sessions, or indicator warm-up; optional for same-day intraday data."
@@ -515,10 +483,7 @@
       "required": false,
       "displayOptions": {
         "show": {
-          "operation": [
-            "get_candle",
-            "fetch_news"
-          ]
+          "operation": ["get_candle", "fetch_news"]
         }
       },
       "description": "Inclusive RFC-3339 or YYYY-MM-DD end. Optional; defaults to current time or the feed's delayed cutoff. Set for a bounded historical period."
@@ -542,9 +507,7 @@
       "required": false,
       "displayOptions": {
         "show": {
-          "operation": [
-            "fetch_news"
-          ]
+          "operation": ["fetch_news"]
         }
       }
     },
@@ -557,9 +520,7 @@
       "required": false,
       "displayOptions": {
         "show": {
-          "operation": [
-            "fetch_news"
-          ]
+          "operation": ["fetch_news"]
         }
       }
     },
@@ -581,9 +542,7 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "operation": [
-            "place_order"
-          ]
+          "operation": ["place_order"]
         }
       },
       "description": "Order side buy/sell \u2014 only for place_order operation."
@@ -596,10 +555,7 @@
       "required": false,
       "displayOptions": {
         "show": {
-          "operation": [
-            "place_order",
-            "close_position"
-          ]
+          "operation": ["place_order", "close_position"]
         }
       },
       "description": "Order quantity \u2014 only for place_order."
@@ -612,9 +568,7 @@
       "required": false,
       "displayOptions": {
         "show": {
-          "operation": [
-            "close_position"
-          ]
+          "operation": ["close_position"]
         }
       }
     },
@@ -644,9 +598,7 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "operation": [
-            "place_order"
-          ]
+          "operation": ["place_order"]
         }
       },
       "description": "Order type market/limit/stop/etc \u2014 only for place_order."
@@ -659,9 +611,7 @@
       "placeholder": "e.g. 1",
       "displayOptions": {
         "show": {
-          "operation": [
-            "place_order"
-          ],
+          "operation": ["place_order"],
           "type": "limit"
         }
       },
@@ -675,9 +625,7 @@
       "placeholder": "e.g. 1",
       "displayOptions": {
         "show": {
-          "operation": [
-            "place_order"
-          ],
+          "operation": ["place_order"],
           "type": "stop"
         }
       },
@@ -692,9 +640,7 @@
       "description": "Only for trailing_stop orders.",
       "displayOptions": {
         "show": {
-          "operation": [
-            "place_order"
-          ],
+          "operation": ["place_order"],
           "type": "trailing_stop"
         }
       },
@@ -709,9 +655,7 @@
       "description": "Only for trailing_stop orders.",
       "displayOptions": {
         "show": {
-          "operation": [
-            "place_order"
-          ],
+          "operation": ["place_order"],
           "type": "trailing_stop"
         }
       },
@@ -751,13 +695,8 @@
       "required": true,
       "displayOptions": {
         "show": {
-          "operation": [
-            "place_order"
-          ],
-          "assetType": [
-            "stock",
-            "crypto"
-          ]
+          "operation": ["place_order"],
+          "assetType": ["stock", "crypto"]
         }
       },
       "description": "Time in force \u2014 only for place_order."
@@ -781,18 +720,10 @@
       "description": "Enable execution during pre-market and after-hours. Only available for limit orders with day time-in-force.",
       "displayOptions": {
         "show": {
-          "operation": [
-            "place_order"
-          ],
-          "type": [
-            "limit"
-          ],
-          "time_in_force": [
-            "day"
-          ],
-          "assetType": [
-            "stock"
-          ]
+          "operation": ["place_order"],
+          "type": ["limit"],
+          "time_in_force": ["day"],
+          "assetType": ["stock"]
         }
       },
       "showDescription": false

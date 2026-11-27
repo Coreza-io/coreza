@@ -373,7 +373,7 @@
       "key": "include_extended_hours",
       "label": "Include Extended Hours",
       "type": "checkbox",
-      "default": true,
+      "default": false,
       "description": "Turn off to keep only bars fully inside Alpaca's regular trading session, including during warm-up.",
       "displayOptions": {
         "show": {

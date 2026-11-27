@@ -52,6 +52,7 @@ type InputPanelProps = {
   // Read-only mode for execution view
   readOnly?: boolean;
   executionInput?: any;
+  executionVariableInputs?: Readonly<Record<string, unknown>>;
   // Recorded values are separate from the historical topology used for options.
   allNodeExecutions?: NodeExecutionLog[];
   historyNodes?: readonly SemanticNode[];
@@ -71,6 +72,7 @@ const InputPanel: React.FC<InputPanelProps> = ({
   setSelectedPrevNodeId,
   executionStore,
   readOnly = false,
+  executionVariableInputs,
   allNodeExecutions,
   historyNodes,
   historyEdges,
@@ -209,7 +211,11 @@ const InputPanel: React.FC<InputPanelProps> = ({
         </TabsContent>
         <TabsContent value="variables">
           {readOnly ? (
-            <p className="text-xs text-muted-foreground">Workflow variables are not included in execution history.</p>
+            executionVariableInputs && Object.keys(executionVariableInputs).length > 0 ? (
+              <DraggableFieldsPanel data={executionVariableInputs} variableNamespace draggable={false} onDragStart={() => {}} />
+            ) : (
+              <p className="text-xs text-muted-foreground">No workflow variables were recorded for this node in this run.</p>
+            )
           ) : !workflowId ? (
             <p className="text-xs text-muted-foreground">Save the workflow to view its variables.</p>
           ) : variableQuery.isLoading ? (

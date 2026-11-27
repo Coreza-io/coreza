@@ -91,6 +91,7 @@ export interface BaseNodeRenderProps {
   workflowSessionId?: string;
   nodeId?: string;
   readOnly?: boolean;
+  executionVariableInputs?: Readonly<Record<string, unknown>>;
   // Node name editing
   isEditing: boolean;
   editingName: string;
@@ -334,6 +335,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     workflowId,
     workflowSessionId,
     readOnly,
+    executionVariableInputs: data.executionVariableInputs,
     fieldState: fieldStateHook.fieldState,
     previousNodes,
     referenceNodes,
@@ -501,6 +503,7 @@ const BaseNode: React.FC<BaseNodeProps> = ({
     workflowSessionId,
     nodeId: nodeId || undefined,
     readOnly,
+    executionVariableInputs: data.executionVariableInputs,
     // Node name editing
     isEditing: renamingHook.isEditing,
     editingName: renamingHook.editingName,

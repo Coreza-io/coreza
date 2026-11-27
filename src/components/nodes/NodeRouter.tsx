@@ -338,6 +338,7 @@ const NodeRouter: React.FC<NodeRouterProps> = ({ data, selected, workflowId }) =
             setSelectedPrevNodeId: renderProps.setSelectedPrevNodeId,
             executionStore,
             executionInput: data.executionInput,
+            executionVariableInputs: data.executionVariableInputs,
             allNodeExecutions: data.allNodeExecutions,
             historyNodes: data.historyNodes,
             historyEdges: data.historyEdges,

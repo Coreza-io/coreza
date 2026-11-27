@@ -178,6 +178,7 @@ export function ExecutionDetailView({
           output: nodeExec?.output,
           // Use execution input for input panel
           executionInput: nodeExec?.input,
+          executionVariableInputs: nodeExec && readNodeResult(nodeExec.output).meta?.variableInputs,
           // Options use saved topology; values use only this run's recorded executions.
           allNodeExecutions: nodeExecutions,
           historyReferenceNodes,

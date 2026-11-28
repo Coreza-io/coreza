@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { stringifyNodeResult } from "../../contracts/nodeResult";
 import { getRedisCache } from "../../config/redis";
-import { BacktestExecutor } from "../BacktestExecutor";
+import { BacktestExecutor, toOnBarCandle } from "../BacktestExecutor";
 import { NodeResult, WorkflowEdge, WorkflowNode } from "../../nodes/types";
 import { buildIndicatorKey, IndicatorStateManager } from "../../engine/indicatorStateManager";
 import { DataContextManager } from "../../engine/DataContext";
@@ -297,7 +297,7 @@ export class BacktestSession {
         .map((symbol) => ({
           symbol,
           interval: event.interval,
-          bars: [event.bars[symbol]],
+          bars: [toOnBarCandle(event.bars[symbol])],
         })),
       barIndex: event.barIndex,
       isWarmingUp: event.isWarmingUp === true,
@@ -321,7 +321,7 @@ export class BacktestSession {
             {
               symbol,
               interval: event.interval,
-              bars: [bar],
+              bars: [toOnBarCandle(bar)],
             },
           ]
         : [],

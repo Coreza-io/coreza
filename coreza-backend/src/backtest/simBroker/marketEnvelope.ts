@@ -28,10 +28,10 @@ export function toMarketBarEnvelope(
   const bar = parseBar(rawBar);
   if (!bar) return null;
 
-  const barTime = toEpochMs(rawBar?.time ?? rawBar?.timestamp ?? bar.timestamp);
+  const barTime = toEpochMs(rawBar?.startTimestamp ?? rawBar?.time ?? rawBar?.timestamp ?? bar.timestamp);
   const eventTs =
     eventTimestamp !== undefined ? toEpochMs(eventTimestamp) : barTime;
-  const sourceTs = toEpochMs(rawBar?._sourceTimestamp) || barTime;
+  const sourceTs = toEpochMs(rawBar?._sourceTimestamp ?? (rawBar?.startTimestamp != null ? rawBar.timestamp : undefined)) || barTime;
 
   return {
     symbol,

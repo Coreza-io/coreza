@@ -73,7 +73,7 @@ export class TimeBarConsolidator {
       const lastTime = new Date(previous.lastInput.timestamp).getTime();
       if (currentTime < lastTime) throw new ConsolidationError("OUT_OF_ORDER_BAR", `Bar ${input.timestamp} is older than ${previous.lastInput.timestamp}`);
       if (currentTime === lastTime) {
-        if (!barsEqual(input, previous.lastInput)) throw new ConsolidationError("DUPLICATE_BAR_CONFLICT", `Bar ${input.timestamp} conflicts with an existing bar`);
+        if (!barsEqual(input, previous.lastInput) || this.inputEnd(input) !== this.inputEnd(previous.lastInput)) throw new ConsolidationError("DUPLICATE_BAR_CONFLICT", `Bar ${input.timestamp} conflicts with an existing bar`);
         return { state: previous, duplicate: true };
       }
     }
@@ -97,7 +97,7 @@ export class TimeBarConsolidator {
     if (previous && !sameBucket && !previousDelivered) {
       // Preserve prior-first delivery when rollover and current completion coincide.
       emitted = previous.workingBar;
-    } else if (new Date(input.timestamp).getTime() + this.sourceMs >= Date.parse(workingBar.endTimestamp)) {
+    } else if (this.inputEnd(input) >= Date.parse(workingBar.endTimestamp)) {
       // Inputs must be finalized, start-stamped candles contained in their bucket.
       emitted = workingBar;
     }
@@ -110,6 +110,13 @@ export class TimeBarConsolidator {
       },
       duplicate: false,
     };
+  }
+
+  private inputEnd(input: Bar): number {
+    const nominalEnd = new Date(input.timestamp).getTime() + this.sourceMs;
+    const explicitEnd = input.endTimestamp === undefined ? nominalEnd : Date.parse(input.endTimestamp);
+    // Binance reports the last millisecond inside its full candles.
+    return explicitEnd === nominalEnd - 1 ? nominalEnd : explicitEnd;
   }
 
   private bucket(timestamp: string | number): [string, string] {

@@ -95,7 +95,7 @@ export function runConsolidatorStep(
   storedState?: unknown,
 ): ConsolidatorStepResult {
   const key = buildConsolidatorStateKey(parameters);
-  const bar = parseBar(candleData);
+  const bar = parseBar(candleData, { includeEnd: true });
   if (!bar) {
     throw new ConsolidatorValidationError(
       "INVALID_BAR",

@@ -1,7 +1,7 @@
 import { ALPACA_DEFAULT_BAR_PAGE_SIZE, validateAlpacaMarketData } from "../marketDataContract";
 import { normalizeCandles } from "../../../marketData/normalizeCandles";
 import { convertToISO8601 } from "../../../utils/dates";
-import { BrokerOperation } from "../../types";
+import type { BarSeriesItem, BarSeriesOutput, BrokerOperation } from "../../types";
 import { filterAlpacaRegularHours, fromAlpacaBar, parseAlpacaRawBar } from "../helpers";
 import { validateAlpacaCryptoSymbol } from "../cryptoOrderSymbol";
 import { parseTimeframe } from "../../../utils/timeframe";
@@ -250,9 +250,45 @@ export const alpacaOperations: Record<string, BrokerOperation> = {
     },
     finalizeResult: async (output, context) => {
       const { input } = context;
-      return input.include_extended_hours === false
-        ? filterAlpacaRegularHours(output, parseTimeframe(input.interval).milliseconds, context)
-        : output;
+      if (input.include_extended_hours !== false) return output;
+      const { baseUrl, headers, request } = context;
+      const operation = alpacaOperations.get_candle;
+      return filterAlpacaRegularHours(output, parseTimeframe(input.interval).milliseconds, context, async (symbols, start, end) => {
+        const minuteInput = {
+          ...input,
+          symbol: symbols.join(","),
+          interval: "1Min",
+          start: new Date(start).toISOString(),
+          end: new Date(end - 1).toISOString(),
+          limit: ALPACA_DEFAULT_BAR_PAGE_SIZE,
+          page_token: undefined,
+        };
+        const params = operation.makeParams!(minuteInput);
+        let pageToken: string | null = null;
+        const seenTokens = new Set<string>();
+        const series = new Map<string, BarSeriesItem>();
+        do {
+          const response = await request.get<unknown>(`${baseUrl}/v2/stocks/bars`, {
+            params: { ...params, ...(pageToken && { page_token: pageToken }) },
+            headers,
+            timeout: 30000,
+          });
+          const page: BarSeriesOutput = operation.transformResult!(response.data, minuteInput);
+          for (const item of page.BarSeries) {
+            const previous = series.get(item.symbol);
+            if (previous) previous.bars.push(...item.bars);
+            else series.set(item.symbol, item);
+          }
+          pageToken = page.next_page_token ?? null;
+          if (pageToken) {
+            if (seenTokens.has(pageToken) || seenTokens.size >= 99) {
+              throw new Error("Alpaca minute pagination is incomplete for a regular-session candle");
+            }
+            seenTokens.add(pageToken);
+          }
+        } while (pageToken);
+        return { BarSeries: [...series.values()] };
+      });
     },
   },
   get_latest_bar: {

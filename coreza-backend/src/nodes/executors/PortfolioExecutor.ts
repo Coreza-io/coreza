@@ -321,7 +321,7 @@ export class PortfolioExecutor implements INodeExecutor {
     ) {
       if (prices && Object.keys(prices).length > 0) {
         simBroker.updateAllPositionsMTM(prices);
-      } else if (currentBar && symbol && params.currentBar?._sourceTimestamp == null) {
+      } else if (currentBar && symbol && params.currentBar?._sourceTimestamp == null && params.currentBar?.startTimestamp == null) {
         const mtmEnvelope = toMarketBarEnvelope(symbol, params.currentBar);
         if (mtmEnvelope) simBroker.onBar(mtmEnvelope);
       }

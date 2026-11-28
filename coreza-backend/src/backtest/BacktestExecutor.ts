@@ -52,8 +52,9 @@ import { resolveConsolidatorWarmup } from "./warmup/ConsolidatorWarmup";
 // Project the public OnBar candle without mutating the replay's internal bar.
 export function toOnBarCandle(bar: any): any {
   if (!bar) return bar;
-  const { time, ...rest } = bar;
-  return { ...rest, timestamp: time ?? rest.timestamp ?? rest.t };
+  const { time, _sourceTimestamp, ...rest } = bar;
+  const startTimestamp = time ?? rest.timestamp ?? rest.t;
+  return { ...rest, startTimestamp, timestamp: _sourceTimestamp ?? startTimestamp };
 }
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
@@ -1142,7 +1143,7 @@ export class BacktestExecutor implements INodeExecutor {
       ) {
         if (prices && Object.keys(prices).length > 0) {
           simBroker.updateAllPositionsMTM(prices);
-        } else if (currentBar && symbol && params.current_bar?._sourceTimestamp == null) {
+        } else if (currentBar && symbol && params.current_bar?._sourceTimestamp == null && params.current_bar?.startTimestamp == null) {
           const mtmEnvelope = toMarketBarEnvelope(symbol, params.current_bar);
           if (mtmEnvelope) simBroker.onBar(mtmEnvelope);
         }

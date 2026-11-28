@@ -90,6 +90,7 @@ export const DEFAULT_SIM_BROKER_CONFIG: SimBrokerConfig = {
 
 export interface Bar {
   timestamp: string | number; // ISO 8601 UTC or epoch milliseconds UTC
+  endTimestamp?: string;
   open: number;
   high: number;
   low: number;

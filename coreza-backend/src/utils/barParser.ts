@@ -12,12 +12,18 @@ import { Bar } from "../backtest/simBroker/interfaces";
 
 type UnknownRecord = Record<string, unknown>;
 
+function parseTimestamp(value: unknown): number {
+  if (typeof value === "number") return value;
+  if (typeof value !== "string") return Number.NaN;
+  return /^\d+(?:\.\d+)?$/.test(value.trim()) ? Number(value) : Date.parse(value);
+}
+
 /**
  * Parse a bar from various input formats (JSON string, object with .bar wrapper, OHLCV).
  * Uses Number() instead of permissive parseFloat() and rejects invalid timestamps
  * or non-finite OHLCV values.
  */
-export function parseBar(input: unknown): Bar | null {
+export function parseBar(input: unknown, { includeEnd = false } = {}): Bar | null {
   let data = input;
   if (!data) return null;
 
@@ -31,14 +37,10 @@ export function parseBar(input: unknown): Bar | null {
   if (typeof data !== "object" || data === null || Array.isArray(data)) return null;
   const bar = data as UnknownRecord;
 
-  const timestamp = bar.timestamp ?? bar.time ?? bar.t;
-  const timestampMs = typeof timestamp === "number"
-    ? timestamp
-    : typeof timestamp === "string"
-      ? /^\d+(?:\.\d+)?$/.test(timestamp.trim())
-        ? Number(timestamp)
-        : new Date(timestamp).getTime()
-      : Number.NaN;
+  const timestampMs = parseTimestamp((includeEnd ? bar.startTimestamp : undefined) ?? bar.timestamp ?? bar.time ?? bar.t);
+  const end = includeEnd ? bar.endTimestamp ?? bar.closeTime : undefined;
+  const endMs = end == null ? undefined : parseTimestamp(end);
+  if (endMs !== undefined && (!Number.isFinite(endMs) || endMs <= timestampMs)) return null;
   const open = Number(bar.open ?? bar.o);
   const high = Number(bar.high ?? bar.h);
   const low = Number(bar.low ?? bar.l);
@@ -48,6 +50,7 @@ export function parseBar(input: unknown): Bar | null {
 
   return {
     timestamp: new Date(timestampMs).toISOString(),
+    ...(endMs !== undefined && { endTimestamp: new Date(endMs).toISOString() }),
     open,
     high,
     low,

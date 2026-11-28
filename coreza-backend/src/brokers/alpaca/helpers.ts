@@ -9,10 +9,36 @@ export function alpacaTradingBaseUrl(environment: unknown): string {
   return environment === 'live' ? 'https://api.alpaca.markets' : 'https://paper-api.alpaca.markets';
 }
 
+function aggregatePartialBar(minutes: Bar[], time: number, closeTime: number): Bar | undefined {
+  const byTime = new Map(minutes
+    .filter(bar => bar.time >= time && bar.time < closeTime)
+    .map(bar => [bar.time, bar]));
+  const bars = [...byTime.values()].sort((a, b) => a.time - b.time);
+  if (!bars.length) return undefined;
+
+  const volume = bars.reduce((sum, bar) => sum + bar.volume, 0);
+  return {
+    time,
+    closeTime,
+    open: bars[0].open,
+    high: Math.max(...bars.map(bar => bar.high)),
+    low: Math.min(...bars.map(bar => bar.low)),
+    close: bars[bars.length - 1].close,
+    volume,
+    ...(bars.every(bar => Number.isFinite(bar.trades)) && {
+      trades: bars.reduce((sum, bar) => sum + bar.trades!, 0),
+    }),
+    ...(volume > 0 && bars.every(bar => Number.isFinite(bar.vwap)) && {
+      vwap: bars.reduce((sum, bar) => sum + bar.vwap! * bar.volume, 0) / volume,
+    }),
+  };
+}
+
 export async function filterAlpacaRegularHours(
   output: BarSeriesOutput,
   intervalMs: number,
   { input, headers, request }: BrokerOperationExecuteContext,
+  fetchMinutes: (symbols: string[], start: number, end: number) => Promise<BarSeriesOutput>,
 ): Promise<BarSeriesOutput> {
   let first = Infinity;
   let last = -Infinity;
@@ -21,6 +47,17 @@ export async function filterAlpacaRegularHours(
       first = Math.min(first, bar.time);
       last = Math.max(last, bar.time);
     }
+  }
+
+  // An opaque Alpaca cursor describes native bars. Only independently fill
+  // missing boundary buckets when the response covers the whole request.
+  const complete = !input.page_token && !output.has_more;
+  const start = input.start ? Date.parse(input.start) : first;
+  const end = Math.min(input.end ? Date.parse(input.end) : last + intervalMs, Date.now());
+  const canReconstruct = intervalMs > 60_000;
+  if (complete && canReconstruct && start < end) {
+    first = Math.min(first, start);
+    last = Math.max(last, end);
   }
   if (first === Infinity) return output;
 
@@ -45,16 +82,50 @@ export async function filterAlpacaRegularHours(
     sessions.set(day.date, { open, close });
   }
 
-  return {
-    ...output,
-    BarSeries: output.BarSeries.map((series) => ({
-      ...series,
-      bars: series.bars.filter(({ time }) => {
-        const session = sessions.get(sessionDate(time));
-        return !!session && time >= session.open && time + intervalMs <= session.close;
-      }),
-    })),
-  };
+  const seriesBySymbol = new Map(output.BarSeries.map(series => [series.symbol, {
+    ...series,
+    bars: series.bars.filter(({ time }) => {
+      const session = sessions.get(sessionDate(time));
+      return !!session && time >= session.open && time + intervalMs <= session.close;
+    }),
+  }]));
+  if (!canReconstruct) return { ...output, BarSeries: [...seriesBySymbol.values()] };
+
+  const nativeStarts = new Map(output.BarSeries.map(series => [
+    series.symbol, new Set(series.bars.map(bar => bar.time)),
+  ]));
+  const symbols = [...new Set<string>(input.symbol.split(','))];
+  const sortDirection = input.sort === 'desc' ? -1 : 1;
+  for (const { open, close } of sessions.values()) {
+    // Alpaca's supported intraday intervals divide an hour and use the
+    // existing clock grid. Only the opening and closing buckets can overlap.
+    const buckets = new Set([Math.floor(open / intervalMs) * intervalMs, Math.floor((close - 1) / intervalMs) * intervalMs]);
+    for (const bucket of buckets) {
+      const time = Math.max(open, bucket);
+      const closeTime = Math.min(close, bucket + intervalMs);
+      if (time === bucket && closeTime === bucket + intervalMs) continue;
+      if ((input.start && time < start) || closeTime > end) continue;
+      const eligible = complete && time >= start
+        ? symbols
+        : symbols.filter(symbol => nativeStarts.get(symbol)?.has(bucket));
+      if (!eligible.length) continue;
+
+      const minutes = await fetchMinutes(eligible, time, closeTime);
+      for (const series of minutes.BarSeries) {
+        if (!eligible.includes(series.symbol)) continue;
+        const partial = aggregatePartialBar(series.bars, time, closeTime);
+        if (!partial) continue;
+        const target = seriesBySymbol.get(series.symbol) ?? { symbol: series.symbol, interval: input.interval, bars: [] };
+        target.bars.push(partial);
+        seriesBySymbol.set(series.symbol, target);
+      }
+    }
+  }
+
+  for (const series of seriesBySymbol.values()) {
+    series.bars.sort((a, b) => sortDirection * (a.time - b.time));
+  }
+  return { ...output, BarSeries: [...seriesBySymbol.values()] };
 }
 
 export function buildAlpacaAuthMessage(creds: any) {

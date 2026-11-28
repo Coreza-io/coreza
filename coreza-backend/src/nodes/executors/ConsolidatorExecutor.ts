@@ -42,8 +42,9 @@ export class ConsolidatorExecutor implements INodeExecutor {
       if (context?.isWarmingUp && result.state.lastEmittedEndTimestamp !== endTimestamp) {
         const endTime = Date.parse(endTimestamp);
         const sourceMs = parseTimeframe(sourceTimeframe).milliseconds;
-        const isAligned = (state: ConsolidatorState) =>
-          (endTime - new Date(state.lastInput.timestamp).getTime()) % sourceMs === 0;
+        const isAligned = ({ lastInput }: ConsolidatorState) =>
+          (endTime - new Date(lastInput.timestamp).getTime()) % sourceMs === 0 ||
+          (lastInput.endTimestamp !== undefined && (endTime - Date.parse(lastInput.endTimestamp)) % sourceMs === 0);
         // A source candle may straddle an offset bucket boundary. Let its
         // normal update deliver that bucket after the source candle closes.
         if (isAligned(result.state)) {

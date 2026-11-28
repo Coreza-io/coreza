@@ -22,11 +22,17 @@ export function alignMultiSymbolBars<T extends AlignableBar>(
   eventTime: (bar: T) => number = historicalBarTimestamp,
   strategyStart = -Infinity,
 ): AlignedMultiBarEvent[] {
-  const timestamps = new Set<number>();
+  const eventBars = new Map<number, T>();
   for (const bars of barsBySymbol.values()) {
-    for (const bar of bars) timestamps.add(eventTime(bar));
+    for (const bar of bars) {
+      const timestamp = eventTime(bar);
+      const existing = eventBars.get(timestamp);
+      if (!existing || (bar.closeTime === timestamp && existing.closeTime !== timestamp)) {
+        eventBars.set(timestamp, bar);
+      }
+    }
   }
-  const orderedTimestamps = [...timestamps].filter(Number.isFinite).sort((a, b) => a - b);
+  const orderedTimestamps = [...eventBars.keys()].filter(Number.isFinite).sort((a, b) => a - b);
   const warmupCount = orderedTimestamps.findIndex((timestamp) => timestamp >= strategyStart);
   const strategyOffset = warmupCount < 0 ? orderedTimestamps.length : warmupCount;
   const indexes = new Map(symbols.map((symbol) => [symbol, 0]));
@@ -54,10 +60,15 @@ export function alignMultiSymbolBars<T extends AlignableBar>(
       }
       const previous = previousBars.get(symbol);
       if (!isWarmingUp && previous && (previous._sourceTimestamp ?? -Infinity) >= strategyStart) {
+        const eventBar = eventBars.get(timestamp)!;
+        const useEventStart = eventBar.closeTime === timestamp ||
+          (previous.closeTime !== undefined && previous.closeTime === previous._sourceTimestamp);
         bars[symbol] = {
           ...previous,
-          time: timestamp - ((previous._sourceTimestamp ?? timestamp) - historicalBarTimestamp(previous)),
-          ...(previous.closeTime === undefined ? {} : { closeTime: timestamp }),
+          time: useEventStart
+            ? historicalBarTimestamp(eventBar)
+            : timestamp - ((previous._sourceTimestamp ?? timestamp) - historicalBarTimestamp(previous)),
+          ...(previous.closeTime !== undefined || eventBar.closeTime === timestamp ? { closeTime: timestamp } : {}),
           _sourceTimestamp:
             previous._sourceTimestamp ?? historicalBarTimestamp(previous),
           _isFillForward: true,

@@ -49,6 +49,13 @@ import { parseTimeframe } from "../utils/timeframe";
 import { alignMultiSymbolBars } from "./warmup/WarmupReplay";
 import { resolveConsolidatorWarmup } from "./warmup/ConsolidatorWarmup";
 
+// Project the public OnBar candle without mutating the replay's internal bar.
+export function toOnBarCandle(bar: any): any {
+  if (!bar) return bar;
+  const { time, ...rest } = bar;
+  return { ...rest, timestamp: time ?? rest.timestamp ?? rest.t };
+}
+
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 
 function backtestDate(value: string, timezone: string): Date {
@@ -657,7 +664,7 @@ export class BacktestExecutor implements INodeExecutor {
     const barSeries = onBarResult.data.BarSeries[0];
     barSeries.symbol = data?.symbol;
     barSeries.interval = data?.interval;
-    barSeries.bars[0] = data?.bar;
+    barSeries.bars[0] = toOnBarCandle(data?.bar);
     onBarResult.data.barIndex = data?.barIndex;
     onBarResult.data.isWarmingUp = context?.isWarmingUp === true;
 

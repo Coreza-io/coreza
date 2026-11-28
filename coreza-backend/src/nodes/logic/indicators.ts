@@ -208,7 +208,7 @@ function asVolume(bar: any): number {
 }
 
 function asBarTime(bar: any): string {
-  return String(bar?.time ?? bar?.t ?? bar?.timestamp ?? "");
+  return String(bar?.startTimestamp ?? bar?.time ?? bar?.t ?? bar?.timestamp ?? "");
 }
 
 type AtrSmoothing = "wilders" | "simple";
@@ -914,7 +914,7 @@ export class IndicatorService {
             let prevDate: Date | null = null;
             let value: number | null = null;
             for (const bar of bars) {
-              const date = new Date(bar.time ?? bar.t ?? bar.timestamp);
+              const date = new Date(bar.startTimestamp ?? bar.time ?? bar.t ?? bar.timestamp);
               if (prevDate) {
                 const reset =
                   sessionType === "daily"
@@ -948,7 +948,7 @@ export class IndicatorService {
           },
           update: (state, bar) => {
             let { cumTPV, cumVol } = state;
-            const date = new Date(bar.time ?? bar.t ?? bar.timestamp);
+            const date = new Date(bar.startTimestamp ?? bar.time ?? bar.t ?? bar.timestamp);
             const prevDate = state.prevTime ? new Date(state.prevTime) : null;
             const reset =
               prevDate && state.sessionType === "daily"

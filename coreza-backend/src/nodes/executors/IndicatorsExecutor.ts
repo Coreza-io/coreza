@@ -495,8 +495,8 @@ export class IndicatorsExecutor implements INodeExecutor {
         throw new Error('Invalid candle OHLC range');
       }
       if (Number(bar.volume ?? bar.v) < 0) throw new Error('Invalid candle volume');
-      const time = bar.time ?? bar.t ?? bar.timestamp;
-      if (time != null || indicatorType === 'vwap') candleTimestamp(time, bar.time != null ? 'milliseconds' : 'auto');
+      const time = bar.startTimestamp ?? bar.time ?? bar.t ?? bar.timestamp;
+      if (time != null || indicatorType === 'vwap') candleTimestamp(time, bar.startTimestamp != null || bar.time != null ? 'milliseconds' : 'auto');
     }
   }
 
@@ -511,7 +511,7 @@ export class IndicatorsExecutor implements INodeExecutor {
     let start = bars.length;
     while (start > 0) {
       const bar = bars[start - 1];
-      const raw = bar.time ?? bar.t ?? bar.timestamp;
+      const raw = bar.startTimestamp ?? bar.time ?? bar.t ?? bar.timestamp;
       const time = Number.isFinite(Number(raw)) ? Number(raw) : Date.parse(raw);
       if (!Number.isFinite(time) || !Number.isFinite(last)) return bars;
       if (time <= last) break;

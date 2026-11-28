@@ -63,8 +63,8 @@ export function normalizeCandle(bar: any): Bar {
     throw new Error("Expected an OHLCV candle");
   }
   const result: Bar = {
-    time: candleTimestamp(bar.time ?? bar.timestamp ?? bar.t ?? bar.date ?? bar.datetime,
-      bar.time != null ? 'milliseconds' : 'auto'),
+    time: candleTimestamp(bar.startTimestamp ?? bar.time ?? bar.timestamp ?? bar.t ?? bar.date ?? bar.datetime,
+      bar.startTimestamp != null || bar.time != null ? 'milliseconds' : 'auto'),
     open: finiteNumber(bar.open ?? bar.o, "open"),
     high: finiteNumber(bar.high ?? bar.h, "high"),
     low: finiteNumber(bar.low ?? bar.l, "low"),

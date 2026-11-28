@@ -31,7 +31,7 @@ export function parseBar(input: unknown): Bar | null {
   if (typeof data !== "object" || data === null || Array.isArray(data)) return null;
   const bar = data as UnknownRecord;
 
-  const timestamp = bar.timestamp ?? bar.time ?? bar.t;
+  const timestamp = bar.startTimestamp ?? bar.timestamp ?? bar.time ?? bar.t;
   const timestampMs = typeof timestamp === "number"
     ? timestamp
     : typeof timestamp === "string"

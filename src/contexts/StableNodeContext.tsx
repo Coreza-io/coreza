@@ -12,7 +12,7 @@ import { createContext, useCallback, useContext, useLayoutEffect, useMemo, useRe
 import { useReactFlow } from '@xyflow/react';
 import type { Node, Edge } from '@xyflow/react';
 import { syncEditorNodeActionIds } from '@/services/editorNodeExecution';
-import { createCanonicalGraphStore, type CanonicalGraphSnapshot, type SemanticGraphSnapshot } from './canonicalGraphStore';
+import { createCanonicalGraphStore, type CanonicalGraphSnapshot, type SemanticGraphSnapshot, type SemanticNode } from './canonicalGraphStore';
 
 export interface RenameNodeRequest {
   nodeId: string;
@@ -36,6 +36,8 @@ interface StableNodeContextValue {
   getSemanticSnapshot: () => SemanticGraphSnapshot;
   getConfigurationSnapshot: () => SemanticGraphSnapshot;
   subscribeConfiguration: (listener: () => void) => () => void;
+  getNodeConfigSnapshot: (id: string) => SemanticNode | undefined;
+  subscribeNodeConfig: (id: string, listener: () => void) => () => void;
   getTopologySnapshot: () => SemanticGraphSnapshot;
   subscribeTopology: (listener: () => void) => () => void;
   updateNodeData: (id: string, patch: Record<string, unknown>) => boolean;
@@ -84,6 +86,8 @@ export function StableNodeProvider({ children }: { children: React.ReactNode }) 
     getSemanticSnapshot: canonicalStore.getSemanticSnapshot,
     getConfigurationSnapshot: canonicalStore.getConfigurationSnapshot,
     subscribeConfiguration: canonicalStore.subscribeConfiguration,
+    getNodeConfigSnapshot: canonicalStore.getNodeConfigSnapshot,
+    subscribeNodeConfig: canonicalStore.subscribeNodeConfig,
     getTopologySnapshot: canonicalStore.getTopologySnapshot,
     subscribeTopology: canonicalStore.subscribeTopology,
     updateNodeData: (id: string, patch: Record<string, unknown>) => {

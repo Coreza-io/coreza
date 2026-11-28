@@ -8,7 +8,7 @@
  * See the LICENSE file for details.
  */
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from "react";
 import { useNodeId } from "@xyflow/react";
 import {
   reconcileNodeValues,
@@ -46,7 +46,16 @@ export function useNodeFieldState({
   readOnly = false,
 }: UseNodeFieldStateProps): UseNodeFieldStateReturn {
   const nodeId = useNodeId();
-  const { updateNodeData, getNodeById } = useStableNodes();
+  const { updateNodeData, getNodeById, getNodeConfigSnapshot, subscribeNodeConfig } = useStableNodes();
+  const subscribe = useCallback((listener: () => void) =>
+    !readOnly && nodeId ? subscribeNodeConfig(nodeId, listener) : () => undefined,
+  [readOnly, nodeId, subscribeNodeConfig]);
+  const getSnapshot = useCallback(() =>
+    !readOnly && nodeId ? getNodeConfigSnapshot(nodeId) : undefined,
+  [readOnly, nodeId, getNodeConfigSnapshot]);
+  const canonical = useSyncExternalStore(subscribe, getSnapshot, getSnapshot)?.data;
+  const source = canonical && canonical.workflowSessionId === data.workflowSessionId ? canonical : data;
+  const configuredValues = source.values ?? source.fieldState;
   const live = useRef({ readOnly, data });
   live.current = { readOnly, data };
   const mounted = useRef(true);
@@ -61,11 +70,7 @@ export function useNodeFieldState({
 
   // ── Initial state ────────────────────────────────────────────────────
   const [fieldState, setFieldState] = useState<Record<string, any>>(() => {
-    const { merged } = reconcileNodeValues(
-      definition,
-      data.values ?? {},
-      data.fieldState ?? {},
-    );
+    const { merged } = reconcileNodeValues(definition, source.values ?? {}, source.fieldState ?? {});
     return merged;
   });
 
@@ -81,13 +86,10 @@ export function useNodeFieldState({
 
     lastSignatureRef.current = signature;
 
-    const existingValues = data.values ?? {};
-    const existingFieldState = data.fieldState ?? {};
-
     const { merged, hadMissingKeys } = reconcileNodeValues(
       definition,
-      existingValues,
-      existingFieldState,
+      source.values ?? {},
+      source.fieldState ?? {},
     );
 
     // Always update local state to match the reconciled result
@@ -107,14 +109,12 @@ export function useNodeFieldState({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [getSchemaSignature(definition), nodeId, readOnly]);
 
-  // Writes are synchronous; a delayed mirror must not overwrite a document restore.
   useEffect(() => {
-    const restored = data.values ?? data.fieldState;
-    if (restored && restored !== ownWrite.current) {
-      const { merged } = reconcileNodeValues(definition, restored, data.fieldState ?? {});
+    if (configuredValues && configuredValues !== draft.current) {
+      const { merged } = reconcileNodeValues(definition, configuredValues, source.fieldState ?? {});
       draft.current = merged; setFieldState(merged);
     }
-  }, [data.values, data.fieldState, data.workflowSessionId]);
+  }, [configuredValues, source.fieldState, data.workflowSessionId]);
 
   const commit = (updates: Record<string, any>, changedKey?: string): boolean => {
     if (!allowed()) return false;

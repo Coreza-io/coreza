@@ -30,6 +30,7 @@ export interface ResultMeta {
   invocationId?: string;
   cached?: boolean;
   persistentVariableKeys?: string[];
+  variableInputs?: Readonly<Record<string, string | number | boolean | null>>;
   smoothing?: string;
   series?: unknown[];
   requiredBars?: number;

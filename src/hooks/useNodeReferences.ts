@@ -27,6 +27,7 @@ interface UseNodeReferencesProps {
   workflowId?: string;
   workflowSessionId?: string;
   readOnly?: boolean;
+  executionVariableInputs?: Readonly<Record<string, unknown>>;
   enabled?: boolean;
   previewValues?: Record<string, unknown>;
   fieldState: Record<string, any>;
@@ -56,6 +57,7 @@ export function useNodeReferences({
   workflowId,
   workflowSessionId,
   readOnly = false,
+  executionVariableInputs,
   enabled = true,
   previewValues,
   fieldState,
@@ -144,10 +146,12 @@ export function useNodeReferences({
 
       try {
         // Read nodes imperatively for reference resolution - avoids subscription re-renders
-        if (readOnly && referencesVariables(expr)) return "Workflow variables are not included in execution history.";
-        if (referencesVariables(expr) && !workflowId) return "Save the workflow to preview variables";
-        if (referencesVariables(expr) && !variableQuery.data) return variableQuery.error ? variableQuery.error.message : "Loading variables…";
-        const resolved = resolveReferences(expr, srcData, allNodeData, nodes, variableQuery.data?.values);
+        if (referencesVariables(expr)) {
+          if (readOnly && !executionVariableInputs) return "No workflow variables were recorded for this node in this run.";
+          if (!readOnly && !workflowId) return "Save the workflow to preview variables";
+          if (!readOnly && !variableQuery.data) return variableQuery.error ? variableQuery.error.message : "Loading variables…";
+        }
+        const resolved = resolveReferences(expr, srcData, allNodeData, nodes, readOnly ? executionVariableInputs : variableQuery.data?.values);
 
         // For very large arrays, use quick summarized preview to avoid performance issues
         if (Array.isArray(resolved) && resolved.length > 100) {
@@ -163,6 +167,7 @@ export function useNodeReferences({
       fieldState,
       workflowId,
       readOnly,
+      executionVariableInputs,
       variableQuery.data,
       variableQuery.error,
       sourceMap,

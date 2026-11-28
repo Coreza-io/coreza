@@ -1,6 +1,6 @@
-import { readNodeResult, isFailedResult, NodeResultError, resultFailure } from "../contracts/nodeResult";
+import { readNodeResult, isFailedResult, NodeResultError, resultFailure, type ResultMeta } from "../contracts/nodeResult";
 import { createHash } from "crypto";
-import { isPersistentVariableEdit } from "../variables/contract";
+import { isPersistentVariableEdit, type VariableValue } from "../variables/contract";
 import { canContinueNodeError, continuedNodeError } from "../nodes/errorContinuation";
 import { performance } from "perf_hooks";
 import { resolveCategory } from "../nodes/categoryMap";
@@ -45,6 +45,12 @@ export type RuntimeOptions = {
 type ExecutionContextExtras = Partial<
   Pick<NodeExecutionContext, "multiBarContext" | "runId" | "isWarmingUp" | "variableEventId" | "liveTiming">
 >;
+
+function withVariableInputs(result: NodeResult, inputs?: ResultMeta["variableInputs"]): NodeResult {
+  return inputs
+    ? { ...result, meta: { ...result.meta, variableInputs: inputs } }
+    : result;
+}
 
 export abstract class BaseExecutionRuntime {
   nodeResultObserver?: NodeResultObserver;
@@ -196,7 +202,7 @@ export abstract class BaseExecutionRuntime {
             node,
             input,
             () => this.store.getAllResults() ?? {},
-            this.options.getVariables?.(),
+            ctx.variables,
           );
           ctx.resolvedParams = resolved;
           return resolved;
@@ -301,7 +307,7 @@ export abstract class BaseExecutionRuntime {
       this.routeEdge(edge, result, meta);
   }
 
-  protected handleError(nodeId: string, error: unknown, meta?: IterMeta, startedAt?: number): void {
+  protected handleError(nodeId: string, error: unknown, meta?: IterMeta, startedAt?: number, variableInputs?: ResultMeta["variableInputs"]): void {
     const errorMessage = error instanceof Error ? error.message : String(error);
     const node = this.graph.nodeById.get(nodeId);
     const name = node?.name ?? node?.type;
@@ -317,8 +323,9 @@ export abstract class BaseExecutionRuntime {
     this.store.setNodeError(nodeId, error instanceof Error ? error : new Error(errorMessage));
     const result = continuation ? readNodeResult(continuation)
       : error instanceof NodeResultError ? error.result : resultFailure(errorMessage);
-    this.store.setNodeResult(nodeId, result);
-    this.nodeResultObserver?.(nodeId, result, startedAt === undefined ? 0 : performance.now() - startedAt);
+    const recorded = withVariableInputs(result, variableInputs);
+    this.store.setNodeResult(nodeId, recorded);
+    this.nodeResultObserver?.(nodeId, recorded, startedAt === undefined ? 0 : performance.now() - startedAt);
     if (continuation) {
       const outgoing = name === "Loop" ? this.graph.doneEdges(nodeId)
         : this.graph.getOutgoingEdges(nodeId).filter(edge => !continuation.control?.sourceHandle || edge.sourceHandle === continuation.control?.sourceHandle);
@@ -334,6 +341,7 @@ export abstract class BaseExecutionRuntime {
     if (!node) return;
 
     let startedAt: number | undefined;
+    let variableInputs: Record<string, VariableValue> | undefined;
     try {
       if (this.options.abortSignal?.aborted)
         throw new Error("Workflow cancelled by user");
@@ -355,6 +363,21 @@ export abstract class BaseExecutionRuntime {
       }
 
       const context = this.getExecutionContext(node.id);
+      if (context.variables && (this.options.executionMode !== "backtest" || this.nodeResultObserver)) {
+        // The expression evaluator reads named variables through own descriptors.
+        // Record those reads for this invocation using its immutable input values.
+        context.variables = new Proxy(context.variables, {
+          getOwnPropertyDescriptor(target, key) {
+            const descriptor = Reflect.getOwnPropertyDescriptor(target, key);
+            const value = descriptor?.value;
+            if (typeof key === "string" && (value === null || typeof value === "string" ||
+                typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value)))) {
+              (variableInputs ??= Object.create(null))[key] = value;
+            }
+            return descriptor;
+          },
+        });
+      }
       const t0 = performance.now();
       startedAt = t0;
       const raw = executor.execute(node, item.input, context);
@@ -370,9 +393,10 @@ export abstract class BaseExecutionRuntime {
               this.normalizeResult(result, category),
               t0,
               item.meta,
+              variableInputs,
             ),
           )
-          .catch((error) => this.handleError(node.id, error, item.meta, startedAt));
+          .catch((error) => this.handleError(node.id, error, item.meta, startedAt, variableInputs));
       }
 
       this.routeNodeResult(
@@ -380,9 +404,10 @@ export abstract class BaseExecutionRuntime {
         this.normalizeResult(raw, category),
         t0,
         item.meta,
+        variableInputs,
       );
     } catch (error) {
-      this.handleError(node.id, error, item.meta, startedAt);
+      this.handleError(node.id, error, item.meta, startedAt, variableInputs);
     }
   }
 
@@ -391,6 +416,7 @@ export abstract class BaseExecutionRuntime {
     result: NodeResult,
     t0: number,
     meta?: IterMeta,
+    variableInputs?: ResultMeta["variableInputs"],
   ): void {
     const elapsed = performance.now() - t0;
     const prev = this.nodeTiming.get(node.id) ?? { totalMs: 0, count: 0 };
@@ -399,7 +425,7 @@ export abstract class BaseExecutionRuntime {
     this.nodeTiming.set(node.id, prev);
 
     this.executionOrder.push(node.id);
-    this.store.setNodeResult(node.id, result);
+    this.store.setNodeResult(node.id, withVariableInputs(result, variableInputs));
 
     this.recordOwnedResults(result, node.id);
     if (result.control?.suppressRouting) return;
@@ -558,6 +584,7 @@ export class BacktestExecutionRuntime extends BaseExecutionRuntime {
     result: NodeResult,
     t0: number,
     meta?: IterMeta,
+    variableInputs?: ResultMeta["variableInputs"],
   ): void {
     const elapsed = performance.now() - t0;
     if (!this.executionContextExtras.isWarmingUp) {
@@ -568,8 +595,9 @@ export class BacktestExecutionRuntime extends BaseExecutionRuntime {
     }
 
     this.executionOrder.push(node.id);
-    this.store.setNodeResult(node.id, result);
-    this.nodeResultObserver?.(node.id, result, elapsed);
+    const recorded = withVariableInputs(result, variableInputs);
+    this.store.setNodeResult(node.id, recorded);
+    this.nodeResultObserver?.(node.id, recorded, elapsed);
 
     this.recordOwnedResults(result, node.id);
     if (result.control?.suppressRouting) return;

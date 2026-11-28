@@ -147,8 +147,8 @@ export const EditFieldEditor: React.FC<EditFieldEditorProps> = ({
       if (generation !== previewGeneration.current) return;
       setHasInput(context.hasInput);
       try {
-        if (disabled && referencesVariables(value)) {
-          throw new Error("Workflow variables are not included in execution history.");
+        if (disabled && !context.variables && referencesVariables(value)) {
+          throw new Error("No workflow variables were recorded for this node in this run.");
         }
         const dataType = isEditFieldDataType(row.dataType)
           ? row.dataType
@@ -382,10 +382,12 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
   selectedInputData,
   incomingEdgeCount,
   readOnly,
+  executionVariableInputs,
 }) => {
   const { getNodes, getSnapshot } = useStableNodes();
   const previewCache = useRef<{ nodes: Parameters<typeof buildPreviewData>[0]; version: number; value: ReturnType<typeof buildPreviewData> } | null>(null);
   const variableQuery = useVariableSnapshot(!readOnly && (referencesVariables(fieldState) || (definition?.name === "Edit Fields" && fieldState.fields?.some((row: unknown) => isTypedEditFieldRow(row) && row.valueMode === "expression"))), workflowId, workflowSessionId);
+  const variables = readOnly ? executionVariableInputs : variableQuery.data?.values;
   const executionContext = useExecutionStore();
   const executionStoreVersion = useReferenceVersions(fieldState, selectedPrevNodeId, referenceNodes);
   const { user } = useAuth();
@@ -740,8 +742,8 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
     (val: any, selectedInputData: any, allNodeData: Record<string, any>) => {
       const resolveValue = (value: any): any => {
         if (typeof value === "string") {
-          if (readOnly && referencesVariables(value)) {
-            throw new Error("Workflow variables are not included in execution history.");
+          if (readOnly && !variables && referencesVariables(value)) {
+            throw new Error("No workflow variables were recorded for this node in this run.");
           }
           const allNodes = readOnly ? referenceNodes : getNodes();
           return resolveReferences(
@@ -749,7 +751,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
             selectedInputData,
             allNodeData,
             allNodes,
-            variableQuery.data?.values,
+            variables,
           );
         }
         if (Array.isArray(value)) {
@@ -768,7 +770,7 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
 
       return resolveValue(val);
     },
-    [getNodes, variableQuery.data, readOnly, referenceNodes],
+    [getNodes, variables, readOnly, referenceNodes],
   );
 
   const computeDropInsert = useCallback(
@@ -889,9 +891,9 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
       expressionOutputs: snapshot.nodeResults,
       definitions: snapshot.nodeIdentities,
       hasInput: input !== undefined,
-      variables: readOnly ? undefined : variableQuery.data?.values,
+      variables,
     };
-  }, [getPreviewData, getNodes, selectedInputData, executionContext, variableQuery.data, readOnly, referenceNodes]);
+  }, [getPreviewData, getNodes, selectedInputData, executionContext, variables, readOnly, referenceNodes]);
 
   const getOverlayPreviewFor = useCallback(
     (expr: unknown) => {
@@ -901,15 +903,15 @@ const RepeaterNodeLayout: React.FC<RepeaterNodeLayoutProps> = ({
       const srcData = getSourceData(selectedPrevNodeId);
 
       try {
-        if (readOnly && referencesVariables(expr)) return "Workflow variables are not included in execution history.";
+        if (readOnly && !variables && referencesVariables(expr)) return "No workflow variables were recorded for this node in this run.";
         return fullePreview(
-          resolveReferences(expr, srcData, allNodeData, readOnly ? referenceNodes : getNodes(), variableQuery.data?.values),
+          resolveReferences(expr, srcData, allNodeData, readOnly ? referenceNodes : getNodes(), variables),
         );
       } catch (error) {
         return error instanceof Error ? error.message : "Reference preview failed.";
       }
     },
-    [getPreviewData, selectedPrevNodeId, getNodes, executionStoreVersion, variableQuery.data, readOnly, referenceNodes],
+    [getPreviewData, selectedPrevNodeId, getNodes, executionStoreVersion, variables, readOnly, referenceNodes],
   );
 
   const handleOverlayDrop = useCallback(
